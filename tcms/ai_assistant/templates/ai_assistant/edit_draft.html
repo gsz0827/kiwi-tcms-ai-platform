@@ -1,0 +1,26 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container">
+    <h1>编辑测试用例草稿</h1>
+    <p class="text-muted">
+        来源：#{{ draft.request_id }} {{ draft.request.title }}。
+        导入后请在 Kiwi 正式测试用例页面继续编辑。
+    </p>
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+            <div class="form-group">
+                <label>{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}
+                    <p class="help-block">{{ field.help_text }}</p>
+                {% endif %}
+                {{ field.errors }}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">保存草稿</button>
+        <a href="{% url 'ai_assistant:index' %}" class="btn btn-default">取消</a>
+    </form>
+</div>
+{% endblock %}

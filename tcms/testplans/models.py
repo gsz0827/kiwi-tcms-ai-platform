@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import vinaigrette
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.validators import URLValidator
@@ -23,6 +24,11 @@ class PlanType(models.Model, UrlMixin):
 
     class Meta:
         ordering = ["name"]
+
+
+# Plan types are seeded as stable English identifiers. Translate their display
+# values without changing database data or API-facing primary keys.
+vinaigrette.register(PlanType, ["name"])
 
 
 class TestPlan(TreeNode, UrlMixin):

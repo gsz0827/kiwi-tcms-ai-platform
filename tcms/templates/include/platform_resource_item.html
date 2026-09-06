@@ -1,0 +1,36 @@
+<li class="kiwi-resource-item">
+    <div class="kiwi-resource-item-row">
+        <a class="kiwi-resource-item-link"
+           href="#kiwi-resource-modal-{{ browser.kind }}-{{ item.pk }}"
+           data-toggle="modal"
+           title="点击查看详情">
+            <span class="fa fa-file-text-o"></span>
+            {% if browser.kind == 'requirement' %}R-{{ item.pk }} {{ item.title }}{% endif %}
+            {% if browser.kind == 'case' %}TC-{{ item.pk }} {{ item.summary }}{% endif %}
+            {% if browser.kind == 'plan' %}TP-{{ item.pk }} {{ item.name }}{% endif %}
+        </a>
+        {% if browser.can_manage and item.available_folders %}
+        <form class="kiwi-resource-move-form"
+              method="post"
+              action="{% url 'ai_assistant:assign_resource_folder' %}">
+            {% csrf_token %}
+            <input type="hidden" name="resource_type" value="{{ browser.kind }}">
+            <input type="hidden" name="object_id" value="{{ item.pk }}">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <label class="sr-only" for="resource-folder-{{ browser.kind }}-{{ item.pk }}">移动到目录</label>
+            <select id="resource-folder-{{ browser.kind }}-{{ item.pk }}"
+                    class="kiwi-resource-move-select"
+                    name="folder"
+                    title="移动到共享目录"
+                    onchange="this.form.submit()">
+                <option value="">未归档</option>
+                {% for folder in item.available_folders %}
+                    <option value="{{ folder.pk }}" {% if item.resource_folder_id == folder.pk %}selected{% endif %}>
+                        {{ folder.option_prefix }}{{ folder.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
+    </div>
+</li>

@@ -18,3 +18,16 @@ docs/target/
 .cache/
 tcms/node_modules/
 tcms/static/js/bundle.js
+
+# Local development credentials, runtime data and editor backups
+.env
+.env.*
+!.env.example
+*.orig
+*.bak
+*.bak.*
+backups/
+certs/
+*.sql
+*.sql.gz
+tcms/settings/local_settings.py

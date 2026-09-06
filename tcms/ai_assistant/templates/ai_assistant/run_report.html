@@ -1,0 +1,22 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">TR-{{ test_run.pk }} 测试报告</h1>
+        <div class="pull-right" style="margin-top:20px"><a class="btn btn-default" href="{% url 'ai_assistant:run_analysis' test_run.pk %}">返回运行分析</a></div>
+    </div>
+    <p class="lead">{{ test_run.summary }}</p>
+    {% if active_config %}
+        <form method="post" id="report-generation-form">{% csrf_token %}<button id="report-generation-button" class="btn btn-primary" type="submit">生成测试报告</button> <span class="text-muted">报告生成后仍可全文编辑</span></form>
+    {% else %}
+        <div class="alert alert-warning">请先配置并启用 <a href="{% url 'ai_assistant:model_settings' %}">AI 模型</a>。</div>
+    {% endif %}
+    <div id="report-progress" class="panel panel-info" style="display:none; margin-top:20px"><div class="panel-heading"><strong>AI 正在整理测试报告</strong></div><div class="panel-body"><div class="progress"><div id="report-progress-bar" class="progress-bar progress-bar-info progress-bar-striped active" style="width:3%">3%</div></div><p>正在核对执行指标、缺陷和发布结论，已等待 <span id="report-elapsed">0</span> 秒。</p></div></div>
+    <hr><h3>我的报告历史</h3>
+    <div class="list-group">{% for report in reports %}<a class="list-group-item" href="{% url 'ai_assistant:edit_report' report.pk %}"><strong>{{ report.title }}</strong> <span class="label label-info">V{{ report.version }}</span> {% if report.is_current %}<span class="label label-primary">当前版本</span>{% endif %} <span class="label {% if report.release_decision == 'go' %}label-success{% elif report.release_decision == 'no_go' %}label-danger{% else %}label-warning{% endif %}">{{ report.get_release_decision_display }}</span> <span class="label {% if report.approval_status == 'approved' %}label-success{% elif report.approval_status == 'rejected' %}label-danger{% else %}label-default{% endif %}">{{ report.get_approval_status_display }}</span><span class="pull-right text-muted">{{ report.updated }}</span></a>{% empty %}<p class="text-muted">暂无测试报告。</p>{% endfor %}</div>
+</div>
+<script>
+(function(){var form=document.getElementById("report-generation-form");if(!form){return;}form.addEventListener("submit",function(){var button=document.getElementById("report-generation-button"),panel=document.getElementById("report-progress"),bar=document.getElementById("report-progress-bar"),elapsed=document.getElementById("report-elapsed"),started=Date.now();button.disabled=true;button.textContent="正在生成，请稍候…";panel.style.display="block";window.setInterval(function(){var seconds=Math.floor((Date.now()-started)/1000),percent=Math.min(90,3+Math.floor(seconds*87/300));elapsed.textContent=seconds;bar.style.width=percent+"%";bar.textContent=percent+"%";},1000);});}());
+</script>
+{% endblock %}

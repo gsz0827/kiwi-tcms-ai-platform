@@ -91,7 +91,11 @@
                         {% else %}
                             fa-hand-paper-o
                         {% endif %}"></span>{% trans 'Automated' %}:
-                    {{ object.is_automated }}
+                    {% if object.is_automated %}
+                        {% trans 'Yes' %}
+                    {% else %}
+                        {% trans 'No' %}
+                    {% endif %}
                 </h2>
 
                 <h2 class="card-pf-title kiwi-text-align-left">

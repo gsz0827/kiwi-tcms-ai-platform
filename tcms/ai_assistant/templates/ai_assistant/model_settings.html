@@ -1,0 +1,151 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container">
+    <div class="clearfix">
+        <h1 class="pull-left">我的 AI 模型</h1>
+    </div>
+    <p class="text-muted">
+        这些配置只属于当前登录账号，其他账号无法查看或使用。
+    </p>
+
+    <div id="connection-test-progress"
+         class="panel panel-info"
+         style="display: none">
+        <div class="panel-heading">
+            <strong>正在测试 AI 模型连接</strong>
+        </div>
+        <div class="panel-body">
+            <div class="progress">
+                <div id="connection-test-progress-bar"
+                     class="progress-bar progress-bar-info progress-bar-striped active"
+                     role="progressbar"
+                     aria-valuemin="0"
+                     aria-valuemax="100"
+                     aria-valuenow="3"
+                     style="width: 3%">
+                    <span id="connection-test-progress-percent">等待进度 3%</span>
+                </div>
+            </div>
+            <p>
+                正在验证 API 地址、密钥和模型名，已等待
+                <span id="connection-test-elapsed">0</span> 秒，请勿重复点击。
+            </p>
+        </div>
+    </div>
+
+    <h3>已保存的模型</h3>
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>配置名称</th>
+                    <th>模型</th>
+                    <th>API 地址</th>
+                    <th>超时</th>
+                    <th>密钥</th>
+                    <th>状态与操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for config in configs %}
+                <tr>
+                    <td>{{ config.name }}</td>
+                    <td>{{ config.model }}</td>
+                    <td>{{ config.api_base }}</td>
+                    <td>{{ config.timeout }} 秒</td>
+                    <td>{{ config.key_status }}</td>
+                    <td>
+                        {% if config.is_active %}
+                            <span class="label label-success">当前启用</span>
+                        {% else %}
+                            <form method="post"
+                                  action="{% url 'ai_assistant:activate_model_config' config.pk %}"
+                                  style="display: inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-success">
+                                    启用
+                                </button>
+                            </form>
+                        {% endif %}
+                        <a href="{% url 'ai_assistant:edit_model_config' config.pk %}"
+                           class="btn btn-xs btn-default">
+                            编辑
+                        </a>
+                        <form method="post"
+                              class="model-test-form"
+                              action="{% url 'ai_assistant:test_model_config' config.pk %}"
+                              style="display: inline">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="btn btn-xs btn-info"
+                                    data-timeout="{{ config.timeout }}">
+                                测试连接
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="6">尚未配置模型，请使用下方表单添加。</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <hr>
+    <h3>添加模型配置</h3>
+    <div class="alert alert-info">
+        新建配置必须填写 API 密钥。密钥会加密保存，之后不会在网页中回显。
+    </div>
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+            <div class="form-group">
+                <label>{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}
+                    <p class="help-block">{{ field.help_text }}</p>
+                {% endif %}
+                {{ field.errors }}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">保存模型配置</button>
+    </form>
+</div>
+
+<script>
+(function () {
+    var forms = document.querySelectorAll(".model-test-form");
+    for (var index = 0; index < forms.length; index++) {
+        forms[index].addEventListener("submit", function (event) {
+            var button = event.submitter || this.querySelector("button");
+            var timeout = parseInt(button.getAttribute("data-timeout"), 10) || 300;
+            var progress = document.getElementById("connection-test-progress");
+            var bar = document.getElementById("connection-test-progress-bar");
+            var percentText = document.getElementById("connection-test-progress-percent");
+            var elapsedText = document.getElementById("connection-test-elapsed");
+            var startedAt = Date.now();
+
+            var allButtons = document.querySelectorAll(".model-test-form button");
+            for (var buttonIndex = 0; buttonIndex < allButtons.length; buttonIndex++) {
+                allButtons[buttonIndex].disabled = true;
+            }
+            button.textContent = "正在测试，请稍候…";
+            progress.style.display = "block";
+            progress.scrollIntoView({behavior: "smooth", block: "center"});
+
+            window.setInterval(function () {
+                var seconds = Math.floor((Date.now() - startedAt) / 1000);
+                var percent = Math.min(90, 3 + Math.floor(seconds * 87 / timeout));
+                elapsedText.textContent = seconds;
+                bar.style.width = percent + "%";
+                bar.setAttribute("aria-valuenow", percent);
+                percentText.textContent = "等待进度 " + percent + "%";
+            }, 1000);
+        });
+    }
+}());
+</script>
+{% endblock %}

@@ -352,6 +352,7 @@ TENANT_APPS = [
     "tcms.testcases.apps.AppConfig",
     "tcms.testplans.apps.AppConfig",
     "tcms.testruns.apps.AppConfig",
+    "tcms.ai_assistant.apps.AiAssistantConfig",
 ]
 
 # if you wish to disable Kiwi TCMS bug tracker
@@ -415,6 +416,7 @@ MENU_ITEMS = [
             ),
         ],
     ),
+    ("AI 测试助手", reverse_lazy("ai_assistant:index")),
     (
         _("TELEMETRY"),
         [

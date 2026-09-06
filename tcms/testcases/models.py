@@ -389,3 +389,7 @@ class Template(models.Model):
 
     def __str__(self):
         return self.name
+
+
+# Keep seeded template identifiers stable while translating their display names.
+vinaigrette.register(Template, ["name"])

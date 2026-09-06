@@ -30,6 +30,10 @@
             data-trans-execution-status-{{ status.pk }}="{{ status.name }}"
         {% endfor %}
         >TR-{{ object.pk }}:</span> {{ object.summary }}
+        <a href="{% url 'ai_assistant:run_analysis' object.pk %}"
+           class="btn btn-info pull-right hidden-print">
+            <span class="fa fa-line-chart"></span> AI 运行分析
+        </a>
     </h1>
 
     <div class="row row-cards-pf">

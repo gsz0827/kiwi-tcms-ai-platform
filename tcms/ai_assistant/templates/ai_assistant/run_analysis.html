@@ -1,0 +1,231 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">TR-{{ test_run.pk }} AI 运行分析</h1>
+        <div class="pull-right" style="margin-top: 20px">
+            <a href="{% url 'ai_assistant:run_report' test_run.pk %}"
+               class="btn btn-primary">测试报告</a>
+            <a href="{% url 'testruns-get' test_run.pk %}"
+               class="btn btn-default">返回测试运行</a>
+            <a href="{% url 'ai_assistant:index' %}"
+               class="btn btn-default">返回 AI 测试助手</a>
+        </div>
+    </div>
+    <p class="lead">{{ test_run.summary }}</p>
+    <p class="text-muted">
+        AI 会分析当前执行状态、失败用例和已关联缺陷。可能原因仅作为排查建议，不代表已确认根因。
+    </p>
+
+    {% if active_config %}
+        <form method="post" id="run-analysis-form">
+            {% csrf_token %}
+            <button type="submit" id="run-analysis-button" class="btn btn-primary">
+                {% if analyses %}重新分析当前运行{% else %}分析当前测试运行{% endif %}
+            </button>
+            <span class="text-muted">
+                当前模型：{{ active_config.name }}（{{ active_config.model }}）
+            </span>
+        </form>
+    {% else %}
+        <div class="alert alert-warning">
+            请先在<a href="{% url 'ai_assistant:model_settings' %}" class="alert-link">AI 模型管理</a>
+            中配置并启用模型。
+        </div>
+    {% endif %}
+
+    <div id="run-analysis-progress"
+         class="panel panel-info"
+         style="display: none; margin-top: 20px">
+        <div class="panel-heading"><strong>AI 正在分析测试执行结果</strong></div>
+        <div class="panel-body">
+            <div class="progress">
+                <div id="run-analysis-progress-bar"
+                     class="progress-bar progress-bar-info progress-bar-striped active"
+                     role="progressbar"
+                     aria-valuemin="0"
+                     aria-valuemax="100"
+                     aria-valuenow="3"
+                     style="width: 3%">
+                    <span id="run-analysis-progress-percent">等待进度 3%</span>
+                </div>
+            </div>
+            <p id="run-analysis-status">正在汇总执行状态、失败用例和缺陷关联……</p>
+            <p class="text-muted">
+                已等待 <span id="run-analysis-elapsed">0</span> 秒，请勿重复点击或关闭页面。
+            </p>
+        </div>
+    </div>
+
+    <hr>
+    <h3>失败执行处理</h3>
+    <p class="text-muted">先生成本地缺陷草稿并人工补全实际结果；确认后再关联缺陷地址，不会自动提交到外部系统。</p>
+    <div class="table-responsive">
+        <table class="table table-striped table-bordered">
+            <thead><tr><th>执行</th><th>测试用例</th><th>状态</th><th>已有缺陷</th><th>操作</th></tr></thead>
+            <tbody>
+            {% for failure in current_snapshot.failure_details %}
+                <tr>
+                    <td>TE-{{ failure.execution_id }}</td>
+                    <td>{{ failure.case_number }} · {{ failure.case_summary }}</td>
+                    <td><span class="label label-danger">{{ failure.status }}</span></td>
+                    <td>{{ failure.defect_count }}</td>
+                    <td><a class="btn btn-xs btn-danger" href="{% url 'ai_assistant:execution_defect' failure.execution_id %}">缺陷草稿/关联</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5" class="text-muted">当前没有失败执行。</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <hr>
+    <h3>分析历史</h3>
+    {% for analysis in analyses %}
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <strong>{{ analysis.created }}</strong>
+                {% if analysis.model_config %}
+                    · {{ analysis.model_config.name }} / {{ analysis.model_config.model }}
+                {% endif %}
+                <span class="pull-right">
+                    风险：
+                    {% if analysis.result.risk_level == "high" %}
+                        <span class="label label-danger">高</span>
+                    {% elif analysis.result.risk_level == "low" %}
+                        <span class="label label-success">低</span>
+                    {% else %}
+                        <span class="label label-warning">中</span>
+                    {% endif %}
+                    发布建议：
+                    {% if analysis.result.release_recommendation == "go" %}
+                        <span class="label label-success">可以发布</span>
+                    {% elif analysis.result.release_recommendation == "no_go" %}
+                        <span class="label label-danger">不建议发布</span>
+                    {% else %}
+                        <span class="label label-warning">有条件发布</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="panel-body">
+                <p><strong>执行摘要：</strong>{{ analysis.result.executive_summary }}</p>
+                <p><strong>完成度评价：</strong>{{ analysis.result.completion_assessment|default:"未提供" }}</p>
+
+                <div class="row">
+                    <div class="col-sm-2"><div class="well"><strong>总执行</strong><br>{{ analysis.execution_snapshot.metrics.total }}</div></div>
+                    <div class="col-sm-2"><div class="well"><strong>已完成</strong><br>{{ analysis.execution_snapshot.metrics.completed }}</div></div>
+                    <div class="col-sm-2"><div class="well"><strong>成功</strong><br>{{ analysis.execution_snapshot.metrics.success }}</div></div>
+                    <div class="col-sm-2"><div class="well"><strong>失败</strong><br>{{ analysis.execution_snapshot.metrics.failure }}</div></div>
+                    <div class="col-sm-2"><div class="well"><strong>未执行</strong><br>{{ analysis.execution_snapshot.metrics.pending }}</div></div>
+                    <div class="col-sm-2"><div class="well"><strong>关联缺陷</strong><br>{{ analysis.execution_snapshot.metrics.defect_links }}</div></div>
+                </div>
+
+                <p>
+                    <strong>状态分布：</strong>
+                    {% for status in analysis.execution_snapshot.status_breakdown %}
+                        <span class="label label-default">{{ status.status }}：{{ status.count }}</span>
+                    {% empty %}无执行状态{% endfor %}
+                </p>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4>状态洞察</h4>
+                        <ul>{% for value in analysis.result.status_insights %}<li>{{ value }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h4>发布阻塞项</h4>
+                        <ul>{% for value in analysis.result.blocking_issues %}<li>{{ value }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                    </div>
+                </div>
+
+                <h4>失败聚类与排查建议</h4>
+                {% for cluster in analysis.result.failure_clusters %}
+                    <div class="panel panel-danger">
+                        <div class="panel-heading"><strong>{{ cluster.cluster }}</strong></div>
+                        <div class="panel-body">
+                            <p>
+                                <strong>涉及用例：</strong>
+                                {% for case_number in cluster.affected_cases %}
+                                    <span class="label label-default">{{ case_number }}</span>
+                                {% empty %}未指定{% endfor %}
+                            </p>
+                            <p><strong>直接证据：</strong>{{ cluster.evidence|default:"无" }}</p>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>待验证的可能原因：</strong>
+                                    <ul>{% for value in cluster.likely_causes %}<li>{{ value }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>建议排查动作：</strong>
+                                    <ul>{% for value in cluster.recommended_actions %}<li>{{ value }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% empty %}
+                    <p class="text-muted">没有形成失败聚类。</p>
+                {% endfor %}
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4>回归建议</h4>
+                        <ul>
+                            {% for recommendation in analysis.result.regression_recommendations %}
+                                <li>
+                                    <span class="label label-default">{{ recommendation.priority }}</span>
+                                    <strong>{{ recommendation.scope }}</strong>
+                                    {% if recommendation.reason %}：{{ recommendation.reason }}{% endif %}
+                                </li>
+                            {% empty %}<li>暂无</li>{% endfor %}
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h4>下一步行动</h4>
+                        <ol>{% for value in analysis.result.next_actions %}<li>{{ value }}</li>{% empty %}<li>暂无</li>{% endfor %}</ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <p class="text-muted">暂无运行分析记录。</p>
+    {% endfor %}
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById("run-analysis-form");
+    if (!form) { return; }
+    form.addEventListener("submit", function () {
+        var button = document.getElementById("run-analysis-button");
+        var progress = document.getElementById("run-analysis-progress");
+        var bar = document.getElementById("run-analysis-progress-bar");
+        var percentText = document.getElementById("run-analysis-progress-percent");
+        var elapsedText = document.getElementById("run-analysis-elapsed");
+        var statusText = document.getElementById("run-analysis-status");
+        var startedAt = Date.now();
+
+        button.disabled = true;
+        button.textContent = "正在分析，请稍候…";
+        progress.style.display = "block";
+        progress.scrollIntoView({behavior: "smooth", block: "center"});
+
+        window.setInterval(function () {
+            var seconds = Math.floor((Date.now() - startedAt) / 1000);
+            var percent = Math.min(90, 3 + Math.floor(seconds * 87 / 300));
+            elapsedText.textContent = seconds;
+            bar.style.width = percent + "%";
+            bar.setAttribute("aria-valuenow", percent);
+            percentText.textContent = "等待进度 " + percent + "%";
+            if (seconds >= 180) {
+                statusText.textContent = "模型仍在分析复杂执行结果，请继续等待……";
+            } else if (seconds >= 30) {
+                statusText.textContent = "模型正在归纳失败聚类、风险和回归范围……";
+            } else if (seconds >= 5) {
+                statusText.textContent = "模型正在区分执行证据与待验证原因……";
+            }
+        }, 1000);
+    });
+}());
+</script>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">我的 AI 调用记录</h1>
+    </div>
+    <p class="text-muted">
+        这里只记录调用类型、模型、状态、耗时和 Token 用量，不保存需求正文、提示词、模型回复或 API 密钥。
+    </p>
+
+    <div class="row">
+        <div class="col-sm-2"><div class="well"><strong>总调用</strong><br>{{ summary.total_calls }}</div></div>
+        <div class="col-sm-2"><div class="well"><strong>成功</strong><br>{{ summary.successful_calls }}</div></div>
+        <div class="col-sm-2"><div class="well"><strong>失败</strong><br>{{ summary.failed_calls }}</div></div>
+        <div class="col-sm-2"><div class="well"><strong>成功率</strong><br>{{ summary.success_rate }}%</div></div>
+        <div class="col-sm-2"><div class="well"><strong>总 Token</strong><br>{{ summary.total_tokens }}</div></div>
+        <div class="col-sm-2"><div class="well"><strong>平均耗时</strong><br>{{ summary.average_duration_ms }} ms</div></div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>操作</th>
+                    <th>配置 / 模型</th>
+                    <th>状态</th>
+                    <th>耗时</th>
+                    <th>输入 Token</th>
+                    <th>输出 Token</th>
+                    <th>总 Token</th>
+                    <th>错误摘要</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for log in page.object_list %}
+                <tr>
+                    <td>{{ log.created }}</td>
+                    <td>{{ log.get_operation_display }}</td>
+                    <td>{{ log.config_name }}<br><span class="text-muted">{{ log.model_name }}</span></td>
+                    <td>
+                        {% if log.status == "success" %}
+                            <span class="label label-success">成功</span>
+                        {% else %}
+                            <span class="label label-danger">失败</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ log.duration_ms }} ms</td>
+                    <td>{{ log.prompt_tokens|default_if_none:"-" }}</td>
+                    <td>{{ log.completion_tokens|default_if_none:"-" }}</td>
+                    <td>{{ log.total_tokens|default_if_none:"-" }}</td>
+                    <td>{{ log.error_message|default:"-" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="9">暂无 AI 调用记录。</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page.paginator.num_pages > 1 %}
+        <nav aria-label="AI 调用记录分页">
+            <ul class="pager">
+                <li class="previous{% if not page.has_previous %} disabled{% endif %}">
+                    {% if page.has_previous %}
+                        <a href="?page={{ page.previous_page_number }}">上一页</a>
+                    {% else %}<span>上一页</span>{% endif %}
+                </li>
+                <li>第 {{ page.number }} / {{ page.paginator.num_pages }} 页</li>
+                <li class="next{% if not page.has_next %} disabled{% endif %}">
+                    {% if page.has_next %}
+                        <a href="?page={{ page.next_page_number }}">下一页</a>
+                    {% else %}<span>下一页</span>{% endif %}
+                </li>
+            </ul>
+        </nav>
+    {% endif %}
+</div>
+{% endblock %}

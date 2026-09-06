@@ -1,0 +1,158 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">AI 测试用例评审</h1>
+        <a class="btn btn-default pull-right"
+           style="margin-top: 20px"
+           href="{% url 'ai_assistant:index' %}">返回 AI 测试助手</a>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <strong>TC-{{ test_case.pk }} · {{ test_case.summary }}</strong>
+            <a class="pull-right"
+               href="{% url 'testcases-get' test_case.pk %}">查看正式用例</a>
+        </div>
+        <div class="panel-body">
+            <p><strong>需求：</strong>{{ test_case.requirement|default:"未填写" }}</p>
+            <p><strong>分类：</strong>{{ test_case.category }}</p>
+            <p><strong>优先级：</strong>{{ test_case.priority }}</p>
+            <hr>
+            {{ test_case.text|default:"未填写"|linebreaks }}
+        </div>
+    </div>
+
+    {% if active_config %}
+        <div class="alert alert-info">
+            当前模型：<strong>{{ active_config.name }}</strong>（{{ active_config.model }}）
+        </div>
+        <form method="post" id="review-form">
+            {% csrf_token %}
+            <button type="submit" id="review-button" class="btn btn-primary">
+                开始 AI 评审
+            </button>
+        </form>
+    {% else %}
+        <div class="alert alert-warning">
+            当前账号尚未配置并启用 AI 模型。
+            <a class="alert-link" href="{% url 'ai_assistant:model_settings' %}">现在去配置</a>
+        </div>
+    {% endif %}
+
+    <div id="review-progress" class="panel panel-info"
+         style="display: none; margin-top: 20px">
+        <div class="panel-heading"><strong>AI 正在评审测试用例</strong></div>
+        <div class="panel-body">
+            <div class="progress">
+                <div id="review-progress-bar"
+                     class="progress-bar progress-bar-info progress-bar-striped active"
+                     role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                     aria-valuenow="3" style="width: 3%">
+                    <span id="review-progress-percent">等待进度 3%</span>
+                </div>
+            </div>
+            <p id="review-status">正在提交用例，请勿重复点击或关闭页面……</p>
+            <p class="text-muted">
+                已等待 <span id="review-elapsed">0</span> 秒，最长可能需要约 5 分钟。
+            </p>
+        </div>
+    </div>
+
+    <hr>
+    <h3>我的评审记录</h3>
+    {% for review in reviews %}
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <strong>质量评分：{{ review.score }}/100</strong>
+                <span class="pull-right">{{ review.created }}</span>
+            </div>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h4>优点</h4>
+                        <ul>{% for item in review.strengths %}<li>{{ item }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h4>发现的问题</h4>
+                        <ul>
+                        {% for issue in review.issues %}
+                            <li><strong>[{{ issue.severity }}] {{ issue.title }}</strong>{% if issue.detail %}：{{ issue.detail }}{% endif %}</li>
+                        {% empty %}<li>未发现明显问题</li>{% endfor %}
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h4>缺失场景</h4>
+                        <ul>{% for item in review.missing_scenarios %}<li>{{ item }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                    </div>
+                </div>
+                <hr>
+                <h4>建议优化版本</h4>
+                <p><strong>标题：</strong>{{ review.optimized_summary }}</p>
+                <p><strong>前置条件：</strong></p>
+                <ul>{% for item in review.optimized_preconditions %}<li>{{ item }}</li>{% empty %}<li>无</li>{% endfor %}</ul>
+                <p><strong>步骤与预期：</strong></p>
+                <ol>
+                {% for step in review.optimized_steps %}
+                    <li>{{ step.action }}{% if step.expected %}<br><strong>预期：</strong>{{ step.expected }}{% endif %}</li>
+                {% endfor %}
+                </ol>
+
+                {% if review.is_applied %}
+                    <span class="label label-success">已应用到正式用例</span>
+                    <span class="text-muted">{{ review.applied_at }} · {{ review.applied_by }}</span>
+                {% elif perms.testcases.change_testcase %}
+                    <form method="post"
+                          action="{% url 'ai_assistant:apply_review' review.pk %}"
+                          onsubmit="return confirm('确认用此优化版本更新正式测试用例吗？原内容已保存在评审记录中。');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">
+                            确认并应用优化
+                        </button>
+                    </form>
+                {% else %}
+                    <div class="alert alert-warning">当前账号没有修改正式测试用例的权限。</div>
+                {% endif %}
+            </div>
+        </div>
+    {% empty %}
+        <p class="text-muted">还没有评审记录。点击“开始 AI 评审”后，结果会保存在这里。</p>
+    {% endfor %}
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById("review-form");
+    if (!form) { return; }
+    form.addEventListener("submit", function () {
+        var progress = document.getElementById("review-progress");
+        var button = document.getElementById("review-button");
+        var bar = document.getElementById("review-progress-bar");
+        var percentText = document.getElementById("review-progress-percent");
+        var elapsedText = document.getElementById("review-elapsed");
+        var statusText = document.getElementById("review-status");
+        var startedAt = Date.now();
+
+        button.disabled = true;
+        button.textContent = "正在评审，请稍候…";
+        progress.style.display = "block";
+        progress.scrollIntoView({behavior: "smooth", block: "center"});
+
+        window.setInterval(function () {
+            var seconds = Math.floor((Date.now() - startedAt) / 1000);
+            var percent = Math.min(90, 3 + Math.floor(seconds * 87 / 300));
+            elapsedText.textContent = seconds;
+            bar.style.width = percent + "%";
+            bar.setAttribute("aria-valuenow", percent);
+            percentText.textContent = "等待进度 " + percent + "%";
+            if (seconds >= 60) {
+                statusText.textContent = "模型仍在检查边界、异常和权限场景，请继续等待……";
+            } else if (seconds >= 5) {
+                statusText.textContent = "模型正在分析用例完整性并组织优化建议……";
+            }
+        }, 1000);
+    });
+}());
+</script>
+{% endblock %}

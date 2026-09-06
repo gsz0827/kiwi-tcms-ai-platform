@@ -1,0 +1,295 @@
+{% load extra_filters %}
+<section class="kiwi-resource-browser" data-resource-browser="{{ browser.kind }}">
+    <div class="kiwi-resource-browser-header">
+        <span class="fa {{ browser.icon }}"></span>{{ browser.title }}
+        <span class="kiwi-resource-browser-count">{{ browser.total }} 条</span>
+    </div>
+    {% if browser.can_manage %}
+    <button type="button"
+            class="btn btn-default btn-xs kiwi-resource-manage-button"
+            data-toggle="modal"
+            data-target="#kiwi-folder-manager-{{ browser.kind }}">
+        <span class="fa fa-folder-open"></span>管理共享目录
+    </button>
+    {% endif %}
+    <label class="sr-only" for="kiwi-resource-filter-{{ browser.kind }}">筛选{{ browser.title }}</label>
+    <input id="kiwi-resource-filter-{{ browser.kind }}"
+           class="form-control kiwi-resource-filter"
+           type="search"
+           placeholder="输入编号或名称筛选"
+           autocomplete="off">
+
+    <ul class="kiwi-resource-groups">
+        {% for folder in browser.folder_nodes %}
+        <li class="kiwi-resource-group">
+            <a class="kiwi-resource-folder"
+               href="#kiwi-resource-folder-{{ browser.kind }}-{{ folder.pk }}"
+               data-toggle="collapse"
+               aria-expanded="true"
+               style="padding-left: {{ folder.resource_indent|add:5 }}px">
+                <span class="fa fa-folder-open-o"></span>{{ folder.name }}
+                <span class="kiwi-resource-folder-project">{{ folder.product.name }}</span>
+                <span class="badge">{{ folder.resource_items|length }}</span>
+                <span class="fa fa-angle-down kiwi-tree-caret"></span>
+            </a>
+            <ul id="kiwi-resource-folder-{{ browser.kind }}-{{ folder.pk }}"
+                class="kiwi-resource-items collapse in"
+                style="margin-left: {{ folder.resource_indent|add:13 }}px">
+                {% for item in folder.resource_items %}
+                    {% include 'include/platform_resource_item.html' with item=item browser=browser %}
+                {% empty %}
+                    <li class="kiwi-resource-browser-empty">空目录</li>
+                {% endfor %}
+            </ul>
+        </li>
+        {% endfor %}
+
+        {% regroup browser.unfiled_items by resource_group as unfiled_groups %}
+        {% for group in unfiled_groups %}
+        <li class="kiwi-resource-group kiwi-resource-unfiled-group">
+            <a class="kiwi-resource-folder"
+               href="#kiwi-resource-unfiled-{{ browser.kind }}-{{ forloop.counter }}"
+               data-toggle="collapse"
+               aria-expanded="true">
+                <span class="fa fa-inbox"></span>未归档
+                <span class="kiwi-resource-folder-project">{{ group.grouper }}</span>
+                <span class="badge">{{ group.list|length }}</span>
+                <span class="fa fa-angle-down kiwi-tree-caret"></span>
+            </a>
+            <ul id="kiwi-resource-unfiled-{{ browser.kind }}-{{ forloop.counter }}"
+                class="kiwi-resource-items collapse in">
+                {% for item in group.list %}
+                    {% include 'include/platform_resource_item.html' with item=item browser=browser %}
+                {% endfor %}
+            </ul>
+        </li>
+        {% empty %}
+            {% if not browser.folder_nodes %}
+                <li class="kiwi-resource-browser-empty">暂时没有可查看的记录</li>
+            {% endif %}
+        {% endfor %}
+    </ul>
+    <p class="kiwi-resource-browser-empty kiwi-resource-no-match" hidden>没有匹配的记录</p>
+    {% if browser.has_more %}
+        <p class="kiwi-resource-browser-more">当前显示最近 20 条，可使用页面筛选查看更多。</p>
+    {% endif %}
+</section>
+
+{% if browser.can_manage %}
+<div class="modal fade kiwi-resource-modal"
+     id="kiwi-folder-manager-{{ browser.kind }}"
+     tabindex="-1" role="dialog"
+     aria-labelledby="kiwi-folder-manager-title-{{ browser.kind }}">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="关闭">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <h4 class="modal-title" id="kiwi-folder-manager-title-{{ browser.kind }}">管理{{ browser.title }}</h4>
+            </div>
+            <div class="modal-body">
+                <h4>新建共享目录</h4>
+                <form class="form-inline kiwi-folder-create-form"
+                      method="post"
+                      action="{% url 'ai_assistant:create_resource_folder' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="resource_type" value="{{ browser.kind }}">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <div class="form-group">
+                        <label class="sr-only" for="folder-product-{{ browser.kind }}">所属项目</label>
+                        <select id="folder-product-{{ browser.kind }}" class="form-control kiwi-folder-product" name="product" required>
+                            <option value="">选择项目</option>
+                            {% for product in browser.products %}<option value="{{ product.pk }}">{{ product.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="sr-only" for="folder-parent-{{ browser.kind }}">上级目录</label>
+                        <select id="folder-parent-{{ browser.kind }}" class="form-control kiwi-folder-parent" name="parent">
+                            <option value="">作为根目录</option>
+                            {% for folder in browser.folder_nodes %}
+                            <option value="{{ folder.pk }}" data-product="{{ folder.product_id }}">
+                                {{ folder.option_prefix }}{{ folder.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="sr-only" for="folder-name-{{ browser.kind }}">目录名称</label>
+                        <input id="folder-name-{{ browser.kind }}" class="form-control" type="text" name="name" maxlength="120" placeholder="目录名称" required>
+                    </div>
+                    <button class="btn btn-primary" type="submit">新建目录</button>
+                </form>
+
+                <hr>
+                <h4>现有共享目录</h4>
+                <div class="table-responsive">
+                    <table class="table table-striped table-condensed kiwi-folder-management-table">
+                        <thead><tr><th>项目</th><th>目录名称</th><th>创建人</th><th>操作</th></tr></thead>
+                        <tbody>
+                        {% for folder in browser.folder_nodes %}
+                            <tr>
+                                <td>{{ folder.product.name }}</td>
+                                <td style="padding-left: {{ folder.resource_indent|add:8 }}px">{{ folder.option_prefix }}{{ folder.name }}</td>
+                                <td>{{ folder.created_by.username|default:"-" }}</td>
+                                <td class="text-nowrap">
+                                    <form class="form-inline kiwi-folder-inline-form"
+                                          method="post"
+                                          action="{% url 'ai_assistant:rename_resource_folder' folder.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <input class="form-control input-sm" type="text" name="name" maxlength="120" value="{{ folder.name }}" required>
+                                        <button class="btn btn-default btn-sm" type="submit">重命名</button>
+                                    </form>
+                                    <form class="kiwi-folder-inline-form"
+                                          method="post"
+                                          action="{% url 'ai_assistant:delete_resource_folder' folder.pk %}"
+                                          onsubmit="return confirm('删除该目录及其子目录？资源会回到未归档，不会被删除。')">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button class="btn btn-danger btn-sm" type="submit">删除</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="text-muted">当前项目还没有自定义目录。</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="kiwi-resource-modals">
+{% for item in browser.items %}
+    <div class="modal fade kiwi-resource-modal"
+         id="kiwi-resource-modal-{{ browser.kind }}-{{ item.pk }}"
+         tabindex="-1" role="dialog"
+         aria-labelledby="kiwi-resource-modal-title-{{ browser.kind }}-{{ item.pk }}">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="关闭">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                    <h4 class="modal-title" id="kiwi-resource-modal-title-{{ browser.kind }}-{{ item.pk }}">
+                        {% if browser.kind == 'requirement' %}R-{{ item.pk }} {{ item.title }}{% endif %}
+                        {% if browser.kind == 'case' %}TC-{{ item.pk }} {{ item.summary }}{% endif %}
+                        {% if browser.kind == 'plan' %}TP-{{ item.pk }} {{ item.name }}{% endif %}
+                    </h4>
+                </div>
+                <div class="modal-body">
+                    {% if browser.kind == 'requirement' %}
+                    <div class="kiwi-resource-detail-grid">
+                        <div><span class="kiwi-resource-detail-label">需求版本</span>V{{ item.version }}</div>
+                        <div><span class="kiwi-resource-detail-label">创建时间</span>{{ item.created|date:"Y-m-d H:i" }}</div>
+                        <div><span class="kiwi-resource-detail-label">产品与分类</span>{{ item.resource_group }}</div>
+                        <div><span class="kiwi-resource-detail-label">分析状态</span>{% if item.analysis %}已完成{% else %}待分析{% endif %}{% if item.needs_case_review %} · 用例待更新{% endif %}</div>
+                    </div>
+                    <h4>需求描述</h4>
+                    <div class="kiwi-resource-detail-text">{{ item.requirement|linebreaksbr }}</div>
+                    {% if item.analysis %}
+                    <h4>AI 分析摘要</h4>
+                    <div class="kiwi-resource-detail-text">
+                        <p>{{ item.analysis.summary|default:"暂无摘要" }}</p>
+                        <p><strong>风险等级：</strong>{{ item.analysis.risk_level|default:"未标注" }}</p>
+                        {% if item.analysis.functional_points %}
+                        <strong>功能点：</strong>
+                        <ul>{% for value in item.analysis.functional_points %}<li>{{ value }}</li>{% endfor %}</ul>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endif %}
+
+                    {% if browser.kind == 'case' %}
+                    <div class="kiwi-resource-detail-grid">
+                        <div><span class="kiwi-resource-detail-label">状态</span>{{ item.case_status }}</div>
+                        <div><span class="kiwi-resource-detail-label">优先级</span>{{ item.priority }}</div>
+                        <div><span class="kiwi-resource-detail-label">产品与分类</span>{{ item.resource_group }}</div>
+                        <div><span class="kiwi-resource-detail-label">创建人</span>{{ item.author.username }}</div>
+                        <div><span class="kiwi-resource-detail-label">默认测试人</span>{{ item.default_tester.username|default:"未指定" }}</div>
+                        <div><span class="kiwi-resource-detail-label">自动化</span>{% if item.is_automated %}是{% else %}否{% endif %}</div>
+                    </div>
+                    {% if item.requirement %}<p><strong>关联需求：</strong>{{ item.requirement }}</p>{% endif %}
+                    <h4>测试步骤与预期结果</h4>
+                    <div class="kiwi-resource-detail-text markdown-text">{{ item.text|markdown2html }}</div>
+                    {% if item.notes %}
+                    <h4>备注</h4>
+                    <div class="kiwi-resource-detail-text markdown-text">{{ item.notes|markdown2html }}</div>
+                    {% endif %}
+                    {% endif %}
+
+                    {% if browser.kind == 'plan' %}
+                    <div class="kiwi-resource-detail-grid">
+                        <div><span class="kiwi-resource-detail-label">产品</span>{{ item.product }}</div>
+                        <div><span class="kiwi-resource-detail-label">版本</span>{{ item.product_version.value }}</div>
+                        <div><span class="kiwi-resource-detail-label">计划类型</span>{{ item.type }}</div>
+                        <div><span class="kiwi-resource-detail-label">负责人</span>{{ item.author.username }}</div>
+                        <div><span class="kiwi-resource-detail-label">状态</span>{% if item.is_active %}启用{% else %}停用{% endif %}</div>
+                        <div><span class="kiwi-resource-detail-label">测试用例</span>{{ item.cases.all|length }} 条</div>
+                    </div>
+                    <h4>计划说明</h4>
+                    <div class="kiwi-resource-detail-text markdown-text">{{ item.text|markdown2html }}</div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
+                    {% if browser.kind == 'requirement' %}
+                        <a class="btn btn-primary" href="{% url 'ai_assistant:requirement_trace' item.pk %}">进入完整追踪页面</a>
+                    {% elif browser.kind == 'case' %}
+                        <a class="btn btn-primary" href="{{ item.get_absolute_url }}">进入完整用例页面</a>
+                    {% else %}
+                        <a class="btn btn-primary" href="{{ item.get_absolute_url }}">进入完整计划页面</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    var browser = document.querySelector('[data-resource-browser="{{ browser.kind }}"]');
+    if (!browser) return;
+
+    document.querySelectorAll(".kiwi-resource-modal").forEach(function (modal) {
+        document.body.appendChild(modal);
+    });
+
+    var filter = browser.querySelector(".kiwi-resource-filter");
+    var noMatch = browser.querySelector(".kiwi-resource-no-match");
+    filter.addEventListener("input", function () {
+        var term = filter.value.trim().toLocaleLowerCase();
+        var visibleCount = 0;
+        browser.querySelectorAll(".kiwi-resource-item").forEach(function (item) {
+            var visible = !term || item.textContent.toLocaleLowerCase().indexOf(term) !== -1;
+            item.hidden = !visible;
+            if (visible) visibleCount += 1;
+        });
+        noMatch.hidden = visibleCount !== 0;
+    });
+
+    var productSelect = document.getElementById("folder-product-{{ browser.kind }}");
+    var parentSelect = document.getElementById("folder-parent-{{ browser.kind }}");
+    if (productSelect && parentSelect) {
+        var filterParents = function () {
+            var productId = productSelect.value;
+            Array.prototype.forEach.call(parentSelect.options, function (option) {
+                option.hidden = Boolean(option.value) && option.dataset.product !== productId;
+            });
+            if (parentSelect.selectedOptions.length && parentSelect.selectedOptions[0].hidden) {
+                parentSelect.value = "";
+            }
+        };
+        productSelect.addEventListener("change", filterParents);
+        filterParents();
+    }
+});
+</script>

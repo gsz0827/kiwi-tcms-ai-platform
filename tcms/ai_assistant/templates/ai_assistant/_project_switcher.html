@@ -1,0 +1,36 @@
+{% if show_switcher %}
+<li class="dropdown">
+    <a href="#" class="dropdown-toggle" data-toggle="dropdown" id="ai-project-menu">
+        <span class="fa fa-cubes" title="当前项目与版本"></span>
+        {% if selected_product %}{{ selected_product.name }}{% else %}全部项目{% endif %}
+        {% if selected_version %} / {{ selected_version.value }}{% endif %}
+        <b class="caret"></b>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="ai-project-menu" style="width:320px;padding:15px">
+        <li>
+            <form method="post" action="{% url 'ai_assistant:set_project_context' %}">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="ai-project-product">项目（产品）</label>
+                    <select id="ai-project-product" name="product" class="form-control">
+                        <option value="">全部项目</option>
+                        {% for product in products %}
+                            <option value="{{ product.pk }}" {% if selected_product.pk == product.pk %}selected{% endif %}>{{ product.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ai-project-version">版本</label>
+                    <select id="ai-project-version" name="version" class="form-control">
+                        <option value="">全部版本</option>
+                        {% for version in versions %}
+                            <option value="{{ version.pk }}" data-product="{{ version.product_id }}" {% if selected_version.pk == version.pk %}selected{% endif %}>{{ version.product.name }} / {{ version.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-primary btn-block" type="submit">切换项目视图</button>
+            </form>
+        </li>
+    </ul>
+</li>
+{% endif %}

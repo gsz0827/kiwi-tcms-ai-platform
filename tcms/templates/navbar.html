@@ -1,6 +1,7 @@
 {% load i18n %}
 {% load static %}
 {% load tz %}
+{% load ai_navigation %}
 
     <!-- PatternFly Horizontal Nav -->
     <nav class="navbar navbar-default navbar-pf" role="navigation" id="navbar" data-defaultpagesize="{{ SETTINGS.DEFAULT_PAGE_SIZE }}">
@@ -22,10 +23,11 @@
 
         <div class="collapse navbar-collapse">
             <ul class="nav navbar-nav navbar-utility">
-                {% include "include/menu_items.html" with menu_items=SETTINGS.MENU_ITEMS %}
                 {% if OBJECT_MENU_ITEMS %}
                     {% include "include/menu_items.html" with menu_items=OBJECT_MENU_ITEMS %}
                 {% endif %}
+
+                {% ai_project_switcher %}
 
                 <li>
                     <a>
@@ -90,8 +92,22 @@
 
                         <li class="divider"></li>
 
+                        <li class="dropdown-header">账户与偏好</li>
+
                         <li>
                             <a href="{% url "tcms-profile" user.pk %}" target="_parent">{% trans "My profile" %}</a>
+                        </li>
+
+                        <li>
+                            <a href="{% url 'ai_assistant:model_settings' %}" target="_parent">
+                                <span class="fa fa-cog"></span> AI 模型管理
+                            </a>
+                        </li>
+
+                        <li>
+                            <a href="{% url 'ai_assistant:usage_logs' %}" target="_parent">
+                                <span class="fa fa-list-alt"></span> AI 调用记录
+                            </a>
                         </li>
 
                         <li>

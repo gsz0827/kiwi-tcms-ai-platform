@@ -1,6 +1,7 @@
 {% load i18n %}
 {% load static %}
 {% load extra_filters %}
+{% load ai_navigation %}
 
 {% get_current_language as LANGUAGE_CODE %}
 <!DOCTYPE html>
@@ -29,6 +30,7 @@
     {% endif %}
 
     {% include 'patternfly.html' %}
+    {% include 'include/platform_navigation_styles.html' %}
     {% block head %}{% endblock %}
 </head>
 <body id="{% block page_id %}{% endblock %}" class="{% block body_class %}{% endblock %}">
@@ -45,6 +47,27 @@
             <strong>{{ message|safe }}!</strong>
         </div>
     {% endfor %}
+
+    <div class="{% if not REQUEST__NONAV and user.is_authenticated %}kiwi-platform-layout{% endif %}">
+        {% if not REQUEST__NONAV and user.is_authenticated %}
+            {% include 'include/platform_navigation.html' %}
+        {% endif %}
+        <main class="{% if not REQUEST__NONAV and user.is_authenticated %}kiwi-platform-main{% endif %}">
+            {% platform_resource_browser as resource_browser %}
+            {% if resource_browser %}
+                <div class="kiwi-resource-workspace">
+                    <aside class="kiwi-resource-pane" aria-label="{{ resource_browser.title }}">
+                        {% include 'include/platform_resource_browser.html' with browser=resource_browser %}
+                    </aside>
+                    <section class="kiwi-resource-content">
+            {% endif %}
+                        {% block contents %}{% endblock %}
+            {% if resource_browser %}
+                    </section>
+                </div>
+            {% endif %}
+        </main>
+    </div>
 
     <script src="{% static 'bootstrap-select/dist/js/bootstrap-select.min.js' %}"></script>
     <script src="{% static 'bootstrap-switch/dist/js/bootstrap-switch.min.js' %}"></script>
@@ -64,7 +87,6 @@
 
     <script src="{% static 'js/bundle.js' %}"></script>
 
-    {% block contents %}{% endblock %}
     {% include 'include/ads.html' %}
 
     {% if SETTINGS.ANONYMOUS_ANALYTICS %}

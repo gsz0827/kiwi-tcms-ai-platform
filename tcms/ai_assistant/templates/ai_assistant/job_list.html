@@ -1,0 +1,29 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">AI 后台任务</h1>
+    </div>
+    <p class="text-muted">仅显示当前账号提交的任务。任务由独立 Worker 执行，关闭或刷新网页不会中断。</p>
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead><tr><th>提交时间</th><th>任务类型</th><th>模型</th><th>状态</th><th>进度</th><th>尝试</th><th>操作</th></tr></thead>
+            <tbody>
+            {% for job in page %}
+                <tr>
+                    <td>{{ job.created }}</td>
+                    <td>{{ job.get_operation_display }}</td>
+                    <td>{% if job.model_config %}{{ job.model_config.name }} / {{ job.model_config.model }}{% else %}配置已删除{% endif %}</td>
+                    <td>{% if job.status == 'completed' %}<span class="label label-success">已完成</span>{% elif job.status == 'failed' %}<span class="label label-danger">失败</span>{% elif job.status == 'cancelled' %}<span class="label label-default">已取消</span>{% elif job.status == 'queued' %}<span class="label label-info">排队中</span>{% else %}<span class="label label-warning">{{ job.get_status_display }}</span>{% endif %}</td>
+                    <td>{{ job.progress }}% · {{ job.stage }}</td>
+                    <td>{{ job.attempts }}</td>
+                    <td><a class="btn btn-xs btn-primary" href="{% url 'ai_assistant:job_detail' job.pk %}">查看</a></td>
+                </tr>
+            {% empty %}<tr><td colspan="7" class="text-muted">当前账号还没有后台任务。</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page.has_other_pages %}<nav><ul class="pagination">{% if page.has_previous %}<li><a href="?page={{ page.previous_page_number }}">上一页</a></li>{% endif %}<li class="active"><span>{{ page.number }} / {{ page.paginator.num_pages }}</span></li>{% if page.has_next %}<li><a href="?page={{ page.next_page_number }}">下一页</a></li>{% endif %}</ul></nav>{% endif %}
+</div>
+{% endblock %}

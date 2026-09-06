@@ -22,6 +22,7 @@ from tcms.testruns import urls as testruns_urls
 
 urlpatterns = [
     re_path(r"^$", core_views.DashboardView.as_view(), name="core-views-index"),
+    re_path(r"^ai/", include("tcms.ai_assistant.urls")),
     re_path(r"^captcha/", include(captcha_urls)),
     re_path(r"^xml-rpc/", xml_rpc_server.view),
     re_path(r"^json-rpc/$", json_rpc_server.view),

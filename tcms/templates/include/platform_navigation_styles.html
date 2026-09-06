@@ -1,0 +1,295 @@
+<style>
+    .kiwi-platform-layout {
+        display: flex;
+        min-height: calc(100vh - 60px);
+        background: #fff;
+    }
+    .kiwi-platform-sidebar {
+        flex: 0 0 232px;
+        width: 232px;
+        padding: 18px 12px 24px;
+        border-right: 1px solid #d1d1d1;
+        background: #f5f5f5;
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+        height: calc(100vh - 60px);
+        overflow-y: auto;
+    }
+    .kiwi-platform-main {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .kiwi-platform-sidebar-title {
+        margin: 0 7px 14px;
+        color: #363636;
+        font-size: 17px;
+        font-weight: 600;
+    }
+    .kiwi-platform-sidebar .nav > li > a,
+    .kiwi-tree-toggle {
+        display: block;
+        margin-bottom: 4px;
+        padding: 10px 11px;
+        color: #363636;
+        border-radius: 3px;
+        text-decoration: none;
+    }
+    .kiwi-platform-sidebar .nav > li > a:hover,
+    .kiwi-platform-sidebar .nav > li > a:focus,
+    .kiwi-tree-toggle:hover,
+    .kiwi-tree-toggle:focus {
+        color: #00659c;
+        background: #e7e7e7;
+        text-decoration: none;
+    }
+    .kiwi-tree-toggle.is-current {
+        color: #00659c;
+        font-weight: 600;
+        background: #e3f1f8;
+    }
+    .kiwi-platform-sidebar .fa {
+        width: 18px;
+        margin-right: 7px;
+        text-align: center;
+    }
+    .kiwi-tree-caret {
+        float: right;
+        width: auto !important;
+        margin: 3px 0 0 !important;
+        transition: transform .18s ease;
+    }
+    .kiwi-tree-toggle[aria-expanded="true"] .kiwi-tree-caret {
+        transform: rotate(180deg);
+    }
+    .kiwi-tree-children {
+        margin: 2px 0 8px 17px;
+        padding-left: 9px;
+        border-left: 1px solid #b8c0c5;
+    }
+    .kiwi-platform-sidebar .kiwi-tree-children > li > a {
+        padding: 8px 9px;
+        font-size: 13px;
+    }
+    .kiwi-platform-sidebar .nav > li.active > a,
+    .kiwi-platform-sidebar .nav > li.active > a:hover,
+    .kiwi-platform-sidebar .nav > li.active > a:focus {
+        color: #fff;
+        background: #0088ce;
+    }
+    .kiwi-tree-root {
+        margin-bottom: 5px;
+    }
+    .kiwi-resource-workspace {
+        display: flex;
+        min-height: calc(100vh - 60px);
+    }
+    .kiwi-resource-pane {
+        flex: 0 0 310px;
+        width: 310px;
+        padding: 16px 12px 24px;
+        border-right: 1px solid #d1d1d1;
+        background: #fafafa;
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+        height: calc(100vh - 60px);
+        overflow-y: auto;
+    }
+    .kiwi-resource-content {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .kiwi-resource-browser {
+        margin: 0;
+        padding: 0;
+    }
+    .kiwi-resource-browser-header {
+        margin: 0 2px 12px;
+        color: #363636;
+        font-size: 16px;
+        font-weight: 600;
+    }
+    .kiwi-resource-manage-button {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    .kiwi-resource-browser-count {
+        float: right;
+        color: #72767b;
+        font-size: 11px;
+        font-weight: normal;
+    }
+    .kiwi-resource-filter {
+        height: 30px;
+        margin-bottom: 12px;
+        font-size: 12px;
+    }
+    .kiwi-resource-browser .fa {
+        width: 16px;
+        margin-right: 5px;
+        text-align: center;
+    }
+    .kiwi-resource-groups,
+    .kiwi-resource-items {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .kiwi-resource-group + .kiwi-resource-group {
+        margin-top: 4px;
+    }
+    .kiwi-resource-folder {
+        display: block;
+        padding: 6px 5px;
+        color: #444;
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .kiwi-resource-folder:hover,
+    .kiwi-resource-folder:focus {
+        color: #00659c;
+        background: #f0f3f4;
+        text-decoration: none;
+    }
+    .kiwi-resource-folder .fa-folder-open-o {
+        color: #f0ad4e;
+    }
+    .kiwi-resource-folder .kiwi-tree-caret {
+        margin-top: 1px !important;
+    }
+    .kiwi-resource-folder-project {
+        display: block;
+        margin: 2px 38px 0 23px;
+        color: #72767b;
+        font-size: 10px;
+        font-weight: normal;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .kiwi-resource-folder .badge {
+        float: right;
+        margin: -17px 17px 0 4px;
+        font-size: 10px;
+        font-weight: normal;
+    }
+    .kiwi-resource-items {
+        margin-left: 13px;
+        padding-left: 8px;
+        border-left: 1px dotted #a8adb2;
+    }
+    .kiwi-resource-item-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .kiwi-resource-item-link {
+        display: block;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 6px 5px;
+        color: #4d5258;
+        font-size: 12px;
+        line-height: 1.35;
+        text-decoration: none;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .kiwi-resource-item-link:hover,
+    .kiwi-resource-item-link:focus {
+        color: #00659c;
+        background: #edf5f9;
+    }
+    .kiwi-resource-items .fa {
+        width: 14px;
+        margin-right: 4px;
+        color: #72767b;
+    }
+    .kiwi-resource-move-form {
+        flex: 0 0 82px;
+        margin: 0;
+    }
+    .kiwi-resource-move-select {
+        width: 82px;
+        height: 25px;
+        padding: 2px 3px;
+        border: 1px solid #bbb;
+        border-radius: 3px;
+        background: #fff;
+        color: #555;
+        font-size: 10px;
+    }
+    .kiwi-resource-browser-empty,
+    .kiwi-resource-browser-more {
+        margin: 7px 4px 2px;
+        color: #72767b;
+        font-size: 11px;
+    }
+    .kiwi-resource-modal .modal-body {
+        max-height: 68vh;
+        overflow-y: auto;
+    }
+    .kiwi-resource-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 18px;
+        margin-bottom: 16px;
+    }
+    .kiwi-resource-detail-grid > div {
+        padding-bottom: 7px;
+        border-bottom: 1px solid #eee;
+    }
+    .kiwi-resource-detail-label {
+        display: block;
+        margin-bottom: 2px;
+        color: #72767b;
+        font-size: 12px;
+    }
+    .kiwi-resource-detail-text {
+        padding: 10px 12px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        background: #fafafa;
+    }
+    .kiwi-folder-create-form .form-group {
+        margin: 0 6px 8px 0;
+    }
+    .kiwi-folder-inline-form {
+        display: inline-block;
+        margin: 0 4px 3px 0;
+        vertical-align: middle;
+    }
+    .kiwi-folder-inline-form .form-control {
+        width: 150px;
+    }
+    .kiwi-folder-management-table td {
+        vertical-align: middle !important;
+    }
+    @media (max-width: 767px) {
+        .kiwi-platform-layout { display: block; }
+        .kiwi-platform-sidebar {
+            width: auto;
+            height: auto;
+            padding: 10px 15px;
+            border-right: 0;
+            border-bottom: 1px solid #d1d1d1;
+            position: static;
+            overflow: visible;
+        }
+        .kiwi-platform-sidebar-title { margin-bottom: 8px; }
+        .kiwi-resource-workspace { display: block; }
+        .kiwi-resource-pane {
+            width: auto;
+            height: auto;
+            padding: 12px 15px;
+            border-right: 0;
+            border-bottom: 1px solid #d1d1d1;
+            position: static;
+            overflow: visible;
+        }
+        .kiwi-resource-detail-grid { grid-template-columns: 1fr; }
+    }
+</style>
