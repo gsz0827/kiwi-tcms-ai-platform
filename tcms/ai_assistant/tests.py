@@ -477,6 +477,37 @@ class PersonalAIModelConfigTests(TestCase):
         self.assertNotContains(listing, "private-model")
         self.assertEqual(editing.status_code, 404)
 
+    def test_model_form_labels_and_hints_are_unified(self):
+        """字段标签、必填提示与编辑时的留空提示必须用同一套术语。"""
+        create_form = AIModelConfigForm(owner=self.user_one)
+        self.assertEqual(
+            list(create_form.fields),
+            ["name", "api_base", "api_key", "model", "timeout", "is_active"],
+        )
+        self.assertEqual(create_form.fields["api_base"].label, "服务地址（Base URL）")
+        self.assertEqual(create_form.fields["model"].label, "模型 ID")
+        self.assertEqual(create_form.fields["timeout"].label, "请求超时（秒）")
+        self.assertEqual(create_form.fields["api_key"].label, "API Key")
+        self.assertTrue(create_form.fields["api_key"].required)
+
+        blank_key_form = AIModelConfigForm(
+            data={
+                "name": "blank-key",
+                "api_base": "https://api.example.test/v1",
+                "model": "example-model",
+                "timeout": 300,
+                "api_key": "",
+            },
+            owner=self.user_one,
+        )
+        self.assertFalse(blank_key_form.is_valid())
+        self.assertIn("必须填写 API Key", blank_key_form.errors["api_key"][0])
+
+        config = self._config(self.user_one, "hinted", "some-key")
+        edit_form = AIModelConfigForm(instance=config, owner=self.user_one)
+        self.assertFalse(edit_form.fields["api_key"].required)
+        self.assertEqual(edit_form.fields["api_key"].help_text, "留空保留现有密钥。")
+
     @patch("tcms.ai_assistant.services._request_config_content")
     def test_connection_test_uses_selected_config(self, request_content):
         config = self._config(self.user_one, "connection-model", "connection-key")

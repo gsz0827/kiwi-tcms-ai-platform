@@ -114,6 +114,25 @@ make ai-test-rpc
 - `tcms/settings/common.py` 约定 MENU_ITEMS 的最后一项固定是留给插件扩展的 MORE，判断插件分组依赖这个位置；
 - 侧边栏新增入口时，若该入口对应上游 MENU_ITEMS 里的链接，要把它的 URL 名补进 `ai_navigation.SIDEBAR_MENU_URLS`，否则同一个页面会在「更多功能」里再出现一次。
 
+## 界面文案与术语约定
+
+AI 模型配置页的名字同时出现在侧边栏、页面标题、表格表头和多处拦截提示里，这些位置必须用同一个词，否则同一个概念会长出好几个名字。当前约定：
+
+| 位置 | 用词 |
+| --- | --- |
+| 侧边栏菜单项（`navbar.html`）、页面标题 | AI 模型配置 |
+| 表单字段标签 | 配置名称 / 服务地址（Base URL）/ API Key / 模型 ID / 请求超时（秒）/ 设为默认模型 |
+| 当前生效的那条配置 | 「默认模型」，未生效的按钮为「设为默认」 |
+
+配套两条规则：
+
+- 模型相关的拦截提示统一写成「请先配置一个 AI 模型并设为默认，再……」，不要退回「配置并启用」；`views.py`、`services.py`、`jobs.py` 与三个页面模板里都有这类文案，改词时要一起改。
+- `api_key` 的必填性由 `AIModelConfigForm.__init__` 按「该配置是否已存密钥」决定，必填提示语必须通过字段的 `error_messages` 覆盖，否则界面上会落回 Django 默认的「这个字段是必填项。」。
+
+`PersonalAIModelConfigTests.test_model_form_labels_and_hints_are_unified` 锁定上述用词与字段顺序，改动文案时它会失败。
+
+注意 `AIModelConfig` 的 `verbose_name`（`models.py` 里仍是「API 地址」「模型名称」「超时时间（秒）」）**尚未**跟进：该模型未注册 admin，表单标签由 `Meta.labels` 覆盖，所以目前不影响任何界面，改它需要额外生成一个迁移。
+
 ## 健康检查与日志
 
 平台提供两个语义不同的探针，注意不要混用：
