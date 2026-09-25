@@ -523,7 +523,7 @@ class PersonalAIModelConfigTests(TestCase):
             request_content.call_args.kwargs["operation"], "connection_test"
         )
 
-    @patch("tcms.ai_assistant.services.urllib.request.urlopen")
+    @patch("tcms.ai_assistant.services._open_ai_request")
     def test_successful_api_call_records_duration_and_tokens(self, urlopen):
         config = self._config(self.user_one, "logged-model", "logged-key")
         response = MagicMock()
@@ -552,18 +552,18 @@ class PersonalAIModelConfigTests(TestCase):
         self.assertEqual(log.total_tokens, 9)
         self.assertEqual(log.error_message, "")
 
-    @patch("tcms.ai_assistant.services.urllib.request.urlopen")
+    @patch("tcms.ai_assistant.services._open_ai_request")
     def test_failed_api_call_records_safe_error(self, urlopen):
         config = self._config(self.user_one, "offline-model", "offline-key")
         urlopen.side_effect = urllib.error.URLError("network offline")
 
-        with self.assertRaisesMessage(RuntimeError, "无法连接AI接口"):
+        with self.assertRaisesMessage(RuntimeError, "无法连接 AI 服务"):
             test_model_connection(config)
 
         log = AIUsageLog.objects.get(owner=self.user_one)
         self.assertEqual(log.operation, "connection_test")
         self.assertEqual(log.status, "error")
-        self.assertIn("network offline", log.error_message)
+        self.assertIn("无法连接 AI 服务", log.error_message)
         self.assertNotIn("offline-key", log.error_message)
 
     @patch("tcms.ai_assistant.jobs.test_model_connection")
@@ -2260,12 +2260,14 @@ class TestRunAnalysisTests(TestCase):
             owner=self.owner,
             model_config=config,
             operation="test_report_generation",
+            status="running",
             payload={"test_run_id": self.test_run.pk},
         )
         second_job = AIJob.objects.create(
             owner=self.owner,
             model_config=config,
             operation="test_report_generation",
+            status="running",
             payload={"test_run_id": self.test_run.pk},
         )
         _execute_test_report(first_job)

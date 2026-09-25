@@ -9,6 +9,7 @@ import contextvars
 import importlib
 import logging
 import os
+import threading
 import time
 from unittest.mock import patch
 
@@ -96,6 +97,12 @@ class ReadinessTimeoutTests(TestCase):
     重试后单次连接阻塞 32 秒，而 uwsgi 的 harakiri 是 30 秒——结果是 worker
     被 SIGKILL、nginx 回 502，并且卡住的 worker 会让整个站点不可用。
     """
+
+    def setUp(self):
+        # A deliberately slow probe outlives its request; isolate its slot.
+        slot = patch("tcms.ai_assistant.health._PROBE_SLOT", threading.BoundedSemaphore(1))
+        slot.start()
+        self.addCleanup(slot.stop)
 
     @staticmethod
     def _slow_check():
