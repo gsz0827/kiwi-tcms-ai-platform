@@ -123,6 +123,9 @@ class TestCaseGetView(DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["has_api_config"] = self.object.apicase_set.exists()
+        context["api_configs"] = self.object.apicase_set.filter(owner=self.request.user)
+        context["api_results"] = self.object.api_results.filter(run__owner=self.request.user).select_related("run").order_by("-run__created")[:10]
         context["executions"] = self.object.executions.select_related(
             "run", "tested_by", "assignee", "case", "status"
         ).order_by("run__plan", "run")

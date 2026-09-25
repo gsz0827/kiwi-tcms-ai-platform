@@ -1,4 +1,5 @@
 {% extends "ai_assistant/base_ai.html" %}
+{% load static %}
 
 {% block ai_contents %}
 <div class="container-fluid">
@@ -28,8 +29,11 @@
     <h3>新增测试需求</h3>
     <form method="post" id="generation-form">
         {% csrf_token %}
+        {{ form.submission_token }}
+        {{ form.submission_token.errors }}
+        {{ form.non_field_errors }}
         <div class="form-group">
-            <label>{{ form.category.label }}</label>
+            <label for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
             {{ form.category }}
             {{ form.category.errors }}
         </div>
@@ -64,30 +68,9 @@
         {% endif %}
     </form>
 
-    <div id="generation-progress"
-         class="panel panel-info"
-        style="display: none; margin-top: 20px">
-        <div class="panel-heading">
-            <strong id="generation-progress-title">AI 正在处理请求</strong>
-        </div>
-        <div class="panel-body">
-            <div class="progress">
-                <div id="generation-progress-bar"
-                     class="progress-bar progress-bar-info progress-bar-striped active"
-                     role="progressbar"
-                     aria-valuemin="0"
-                     aria-valuemax="100"
-                     aria-valuenow="3"
-                     style="width: 3%">
-                    <span id="generation-progress-percent">等待进度 3%</span>
-                </div>
-            </div>
-            <p id="generation-status">正在提交需求，请勿重复点击或关闭页面……</p>
-            <p class="text-muted">
-                已等待 <span id="generation-elapsed">0</span> 秒。
-                AI 返回后页面会自动显示结果，最长可能需要约 5 分钟。
-            </p>
-        </div>
+    <div id="generation-progress" class="alert alert-info" role="status"
+         style="display: none; margin-top: 20px">
+        正在提交任务，提交成功后将打开任务详情页。请勿重复点击。
     </div>
 
     <hr>
@@ -417,107 +400,5 @@
     {% endfor %}
 </div>
 
-<script>
-(function () {
-    var form = document.getElementById("generation-form");
-    var analyzeButton = document.getElementById("analyze-button");
-    var generateButton = document.getElementById("generate-button");
-
-    function showProgress(action, clickedButton) {
-        var progress = document.getElementById("generation-progress");
-        var title = document.getElementById("generation-progress-title");
-        var bar = document.getElementById("generation-progress-bar");
-        var percentText = document.getElementById("generation-progress-percent");
-        var elapsedText = document.getElementById("generation-elapsed");
-        var statusText = document.getElementById("generation-status");
-        var startedAt = Date.now();
-        var analyzing = action === "analyze";
-        var coverage = action === "coverage";
-        var supplementing = action === "supplement";
-
-        if (analyzeButton) { analyzeButton.disabled = true; }
-        if (generateButton) { generateButton.disabled = true; }
-        clickedButton.disabled = true;
-        clickedButton.textContent = supplementing
-            ? "正在补充测试用例，请稍候…"
-            : (coverage
-                ? "正在分析覆盖率，请稍候…"
-                : (analyzing ? "正在分析，请稍候…" : "正在生成，请稍候…"));
-        title.textContent = supplementing
-            ? "AI 正在补充覆盖缺口"
-            : (coverage
-                ? "AI 正在分析测试覆盖率"
-                : (analyzing ? "AI 正在分析需求与风险" : "AI 正在生成测试用例"));
-        statusText.textContent = supplementing
-            ? "模型正在根据未覆盖项设计新用例……"
-            : (coverage
-                ? "模型正在对照需求与当前用例……"
-                : (analyzing
-                    ? "模型正在识别功能点、业务规则和风险……"
-                    : "模型正在根据需求组织测试用例……"));
-        progress.style.display = "block";
-        progress.scrollIntoView({behavior: "smooth", block: "center"});
-
-        window.setInterval(function () {
-            var seconds = Math.floor((Date.now() - startedAt) / 1000);
-            var percent = Math.min(90, 3 + Math.floor(seconds * 87 / 300));
-            elapsedText.textContent = seconds;
-            bar.style.width = percent + "%";
-            bar.setAttribute("aria-valuenow", percent);
-            percentText.textContent = "等待进度 " + percent + "%";
-
-            if (seconds >= 180) {
-                statusText.textContent = supplementing
-                    ? "模型仍在设计复杂缺口用例，请继续等待……"
-                    : (coverage
-                        ? "模型仍在检查复杂覆盖关系，请继续等待……"
-                        : (analyzing
-                            ? "模型仍在分析复杂需求，请继续等待……"
-                            : "模型仍在生成复杂用例，请继续等待……"));
-            } else if (seconds >= 30) {
-                statusText.textContent = supplementing
-                    ? "模型正在避免重复已有用例并完善预期结果……"
-                    : (coverage
-                        ? "模型正在识别部分覆盖、未覆盖项和补充建议……"
-                        : (analyzing
-                            ? "模型正在梳理边界、异常、安全风险和待澄清问题……"
-                            : "模型正在覆盖边界、异常和安全场景……"));
-            } else if (seconds >= 5) {
-                statusText.textContent = supplementing
-                    ? "模型正在拆分缺失场景并组织测试步骤……"
-                    : (coverage
-                        ? "模型正在匹配需求检查项与用例编号……"
-                        : (analyzing
-                            ? "模型正在拆分功能点和业务规则……"
-                            : "模型正在分析需求并组织测试步骤……"));
-            }
-        }, 1000);
-    }
-
-    if (form) {
-        form.addEventListener("submit", function (event) {
-            var clickedButton = event.submitter || generateButton;
-            showProgress(clickedButton.value || "generate", clickedButton);
-        });
-    }
-    var analysisForms = document.querySelectorAll(".analysis-generation-form");
-    for (var index = 0; index < analysisForms.length; index++) {
-        analysisForms[index].addEventListener("submit", function (event) {
-            showProgress("generate", event.submitter || this.querySelector("button"));
-        });
-    }
-    var coverageForms = document.querySelectorAll(".coverage-analysis-form");
-    for (var coverageIndex = 0; coverageIndex < coverageForms.length; coverageIndex++) {
-        coverageForms[coverageIndex].addEventListener("submit", function (event) {
-            showProgress("coverage", event.submitter || this.querySelector("button"));
-        });
-    }
-    var supplementForms = document.querySelectorAll(".gap-supplement-form");
-    for (var supplementIndex = 0; supplementIndex < supplementForms.length; supplementIndex++) {
-        supplementForms[supplementIndex].addEventListener("submit", function (event) {
-            showProgress("supplement", event.submitter || this.querySelector("button"));
-        });
-    }
-}());
-</script>
+<script src="{% static 'ai_assistant/requirement_form.js' %}"></script>
 {% endblock %}

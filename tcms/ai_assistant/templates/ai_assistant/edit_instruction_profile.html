@@ -1,0 +1,23 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container">
+    <p><a href="{% url 'ai_assistant:project_settings' %}">返回项目配置</a></p>
+    <h1>编辑 AI 规则包</h1>
+    <p class="text-muted">{{ profile.name }} 当前为 V{{ profile.version }}。修改内容后会自动递增版本。</p>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {% for field in form %}
+            <div class="form-group">
+                <label>{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
+                {{ field.errors }}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">保存新版本</button>
+        <a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">取消</a>
+    </form>
+</div>
+{% endblock %}

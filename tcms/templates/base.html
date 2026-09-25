@@ -16,6 +16,7 @@
     <link rel="shortcut icon" href="{% static 'images/favicon.ico' %}" type='image/x-icon'>
     <title>Kiwi TCMS - {% block title %}{% trans "the leading open source test case management system" %}{% endblock %}</title>
 
+    {% block external_head_scripts %}
     {% if LANGUAGE_CODE == 'eo' %}
     <script type="text/javascript" src="{% static 'js/crowdin.js'  %}"></script>
     <script type="text/javascript" src="//cdn.crowdin.com/jipt/jipt.js"></script>
@@ -29,6 +30,7 @@
     </script>
     {% endif %}
 
+    {% endblock %}
     {% include 'patternfly.html' %}
     {% include 'include/platform_navigation_styles.html' %}
     {% block head %}{% endblock %}
@@ -81,16 +83,20 @@
     <script src="{% static 'simplemde/dist/simplemde.min.js' %}"></script>
     <script src="{% static 'typeahead.js/dist/typeahead.jquery.min.js' %}"></script>
 
+    {% block related_widget_scripts %}
     <script src="{% static 'grappelli/jquery/jquery.min.js' %}"></script>
     <script src="{% static 'grappelli/js/grappelli.min.js' %}"></script>
     <script src="{% static 'admin/js/admin/RelatedObjectLookups.js' %}"></script>
+    {% endblock %}
 
     <script src="{% static 'js/bundle.js' %}"></script>
 
+    {% block external_footer_scripts %}
     {% include 'include/ads.html' %}
 
     {% if SETTINGS.ANONYMOUS_ANALYTICS %}
     <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid={{ SETTINGS.SCARF_PIXEL_ID }}">
     {% endif %}
+    {% endblock %}
 </body>
 </html>

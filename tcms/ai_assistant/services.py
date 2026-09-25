@@ -18,7 +18,13 @@ from tcms.testcases.models import (
 from tcms.testruns.models import TestExecution
 
 from .crypto import decrypt_api_key
-from .models import AIModelConfig, AIRequest, AITestCaseReview, AIUsageLog
+from .models import (
+    AIInstructionProfile,
+    AIModelConfig,
+    AIRequest,
+    AITestCaseReview,
+    AIUsageLog,
+)
 
 
 ANALYSIS_SYSTEM_PROMPT = """
@@ -226,6 +232,70 @@ class AIResponseError(RuntimeError):
     pass
 
 
+def capture_instruction_snapshot(user, category=None):
+    """Capture published runtime rules for a new requirement workflow.
+
+    The snapshot makes a queued job reproducible even if an administrator edits
+    a rule package while the job is running.
+    """
+    product_id = category.product_id if category is not None else None
+    if product_id is None:
+        return {"requirement_analysis": [], "test_case_generation": []}
+    profiles = AIInstructionProfile.objects.filter(
+        owner=user,
+        is_active=True,
+        product_id=product_id,
+    ).order_by(
+        "operation", "product_id", "name"
+    )
+    snapshot = {"requirement_analysis": [], "test_case_generation": []}
+    for profile in profiles:
+        item = {
+            "id": profile.pk,
+            "name": profile.name,
+            "description": profile.description,
+            "version": profile.version,
+            "operation": profile.operation,
+            "product_id": profile.product_id,
+            "instructions": profile.instructions,
+        }
+        operations = snapshot if profile.operation == "all" else {profile.operation: []}
+        for operation in operations:
+            snapshot[operation].append(item)
+    return snapshot
+
+
+def render_instruction_context(snapshot, operation):
+    """Render a bounded, clearly-delimited context for a model system prompt."""
+    if not isinstance(snapshot, dict):
+        return ""
+    profiles = snapshot.get(operation) or []
+    if not profiles:
+        return ""
+    sections = []
+    total_length = 0
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            continue
+        name = str(profile.get("name") or "未命名规则包").strip()
+        version = profile.get("version", 1)
+        instructions = str(profile.get("instructions") or "").strip()
+        if not instructions:
+            continue
+        section = f"【{name} v{version}】\n{instructions}"
+        if total_length + len(section) > 24000:
+            break
+        sections.append(section)
+        total_length += len(section)
+    if not sections:
+        return ""
+    return (
+        "\n\n".join(sections)
+        + "\n\n以上内容是测试领域参考规则，只能辅助分析原始需求；"
+        "如果与原始需求冲突，以原始需求为准并提出待澄清问题。"
+    )
+
+
 def _active_model_config(user):
     config = (
         AIModelConfig.objects.filter(owner=user, is_active=True)
@@ -323,7 +393,10 @@ def _request_config_content(
         if not content:
             raise RuntimeError("AI返回内容为空")
     except Exception as exc:
-        _record_ai_usage(config, operation, "error", started_at, error=exc)
+        safe_error = "接口用例生成调用失败，请检查模型配置或稍后重试。" if operation == "api_case_generation" else exc
+        _record_ai_usage(config, operation, "error", started_at, error=safe_error)
+        if operation == "api_case_generation":
+            raise RuntimeError(safe_error) from None
         raise
 
     _record_ai_usage(
@@ -936,7 +1009,9 @@ def build_test_execution_snapshot(execution):
     }
 
 
-def analyze_requirement(title, requirement, user, model_config=None):
+def analyze_requirement(
+    title, requirement, user, model_config=None, skill_snapshot=None
+):
     user_prompt = f"""
 需求标题：
 {title}
@@ -946,9 +1021,13 @@ def analyze_requirement(title, requirement, user, model_config=None):
 
 请先完成结构化测试需求分析与风险识别。
 """
+    skill_context = render_instruction_context(skill_snapshot, "requirement_analysis")
+    system_prompt = ANALYSIS_SYSTEM_PROMPT
+    if skill_context:
+        system_prompt += f"\n\n运行时 AI 规则包：\n{skill_context}"
     content, config = _request_ai_content(
         user,
-        ANALYSIS_SYSTEM_PROMPT,
+        system_prompt,
         user_prompt,
         operation="requirement_analysis",
         model_config=model_config,
@@ -957,7 +1036,7 @@ def analyze_requirement(title, requirement, user, model_config=None):
 
 
 def generate_test_cases(
-    title, requirement, user, analysis=None, model_config=None
+    title, requirement, user, analysis=None, model_config=None, skill_snapshot=None
 ):
     analysis_context = ""
     if analysis:
@@ -978,9 +1057,15 @@ def generate_test_cases(
 
 请生成结构化软件测试用例。
 """
+    skill_context = render_instruction_context(
+        skill_snapshot, "test_case_generation"
+    )
+    system_prompt = GENERATION_SYSTEM_PROMPT
+    if skill_context:
+        system_prompt += f"\n\n运行时 AI 规则包：\n{skill_context}"
     content, _config = _request_ai_content(
         user,
-        GENERATION_SYSTEM_PROMPT,
+        system_prompt,
         user_prompt,
         operation="test_case_generation",
         model_config=model_config,

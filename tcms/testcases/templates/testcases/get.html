@@ -86,12 +86,12 @@
 
                 <h2 class="card-pf-title kiwi-text-align-left">
                     <span class="fa
-                        {% if object.is_automated %}
+                        {% if object.is_automated or has_api_config %}
                             fa-cog
                         {% else %}
                             fa-hand-paper-o
                         {% endif %}"></span>{% trans 'Automated' %}:
-                    {% if object.is_automated %}
+                    {% if object.is_automated or has_api_config %}
                         {% trans 'Yes' %}
                     {% else %}
                         {% trans 'No' %}
@@ -102,6 +102,10 @@
                     <span class="fa fa-terminal"></span>{% trans 'Script' %}:
                     {{ object.script|default:'-' }}
                 </h2>
+                {% for config in api_configs %}
+                <p><a href="{% url 'ai_assistant:api_case_edit' config.product_id config.pk %}">接口自动化配置</a> · <a href="{% url 'ai_assistant:api_submit' config.product_id %}?case={{ config.pk }}">自动化执行</a></p>
+                {% endfor %}
+                {% if api_results %}<details><summary>最近自动化结果</summary>{% for result in api_results %}<p><a href="{% url 'ai_assistant:api_report' result.run_id %}">{{ result.run.created|date:'Y-m-d H:i:s' }} · {{ result.get_status_display }}</a></p>{% endfor %}</details>{% endif %}
 
                 <h2 class="card-pf-title kiwi-text-align-left">
                     <span class="fa fa-terminal"></span>{% trans 'Arguments' %}:

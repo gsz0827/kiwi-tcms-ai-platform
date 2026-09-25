@@ -1,3 +1,5 @@
+import uuid
+
 from django import forms
 
 from tcms.management.models import Product, Version
@@ -8,6 +10,7 @@ from .crypto import encrypt_api_key
 from .models import (
     AIDefectDraft,
     AIIterationReport,
+    AIInstructionProfile,
     AIModelConfig,
     AIReleaseGateRule,
     AIRequest,
@@ -22,6 +25,7 @@ class CategoryChoiceField(forms.ModelChoiceField):
 
 
 class AIRequestForm(forms.ModelForm):
+    submission_token = forms.UUIDField(initial=uuid.uuid4, widget=forms.HiddenInput)
     category = CategoryChoiceField(
         queryset=Category.objects.select_related("product").order_by(
             "product__name", "name"
@@ -184,6 +188,63 @@ class AIModelConfigForm(forms.ModelForm):
         if commit:
             config.save()
         return config
+
+
+class AIInstructionProfileForm(forms.ModelForm):
+    class Meta:
+        model = AIInstructionProfile
+        fields = ("name", "description", "product", "instructions", "is_active")
+        widgets = {
+            "name": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "例如：支付需求测试规范"}
+            ),
+            "description": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "这组规则解决什么问题"}
+            ),
+            "product": forms.Select(attrs={"class": "form-control"}),
+            "instructions": forms.Textarea(
+                attrs={
+                    "class": "form-control",
+                    "rows": 12,
+                    "placeholder": "每行写一条可执行的测试分析规则或领域知识。",
+                }
+            ),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-control"}),
+        }
+
+    def __init__(self, *args, owner, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.owner = owner
+        self.instance.owner = owner
+        self.fields["product"].queryset = Product.objects.order_by("name")
+        self.fields["product"].label = "适用项目（Kiwi 产品）"
+        self.fields["product"].required = True
+
+    def clean(self):
+        cleaned_data = super().clean()
+        product = cleaned_data.get("product")
+        duplicate = AIInstructionProfile.objects.filter(
+            owner=self.owner, product=product
+        ).exclude(pk=self.instance.pk)
+        if duplicate.exists():
+            raise forms.ValidationError("一个项目只能绑定一个 AI 规则包")
+        return cleaned_data
+
+    def clean_instructions(self):
+        instructions = self.cleaned_data["instructions"].strip()
+        if len(instructions) < 10:
+            raise forms.ValidationError("测试规则至少需要 10 个字符")
+        if len(instructions) > 12000:
+            raise forms.ValidationError("测试规则不能超过 12000 个字符")
+        return instructions
+
+    def save(self, commit=True):
+        profile = super().save(commit=False)
+        profile.owner = self.owner
+        profile.operation = "all"
+        if commit:
+            profile.save()
+        return profile
 
 
 class LineListMixin:

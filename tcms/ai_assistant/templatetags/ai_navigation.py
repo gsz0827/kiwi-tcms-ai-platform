@@ -113,7 +113,11 @@ def _build_resource_browser(
 @register.simple_tag(takes_context=True)
 def platform_resource_browser(context):
     request = context.get("request")
-    if request is None or not request.user.is_authenticated:
+    # 与 ai_project_switcher 同理：错误页面可能在认证中间件之前渲染，那时
+    # request 上没有 user。这个标签在 base.html 里被无条件调用，少了这层
+    # 判断，500 页面自身就会崩。
+    user = getattr(request, "user", None)
+    if request is None or user is None or not user.is_authenticated:
         return None
 
     resolver_match = getattr(request, "resolver_match", None)
@@ -182,15 +186,22 @@ def platform_resource_browser(context):
 def ai_project_switcher(context):
     request = context.get("request")
     resolver_match = getattr(request, "resolver_match", None)
+    user = getattr(request, "user", None)
+    session = getattr(request, "session", None)
+    # request 存在但缺少 user/session 是真实可能发生的：错误页面会在中间件链
+    # 提前失败时渲染，那时认证与会话中间件都还没执行。这里必须容错，否则 500
+    # 页面自身会崩溃，用户只能拿到一个空白响应，连请求编号都看不到。
     if (
         request is None
-        or not request.user.is_authenticated
+        or user is None
+        or not user.is_authenticated
+        or session is None
         or getattr(resolver_match, "app_name", "") != "ai_assistant"
     ):
         return {"show_switcher": False}
 
-    product_id = request.session.get("ai_product_id")
-    version_id = request.session.get("ai_version_id")
+    product_id = session.get("ai_product_id")
+    version_id = session.get("ai_version_id")
     products = Product.objects.order_by("name")
     versions = Version.objects.select_related("product").order_by(
         "product__name", "value"

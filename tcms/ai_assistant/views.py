@@ -10,10 +10,13 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from guardian.decorators import permission_required as object_permission_required
+from urllib.parse import urlencode
 
+from tcms.management.forms import ClassificationForm, ProductForm
 from .forms import (
     AIDefectDraftForm,
     AIReleaseGateRuleForm,
+    AIInstructionProfileForm,
     AIModelConfigForm,
     AIRequestForm,
     AITestCaseDraftForm,
@@ -35,6 +38,7 @@ from .models import (
     AIDefectStatusHistory,
     AIIterationReport,
     AIJob,
+    AIInstructionProfile,
     AIModelConfig,
     AIReleaseGateRule,
     AIRegressionVerification,
@@ -62,7 +66,7 @@ from .engineering import (
     transition_defect,
     verify_defect_regression,
 )
-from .jobs import enqueue_ai_job
+from .jobs import enqueue_ai_job, submit_requirement
 from .services import (
     apply_test_case_review,
     build_test_run_snapshot,
@@ -743,28 +747,25 @@ def index(request):
 
         form = AIRequestForm(request.POST)
         if form.is_valid():
-            ai_request = form.save(commit=False)
-            ai_request.created_by = request.user
-            ai_request.save()
-            AIRequirementVersion.objects.create(
-                request=ai_request,
-                version=ai_request.version,
-                title=ai_request.title,
-                requirement=ai_request.requirement,
-                change_summary="创建需求",
-                changed_by=request.user,
-            )
             action = request.POST.get("action", "generate")
             operation = (
                 "requirement_analysis" if action == "analyze" else "test_case_generation"
             )
-            return _queue_job(
-                request,
-                operation,
-                {"request_id": ai_request.pk},
-                f"{operation}:request:{ai_request.pk}",
-                model_config=active_config,
-            )
+            if action not in {"analyze", "generate"}:
+                form.add_error(None, "不支持的需求处理操作。")
+            else:
+                try:
+                    job, created = submit_requirement(
+                        request.user, form.cleaned_data, operation, active_config
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    form.add_error(None, str(exc))
+                else:
+                    if created:
+                        messages.success(request, "AI 任务已提交到后台，可安全离开或刷新页面。")
+                    else:
+                        messages.info(request, "这份需求已提交，已打开原任务。")
+                    return redirect("ai_assistant:job_detail", pk=job.pk)
     else:
         form = AIRequestForm()
 
@@ -1037,6 +1038,115 @@ def model_settings(request):
         "ai_assistant/model_settings.html",
         {"form": form, "configs": configs},
     )
+
+
+@login_required
+def project_settings(request):
+    return render(request, "ai_assistant/project_settings.html")
+
+
+@login_required
+def instruction_profiles(request):
+    form = AIInstructionProfileForm(request.POST or None, owner=request.user)
+    if request.method == "GET" and request.GET.get("product", "").isdigit():
+        form.fields["product"].initial = int(request.GET["product"])
+    if request.method == "POST" and form.is_valid():
+        profile = form.save()
+        messages.success(
+            request,
+            f"规则包“{profile.name}”已保存为 V{profile.version}，新的需求任务会读取它。",
+        )
+        return redirect("ai_assistant:instruction_profiles")
+
+    profiles = AIInstructionProfile.objects.filter(owner=request.user).select_related(
+        "product"
+    )
+    return render(
+        request,
+        "ai_assistant/instruction_profiles.html",
+        {"form": form, "profiles": profiles},
+    )
+
+
+@login_required
+@permission_required("management.add_product", raise_exception=True)
+def create_product(request):
+    next_url = request.POST.get("next") or request.GET.get("next", "")
+    if not (next_url.startswith("/") and not next_url.startswith("//")):
+        next_url = ""
+    form = ProductForm(request.POST or None)
+    if request.method == "GET" and request.GET.get("classification", "").isdigit():
+        form.fields["classification"].initial = int(request.GET["classification"])
+    if request.method == "POST" and form.is_valid():
+        product = form.save()
+        messages.success(
+            request,
+            f"产品“{product.name}”已创建，并已生成默认分类、版本和构建。",
+        )
+        if next_url:
+            return redirect(next_url)
+        return redirect(
+            f"{reverse('ai_assistant:instruction_profiles')}?product={product.pk}"
+        )
+    return render(
+        request,
+        "ai_assistant/create_product.html",
+        {"form": form, "next_url": next_url},
+    )
+
+
+@login_required
+@permission_required("management.add_classification", raise_exception=True)
+def create_classification(request):
+    next_url = request.POST.get("next") or request.GET.get("next", "")
+    if not (next_url.startswith("/") and not next_url.startswith("//")):
+        next_url = ""
+    form = ClassificationForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        classification = form.save()
+        messages.success(request, f"分类“{classification.name}”已创建。")
+        params = {"classification": classification.pk}
+        if next_url:
+            params["next"] = next_url
+        return redirect(
+            f"{reverse('ai_assistant:create_product')}?{urlencode(params)}"
+        )
+    return render(
+        request,
+        "ai_assistant/create_classification.html",
+        {"form": form, "next_url": next_url},
+    )
+
+
+@login_required
+def edit_instruction_profile(request, pk):
+    profile = get_object_or_404(AIInstructionProfile, pk=pk, owner=request.user)
+    form = AIInstructionProfileForm(
+        request.POST or None, instance=profile, owner=request.user
+    )
+    if request.method == "POST" and form.is_valid():
+        profile = form.save()
+        messages.success(
+            request,
+            f"规则包“{profile.name}”已更新为 V{profile.version}。",
+        )
+        return redirect("ai_assistant:instruction_profiles")
+    return render(
+        request,
+        "ai_assistant/edit_instruction_profile.html",
+        {"form": form, "profile": profile},
+    )
+
+
+@require_POST
+@login_required
+def toggle_instruction_profile(request, pk):
+    profile = get_object_or_404(AIInstructionProfile, pk=pk, owner=request.user)
+    profile.is_active = not profile.is_active
+    profile.save(update_fields=("is_active", "updated"))
+    state = "启用" if profile.is_active else "停用"
+    messages.success(request, f"规则包“{profile.name}”已{state}。")
+    return redirect("ai_assistant:instruction_profiles")
 
 
 @login_required

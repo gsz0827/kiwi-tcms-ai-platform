@@ -1,0 +1,57 @@
+{% extends "ai_assistant/api/base.html" %}
+{% load static %}
+{% block title %}{{ batch.title }}{% endblock %}
+{% block api_content %}
+<header class="api-header">
+<div>
+<p class="text-muted">{{ product.name }} / 接口自动化</p>
+<h1>{{ batch.title }}</h1>
+<p>本次共 {{ drafts|length }} 条草稿。核对原文依据与请求配置，逐条复核后再导入用例库。</p>
+</div>
+<a href="{% url 'ai_assistant:api_ai_generate' product.pk %}">重新生成</a>
+</header>
+
+<div class="api-guide"><strong>复核 → 导入 → 执行</strong>
+<p>导入只会创建测试用例与接口配置，不会发送任何测试请求。存在校验错误或原文依据不足的草稿无法导入，需先在复核页解决。关联已有测试用例时，原有步骤与配置不会被覆盖。</p></div>
+
+{% if job %}<section class="api-card" id="api-ai-job" data-status-url="{% url 'ai_assistant:job_status' job.pk %}"><header><h2>生成任务</h2><a href="{% url 'ai_assistant:job_detail' job.pk %}">任务详情</a></header>
+<p class="api-result-body">状态：<strong id="api-ai-job-status">{{ job.get_status_display }}</strong> · 进度 <span id="api-ai-job-progress">{{ job.progress }}%</span><span id="api-ai-job-stage">{% if job.stage %} · {{ job.stage }}{% endif %}</span><br><span id="api-ai-job-error" class="text-danger"{% if not job.error_message %} style="display:none"{% endif %}>{{ job.error_message }}</span></p>
+{% if not job.is_terminal %}<div class="progress" style="margin:0 20px 16px"><div id="api-ai-job-bar" class="progress-bar progress-bar-info progress-bar-striped active" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ job.progress }}" style="width:{{ job.progress }}%"></div></div>{% endif %}</section>{% endif %}
+
+<form method="post" action="{% url 'ai_assistant:api_ai_import' batch.pk %}">{% csrf_token %}
+{% for draft in drafts %}
+<section class="api-card"><header>
+<h2>#{{ draft.position|add:"1" }} {{ draft.name }}</h2>
+{% if draft.imported_at %}<span class="label label-success">已导入</span>
+{% elif draft.validation_errors %}<span class="label label-danger">待修正</span>
+{% elif not draft.reviewed_at %}<span class="label label-warning">待复核</span>
+{% else %}<span class="label label-info">已复核</span>{% endif %}
+</header>
+
+{% if not draft.imported_at %}<div class="form-group api-result-body"><label for="draft-{{ draft.pk }}"><input type="checkbox" id="draft-{{ draft.pk }}" name="draft_ids" value="{{ draft.pk }}"> 选择这条草稿用于导入</label></div>{% endif %}
+
+<p class="api-result-body"><strong>前置条件、步骤与预期结果</strong><br>{{ draft.description|linebreaksbr }}</p>
+<p class="api-result-body"><strong>原文依据</strong><br>{% if draft.evidence %}{{ draft.evidence|linebreaksbr }}{% else %}<span class="text-muted">未提供</span>{% endif %}</p>
+
+{% if draft.questions %}<div class="api-guide"><strong>待确认问题</strong><ul>{% for question in draft.questions %}<li>{{ question }}</li>{% endfor %}</ul></div>{% endif %}
+{% for error in draft.validation_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+<details><summary>请求与断言配置</summary><pre>{{ draft.display_config }}</pre></details>
+
+<p class="api-result-body">{% if draft.imported_at %}<a href="{% url 'ai_assistant:api_ai_review' draft.pk %}">查看草稿</a>
+{% else %}<a href="{% url 'ai_assistant:api_ai_review' draft.pk %}">进入复核</a>{% endif %}
+{% if draft.api_case_id %} · <a href="{% url 'testcases-get' draft.api_case.test_case_id %}">查看已创建的测试用例</a>{% endif %}</p>
+</section>
+{% empty %}
+<section class="api-card"><p class="api-empty">本次尚未生成草稿。生成任务运行期间本页会自动刷新，也可以稍后手动刷新。</p></section>
+{% endfor %}
+
+{% if drafts %}<p><button class="btn btn-primary" type="submit">导入选中的草稿到用例库</button>
+{% if imported_ids %}<a class="btn btn-default" href="{{ execute_url }}">执行已导入的接口用例</a>{% endif %}</p>{% endif %}
+</form>
+
+{% if rules %}<section class="api-card"><header><h2>本次生效的产品规则包</h2></header>
+{% for rule in rules %}<p class="api-result-body">{{ rule.name }}：{{ rule.instructions|truncatechars:300 }}</p>{% endfor %}</section>{% endif %}
+{% endblock %}
+
+{% block api_scripts %}{% if job and not job.is_terminal %}<script src="{% static 'ai_assistant/api_ai_drafts.js' %}"></script>{% endif %}{% endblock %}

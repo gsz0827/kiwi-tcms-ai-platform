@@ -1,0 +1,26 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container">
+    <p><a href="{% url 'ai_assistant:project_settings' %}">返回项目配置</a></p>
+    <h1>新建产品分类</h1>
+    <p class="text-muted">
+        产品分类用于归类产品，例如“电商系统”“内部工具”。创建后进入新建产品页面，并选中这个分类。
+    </p>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next_url }}">
+        {{ form.non_field_errors }}
+        {% for field in form %}
+            <div class="form-group{% if field.errors %} has-error{% endif %}">
+                <label>{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
+                {{ field.errors }}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">创建分类</button>
+        <a class="btn btn-default" href="{% url 'ai_assistant:create_product' %}{% if next_url %}?next={{ next_url|urlencode }}{% endif %}">取消</a>
+    </form>
+</div>
+{% endblock %}

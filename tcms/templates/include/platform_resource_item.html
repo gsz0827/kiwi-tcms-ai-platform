@@ -22,7 +22,7 @@
                     class="kiwi-resource-move-select"
                     name="folder"
                     title="移动到共享目录"
-                    onchange="this.form.submit()">
+                    >
                 <option value="">未归档</option>
                 {% for folder in item.available_folders %}
                     <option value="{{ folder.pk }}" {% if item.resource_folder_id == folder.pk %}selected{% endif %}>

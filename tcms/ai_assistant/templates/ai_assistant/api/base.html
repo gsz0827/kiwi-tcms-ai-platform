@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}接口自动化{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'ai_assistant/api_testing.css' %}">{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
+{% block external_head_scripts %}{% endblock %}
+{% block external_footer_scripts %}{% endblock %}
+{% block contents %}<div class="api-workspace">{% block api_content %}{% endblock %}<script src="{% static 'ai_assistant/api_submit_once.js' %}"></script>{% block api_scripts %}{% endblock %}</div>{% endblock %}

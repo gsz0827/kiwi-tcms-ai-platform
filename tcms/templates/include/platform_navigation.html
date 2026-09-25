@@ -10,35 +10,38 @@
         </li>
     </ul>
 
-    <a class="kiwi-tree-toggle {% if '/case/' in path or '/cases/' in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}is-current{% endif %}"
+    <a class="kiwi-tree-toggle {% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}is-current{% endif %}"
        href="#kiwi-nav-design" data-toggle="collapse"
-       aria-expanded="{% if '/case/' in path or '/cases/' in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}true{% else %}false{% endif %}"
+       aria-expanded="{% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}true{% else %}false{% endif %}"
        aria-controls="kiwi-nav-design">
         <span class="fa fa-pencil-square-o"></span>需求与设计
         <span class="fa fa-angle-down kiwi-tree-caret"></span>
     </a>
-    <ul id="kiwi-nav-design" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/case/' in path or '/cases/' in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}in{% endif %}">
+    <ul id="kiwi-nav-design" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}in{% endif %}">
         <li class="{% if current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}active{% endif %}">
             <a href="{% url 'ai_assistant:index' %}"><span class="fa fa-lightbulb-o"></span>需求分析</a>
         </li>
-        <li class="{% if '/case/' in path or '/cases/' in path %}active{% endif %}">
-            <a href="{% url 'testcases-search' %}"><span class="fa fa-list"></span>测试用例</a>
+        <li class="{% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path %}active{% endif %}">
+            <a href="{% url 'ai_assistant:case_library' %}"><span class="fa fa-list"></span>测试用例</a>
         </li>
         <li class="{% if '/plan/' in path %}active{% endif %}">
             <a href="{% url 'plans-search' %}"><span class="fa fa-map-o"></span>测试计划</a>
         </li>
     </ul>
 
-    <a class="kiwi-tree-toggle {% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' %}is-current{% endif %}"
+    <a class="kiwi-tree-toggle {% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' or '/api-testing/' in path %}is-current{% endif %}"
        href="#kiwi-nav-execution" data-toggle="collapse"
-       aria-expanded="{% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' %}true{% else %}false{% endif %}"
+       aria-expanded="{% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' or '/api-testing/' in path %}true{% else %}false{% endif %}"
        aria-controls="kiwi-nav-execution">
         <span class="fa fa-play-circle"></span>测试执行
         <span class="fa fa-angle-down kiwi-tree-caret"></span>
     </a>
-    <ul id="kiwi-nav-execution" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' %}in{% endif %}">
+    <ul id="kiwi-nav-execution" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' or '/api-testing/' in path %}in{% endif %}">
         <li class="{% if '/runs/' in path or current == 'run_analysis' %}active{% endif %}">
             <a href="{% url 'testruns-search' %}"><span class="fa fa-play"></span>执行任务</a>
+        </li>
+        <li class="{% if '/api-testing/' in path %}active{% endif %}">
+            <a href="{% url 'ai_assistant:api_home' %}"><span class="fa fa-exchange"></span>接口自动化</a>
         </li>
         <li class="{% if current == 'job_list' or current == 'job_detail' %}active{% endif %}">
             <a href="{% url 'ai_assistant:job_list' %}"><span class="fa fa-tasks"></span>AI 后台任务</a>
@@ -82,5 +85,12 @@
             <a href="{% url 'ai_assistant:report_trends' %}"><span class="fa fa-line-chart"></span>质量趋势</a>
         </li>
     </ul>
+    <nav class="kiwi-project-settings" aria-label="项目配置">
+        <ul class="nav nav-pills nav-stacked">
+            <li class="{% if current == 'project_settings' or current == 'create_product' or current == 'create_classification' or current == 'instruction_profiles' or current == 'edit_instruction_profile' %}active{% endif %}">
+                <a href="{% url 'ai_assistant:project_settings' %}"{% if current == 'project_settings' %} aria-current="page"{% endif %}><span class="fa fa-cog" aria-hidden="true"></span>项目配置</a>
+            </li>
+        </ul>
+    </nav>
 </aside>
 {% endwith %}

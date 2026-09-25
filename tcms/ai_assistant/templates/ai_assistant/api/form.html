@@ -1,0 +1,9 @@
+{% extends "ai_assistant/api/base.html" %}
+{% block api_content %}
+<header class="api-header"><div><p class="text-muted">{{ product.name }} / 接口自动化</p><h1>{{ title }}</h1></div><a href="{{ back_url }}">返回接口自动化</a></header>
+{% if is_execution %}<div class="api-guide">用例按执行顺序从小到大运行，相同时按创建顺序。前置用例通过后，提取的响应变量可供后续用例使用；缺少依赖变量的请求会跳过。可选择本次运行内共享 Cookie，每次运行会重新建立会话。停止任务会等当前请求结束。</div>{% endif %}
+{% if source_run %}<div class="api-guide">正在从<a href="{% url 'ai_assistant:api_report' source_run.pk %}">原报告</a>准备重新执行。将使用环境和用例的最新配置，默认包含原来所有步骤以重新获取前置变量；请检查选择和顺序。回写运行需重新选择。点击“提交执行”才会发送新任务，原报告保持不变。</div>{% endif %}
+<form method="post" class="api-edit-form">{% csrf_token %}{{ form.non_field_errors }}{% for hidden in form.hidden_fields %}{{ hidden }}{{ hidden.errors }}{% endfor %}
+{% for field in form.visible_fields %}<div class="form-group">{{ field.label_tag }}{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div>{% endfor %}
+<button class="btn btn-primary" type="submit">{% if is_execution %}提交执行{% else %}保存{% endif %}</button> <a class="btn btn-default" href="{{ back_url }}">返回</a></form>
+{% endblock %}

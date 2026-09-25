@@ -1,0 +1,77 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container">
+    <div class="clearfix">
+        <h1 class="pull-left">AI 规则包</h1>
+        <div class="pull-right">
+            <a class="btn btn-default" href="{% url 'ai_assistant:project_settings' %}">返回项目配置</a>
+        </div>
+    </div>
+    <p class="text-muted">
+        每个项目绑定一个规则包：保存后，新提交的需求任务会自动读取已启用版本；正在执行的任务继续使用提交时的快照。
+    </p>
+
+    <div class="alert alert-info">
+        规则用于补充测试领域知识，原始需求优先。不要把 API 密钥、账号密码或其他敏感信息写入规则包。
+    </div>
+
+    <h3>为产品创建规则包</h3>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {% for field in form %}
+            <div class="form-group">
+                <label>{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
+                {{ field.errors }}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">保存规则包</button>
+    </form>
+
+    <hr>
+    <h3>已保存的规则包</h3>
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>适用项目</th>
+                    <th>版本</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for profile in profiles %}
+                <tr>
+                    <td>
+                        <strong>{{ profile.name }}</strong>
+                        {% if profile.description %}<br><span class="text-muted">{{ profile.description }}</span>{% endif %}
+                    </td>
+                    <td>{% if profile.product %}{{ profile.product.name }}{% else %}所有产品{% endif %}</td>
+                    <td>V{{ profile.version }}</td>
+                    <td>
+                        {% if profile.is_active %}<span class="label label-success">已启用</span>
+                        {% else %}<span class="label label-default">已停用</span>{% endif %}
+                    </td>
+                    <td>
+                        <a class="btn btn-xs btn-default" href="{% url 'ai_assistant:edit_instruction_profile' profile.pk %}">编辑</a>
+                        <form method="post" action="{% url 'ai_assistant:toggle_instruction_profile' profile.pk %}" style="display:inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-xs {% if profile.is_active %}btn-warning{% else %}btn-success{% endif %}">
+                                {% if profile.is_active %}停用{% else %}启用{% endif %}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">还没有规则包。选择已有产品填写规则；若尚未创建产品，可从左侧“项目配置”进入“新建产品”。</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -4,6 +4,7 @@ from .models import (
     AIDefectDraft,
     AIDefectStatusHistory,
     AIIterationReport,
+    AIInstructionProfile,
     AIJob,
     AIModelConfig,
     AIReleaseGateRule,
@@ -81,6 +82,21 @@ class AIModelConfigAdmin(admin.ModelAdmin):
         "is_active",
         "updated",
     )
+
+
+@admin.register(AIInstructionProfile)
+class AIInstructionProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "owner",
+        "product",
+        "version",
+        "is_active",
+        "updated",
+    )
+    list_filter = ("is_active", "product")
+    search_fields = ("name", "description", "instructions", "owner__username")
+    readonly_fields = ("version", "created", "updated")
 
 
 @admin.register(AITestCaseReview)

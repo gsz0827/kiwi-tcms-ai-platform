@@ -1,0 +1,89 @@
+"""One repository entry for a scenario, with optional API execution configurations."""
+from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.http import HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from guardian.shortcuts import assign_perm, get_objects_for_user
+
+from tcms.management.models import Product, Priority
+from tcms.testcases.models import Category, TestCase, TestCaseStatus
+from .api_forms import LibraryCaseForm
+from .models import APICase
+
+
+def visible_cases(owner):
+    return get_objects_for_user(owner, "testcases.view_testcase", klass=TestCase)
+
+
+def attach_case(config):
+    """Used by owned API creation/demo paths; existing links keep their identity."""
+    if config.test_case_id:
+        return config.test_case
+    category, _ = Category.objects.get_or_create(product=config.product, name="接口自动化")
+    status = TestCaseStatus.objects.order_by("is_confirmed", "pk").first()
+    priority = Priority.objects.filter(is_active=True).first()
+    if not status or not priority:
+        raise ValueError("请先完成平台初始化，配置用例状态与优先级。")
+    case = TestCase.objects.create(summary=config.name, category=category, author=config.owner,
+        priority=priority, case_status=status, is_automated=True,
+        text="接口请求与断言见自动化配置。")
+    for permission in ("view_testcase", "change_testcase"):
+        assign_perm(permission, config.owner, case)
+    config.test_case = case
+    config.save(update_fields=("test_case",))
+    return case
+
+
+@login_required
+def library(request):
+    products = Product.objects.order_by("name")
+    product_id = request.GET.get("product")
+    product = get_object_or_404(products, pk=product_id) if product_id and product_id.isdigit() else products.first()
+    cases = visible_cases(request.user).none()
+    categories = Category.objects.none()
+    mode = request.GET.get("type", "")
+    if product:
+        categories = Category.objects.filter(product=product)
+        cases = visible_cases(request.user).filter(category__product=product).annotate(
+            has_api=Exists(APICase.objects.filter(test_case_id=OuterRef("pk"))))
+        if mode == "manual":
+            cases = cases.filter(is_automated=False, has_api=False)
+        elif mode == "automated":
+            cases = cases.filter(Q(is_automated=True) | Q(has_api=True))
+        category_id = request.GET.get("category", "")
+        if category_id.isdigit():
+            cases = cases.filter(category_id=category_id)
+        if request.GET.get("q"):
+            cases = cases.filter(summary__icontains=request.GET["q"][:200])
+        cases = cases.select_related("category", "priority").prefetch_related(Prefetch(
+            "apicase_set", queryset=APICase.objects.filter(owner=request.user, product=product), to_attr="api_configs"))
+    page = Paginator(cases.order_by("-pk"), 30).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    return render(request, "ai_assistant/api/library.html", dict(products=products, product=product,
+        cases=page, categories=categories, mode=mode, query=query.urlencode()))
+
+
+@login_required
+def create_case(request, product_id):
+    product = get_object_or_404(Product, pk=product_id)
+    if not request.user.has_perm("testcases.add_testcase"):
+        return HttpResponseForbidden("没有新建测试用例权限。")
+    form = LibraryCaseForm(request.POST if request.method == "POST" else None, product=product)
+    back_url = reverse("ai_assistant:case_library") + f"?product={product.pk}"
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            case = form.save(commit=False)
+            case.author = request.user
+            case.is_automated = form.cleaned_data["execution_type"] == "api"
+            case.save()
+            for permission in ("view_testcase", "change_testcase"):
+                assign_perm(permission, request.user, case)
+        if case.is_automated:
+            return redirect(reverse("ai_assistant:api_case_new", args=[product.pk]) + f"?test_case={case.pk}")
+        return redirect(back_url)
+    return render(request, "ai_assistant/api/form.html", dict(form=form, product=product,
+        title="新建测试用例", back_url=back_url))

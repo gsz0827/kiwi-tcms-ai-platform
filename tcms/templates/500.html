@@ -21,6 +21,12 @@
                                 <span class="pficon pficon-error-circle-o"></span>
                             </span>
                         </p>
+                        {% if request_id %}
+                        <p>请稍后重试。若问题持续出现，请把下面的请求编号提供给管理员，便于在日志中定位这次请求。</p>
+                        <p>请求编号：<code>{{ request_id }}</code></p>
+                        {% else %}
+                        <p>请稍后重试。若问题持续出现，请联系管理员。</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>

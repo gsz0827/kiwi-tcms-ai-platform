@@ -1,6 +1,7 @@
 import json
 import uuid
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
@@ -18,6 +19,7 @@ from .models import (
     AIJob,
     AIModelConfig,
     AIRequest,
+    AIRequirementVersion,
     AITestCaseDraft,
     AITestCaseReview,
     AITestReport,
@@ -28,6 +30,7 @@ from .services import (
     analyze_test_coverage,
     analyze_test_run,
     assign_unique_case_numbers,
+    capture_instruction_snapshot,
     generate_coverage_gap_test_cases,
     generate_defect_draft,
     generate_test_cases,
@@ -35,10 +38,63 @@ from .services import (
     review_test_case,
     test_model_connection,
 )
+from .api_ai import execute_generation
 
 
 class JobCancelled(RuntimeError):
     pass
+
+
+def submit_requirement(owner, cleaned_data, operation, model_config):
+    """Commit a form submission and its job together; replay the original result."""
+    token = cleaned_data["submission_token"]
+    fingerprint = canonical_hash({
+        "title": cleaned_data["title"],
+        "requirement": cleaned_data["requirement"],
+        "category": cleaned_data["category"].pk,
+        "operation": operation,
+    })
+    dedupe_key = f"submission:{token}"
+    with transaction.atomic():
+        # Serialize submissions for this account, including requests from two tabs
+        # or two web processes. The database constraint is an additional guard.
+        get_user_model().objects.select_for_update().get(pk=owner.pk)
+        existing = AIRequest.objects.filter(
+            created_by=owner, submission_token=token
+        ).first()
+        if existing:
+            if existing.submission_fingerprint != fingerprint:
+                raise ValueError("这份表单已提交过其他内容，请刷新页面后重新提交。")
+            job = AIJob.objects.filter(
+                owner=owner, dedupe_key=dedupe_key
+            ).order_by("created").first()
+            if job is None:
+                raise ValueError("原任务记录已删除，请刷新页面后重新提交。")
+            return job, False
+
+        ai_request = AIRequest.objects.create(
+            created_by=owner,
+            submission_token=token,
+            submission_fingerprint=fingerprint,
+            title=cleaned_data["title"],
+            requirement=cleaned_data["requirement"],
+            category=cleaned_data["category"],
+            skill_snapshot=capture_instruction_snapshot(
+                owner, cleaned_data["category"]
+            ),
+        )
+        AIRequirementVersion.objects.create(
+            request=ai_request,
+            version=ai_request.version,
+            title=ai_request.title,
+            requirement=ai_request.requirement,
+            change_summary="创建需求",
+            changed_by=owner,
+        )
+        return enqueue_ai_job(
+            owner, operation, {"request_id": ai_request.pk},
+            model_config=model_config, dedupe_key=dedupe_key,
+        )
 
 
 def enqueue_ai_job(
@@ -103,6 +159,7 @@ def _execute_requirement_analysis(job):
         ai_request.requirement,
         job.owner,
         model_config=job.model_config,
+        skill_snapshot=ai_request.skill_snapshot,
     )
     _set_progress(job, 82, "模型已返回，正在保存需求分析")
     ai_request.analysis = analysis
@@ -135,6 +192,7 @@ def _execute_test_case_generation(job):
         job.owner,
         analysis=ai_request.analysis or None,
         model_config=job.model_config,
+        skill_snapshot=ai_request.skill_snapshot,
     )
     _set_progress(job, 82, "模型已返回，正在保存用例草稿")
     with transaction.atomic():
@@ -363,6 +421,7 @@ def _execute_connection_test(job):
 
 
 HANDLERS = {
+    "api_case_generation": execute_generation,
     "requirement_analysis": _execute_requirement_analysis,
     "test_case_generation": _execute_test_case_generation,
     "coverage_analysis": _execute_coverage_analysis,

@@ -1,89 +1,108 @@
 {% extends "base.html" %}
-{% load i18n %}
-{% block title %}{% trans "Dashboard" %}{% endblock %}
+{% load static %}
+{% block title %}工作台{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'ai_assistant/workbench.css' %}">
+{% endblock %}
 
 {% block contents %}
-<div class="container-fluid container-cards-pf">
-    <div class="panel panel-default col-sm-12 col-md-5 col-lg-5 kiwi-padding-0" style="margin-right:1%">
-        <div class="panel-heading"><strong>{% trans "Test executions" %}</strong></div>
-        <table class="table table-striped">
-            <tbody>
-            {% for test_run in last_15_test_runs %}
-                <tr>
-                    <td>
-                    {% with test_run.stats_executions_status as stats %}
-                        <span>{% blocktrans with amount=stats.CompletedPercentage|floatformat:0 %}{{ amount }}% complete{% endblocktrans %}</span>
-                        <div class="progress">
-                          <div class="progress-bar progress-bar-striped progress-bar-success" style="width: {{ stats.SuccessPercentage|floatformat:0}}%;"></div>
-                          <div class="progress-bar progress-bar-striped progress-bar-danger" style="width: {{ stats.FailurePercentage|floatformat:0 }}%"></div>
-                        </div>
-                    {% endwith %}
-                    </td>
-                    <td>
-                        <a href="{% url "testruns-get" test_run.pk %}">{{ test_run.summary }}</a>
-                        <div>{% trans "Started at" %} {{ test_run.start_date }}</div>
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        <div class="panel-footer">
-            {% if test_runs_count %}
-{% blocktrans with total_count=test_runs_count count=last_15_test_runs|length %}{{ total_count }} TestRun(s) or TestCase(s) assigned to you need to be executed.
-Here are the latest {{ count }}.{% endblocktrans %}
-
-                <a href="{% url "testruns-search" %}?default_tester={{ user.username|iriencode }}">
-                    {% trans "SEE ALL" %}
-                </a>
-            {% else %}
-                {% trans "There are no TestRun(s) assigned to you" %}
-            {% endif %}
+<div class="workbench">
+    <header class="workbench-header">
+        <div>
+            <p class="workbench-eyebrow">我的测试工作</p>
+            <h1>工作台</h1>
+            <p class="workbench-subtitle">{{ user.get_full_name|default:user.username }}，从这里继续你的测试工作。</p>
         </div>
-    </div> <!-- /panel -->
+        <a class="btn btn-primary" href="{% url 'ai_assistant:index' %}"><span class="fa fa-plus" aria-hidden="true"></span> 新增测试需求</a>
+    </header>
 
-    <div class="panel panel-default col-sm-12 col-md-6 col-lg-6 kiwi-padding-0">
-        <div class="panel-heading">
-            <strong>{% trans "Your Test plans" %}</strong>
-        </div>
+    <div class="workbench-metrics" aria-label="个人工作概览">
+        <a class="workbench-metric" href="{% url 'ai_assistant:index' %}"><span>我的需求</span><strong>{{ requirement_count }}</strong><small>已提交的需求记录</small></a>
+        <a class="workbench-metric" href="{% url 'ai_assistant:index' %}"><span>待复核草稿</span><strong>{{ pending_draft_count }}</strong><small>尚未导入的测试用例</small></a>
+        <a class="workbench-metric" href="#workbench-runs"><span>未结束的测试运行</span><strong>{{ test_runs_count }}</strong><small>我负责或参与的运行</small></a>
+        <a class="workbench-metric" href="{% url 'ai_assistant:job_list' %}"><span>处理中的 AI 任务</span><strong>{{ active_job_count }}</strong><small>包含排队、执行与取消中</small></a>
+    </div>
 
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>{% trans "TestPlan" %}</th>
-                    <th>{% trans "Product" %}</th>
-                    <th>{% trans "Type" %}</th>
-                    <th>{% trans "Executions" %}</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for test_plan in last_15_test_plans %}
-                {% if test_plan.is_active %}
-                <tr>
-                    <td>
-                        <a href="{% url 'test_plan_url' test_plan.pk %}">{{ test_plan.name }}</a>
-                    </td>
-                    <td>{{ test_plan.product }}</td>
-                    <td>{{ test_plan.type }}</td>
-                    <td><a href="{% url 'testruns-search' %}?plan={{ test_plan.pk }}">{{ test_plan.num_runs }}</a></td>
-                </tr>
+    <div class="workbench-columns">
+        <section class="workbench-card" aria-labelledby="workbench-next-title">
+            <div class="workbench-card-heading"><h2 id="workbench-next-title">下一步</h2><span>按当前工作状态提示</span></div>
+            <div class="workbench-tasks">
+                {% if not has_active_model %}
+                <a class="workbench-task" href="{% url 'ai_assistant:model_settings' %}"><span class="workbench-task-icon fa fa-sliders" aria-hidden="true"></span><div><strong>配置 AI 模型</strong><p>启用模型后，即可分析需求、生成用例草稿。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
                 {% endif %}
-            {% endfor %}
-            </tbody>
-        </table>
+                {% if failed_job_count %}
+                <a class="workbench-task" href="{% url 'ai_assistant:job_list' %}"><span class="workbench-task-icon workbench-warning fa fa-exclamation-circle" aria-hidden="true"></span><div><strong>检查 {{ failed_job_count }} 条失败任务</strong><p>查看错误信息，确认原因后再决定是否重试。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
+                {% endif %}
+                {% if pending_draft_count %}
+                <a class="workbench-task" href="{% url 'ai_assistant:index' %}"><span class="workbench-task-icon fa fa-check-square-o" aria-hidden="true"></span><div><strong>复核 {{ pending_draft_count }} 条用例草稿</strong><p>确认步骤和预期结果，再导入正式测试用例。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
+                {% endif %}
+                {% if test_runs_count %}
+                <a class="workbench-task" href="#workbench-runs"><span class="workbench-task-icon fa fa-play-circle-o" aria-hidden="true"></span><div><strong>继续 {{ test_runs_count }} 个测试运行</strong><p>记录执行结果，跟进失败和阻塞项。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
+                {% endif %}
+                {% if not pending_draft_count and not test_runs_count and not failed_job_count %}
+                <a class="workbench-task" href="{% url 'ai_assistant:index' %}"><span class="workbench-task-icon fa fa-lightbulb-o" aria-hidden="true"></span><div><strong>{% if requirement_count %}继续整理需求{% else %}从第一条需求开始{% endif %}</strong><p>选择产品，描述业务规则和验收标准，开始需求分析。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
+                {% endif %}
+            </div>
+        </section>
+        <section class="workbench-card" aria-labelledby="workbench-shortcuts-title">
+            <div class="workbench-card-heading"><h2 id="workbench-shortcuts-title">常用入口</h2></div>
+            <div class="workbench-shortcuts">
+                <a href="{% url 'ai_assistant:case_library' %}"><span class="fa fa-list-alt" aria-hidden="true"></span><strong>测试用例</strong><small>手工与自动化用例库</small></a>
+                <a href="{% url 'plans-search' %}"><span class="fa fa-map-o" aria-hidden="true"></span><strong>测试计划</strong><small>组织测试范围</small></a>
+                <a href="{% url 'bugs-search' %}"><span class="fa fa-bug" aria-hidden="true"></span><strong>缺陷列表</strong><small>跟进问题处理</small></a>
+                <a href="{% url 'ai_assistant:dashboard' %}"><span class="fa fa-bar-chart" aria-hidden="true"></span><strong>质量看板</strong><small>查看测试闭环进展</small></a>
+            </div>
+            <p class="workbench-footnote">产品、产品分类与 AI 规则包，统一在左侧“项目配置”中维护。</p>
+        </section>
+    </div>
 
-        <div class="panel-footer">
-            {% if test_plans_count %}
-{% blocktrans with total_count=test_plans_count disabled_count=test_plans_disable_count count=last_15_test_plans|length %}You manage {{ total_count }} TestPlan(s), {{ disabled_count }} are disabled.
-Here are the latest {{ count }}.{% endblocktrans %}
+    <div class="workbench-columns">
+        <section class="workbench-card" aria-labelledby="workbench-requirements-title">
+            <div class="workbench-card-heading"><h2 id="workbench-requirements-title">最近需求</h2><a href="{% url 'ai_assistant:index' %}">查看全部</a></div>
+            <ul class="workbench-records">
+                {% for item in recent_requirements %}
+                <li><div class="workbench-record-main"><a href="{% url 'ai_assistant:index' %}#request-{{ item.pk }}">{{ item.title }}</a><small>{{ item.category.product.name|default:"未关联产品" }} · V{{ item.version }} · {{ item.created|date:"m-d H:i" }}</small></div><span class="workbench-status">{% if item.needs_case_review %}需求变更待复核{% elif item.pending_count %}{{ item.pending_count }} 条待复核{% elif item.draft_count %}已导入用例{% elif item.analysis %}待生成用例{% else %}待分析 / 生成{% endif %}</span></li>
+                {% empty %}
+                <li class="workbench-empty">还没有需求。点击右上角“新增测试需求”，开始第一轮测试设计。</li>
+                {% endfor %}
+            </ul>
+        </section>
+        <section class="workbench-card" aria-labelledby="workbench-jobs-title">
+            <div class="workbench-card-heading"><h2 id="workbench-jobs-title">最近 AI 任务</h2><a href="{% url 'ai_assistant:job_list' %}">任务中心</a></div>
+            <ul class="workbench-records">
+                {% for job in recent_jobs %}
+                <li><div class="workbench-record-main"><a href="{% url 'ai_assistant:job_detail' job.pk %}">{{ job.get_operation_display }}</a><small>{{ job.created|date:"m-d H:i" }} · {% if job.stage %}{{ job.stage }}{% else %}打开查看任务详情{% endif %}</small></div><span class="workbench-status {% if job.status == 'failed' %}workbench-status-failed{% elif job.status == 'completed' %}workbench-status-done{% endif %}">{{ job.get_status_display }}</span></li>
+                {% empty %}
+                <li class="workbench-empty">暂无 AI 任务。提交分析后，可以在这里查看任务状态。</li>
+                {% endfor %}
+            </ul>
+            <p class="workbench-footnote">状态随页面刷新更新；打开任务详情可持续查看进度。</p>
+        </section>
+    </div>
 
-                <a href="{% url "plans-search" %}?author={{ user.username }}">
-                    {% trans "SEE ALL" %}
-                </a>
-            {% else %}
-                {% trans "There are no TestPlan(s) that belong to you" %}
-            {% endif %}
-        </div>
-    </div> <!-- /panel -->
-
-</div><!-- /container -->
+    <div class="workbench-columns">
+        <section class="workbench-card" id="workbench-runs" aria-labelledby="workbench-runs-title">
+            <div class="workbench-card-heading"><h2 id="workbench-runs-title">待继续的测试运行</h2><a href="{% url 'testruns-search' %}">搜索运行</a></div>
+            <ul class="workbench-records">
+                {% for run in recent_runs %}
+                <li class="workbench-run"><div class="workbench-run-heading"><a href="{% url 'testruns-get' run.pk %}">{{ run.summary }}</a><span>{{ run.completion_percent }}% 已完成</span></div><progress max="100" value="{{ run.completion_percent }}" aria-label="{{ run.summary }}完成度">{{ run.completion_percent }}%</progress><small>{{ run.plan.product.name }} · {{ run.completed_count }}/{{ run.execution_count }} 条已执行 · {{ run.failed_count }} 条失败</small></li>
+                {% empty %}
+                <li class="workbench-empty">目前没有你负责或参与的未结束运行。准备好用例后，可从测试计划发起运行。</li>
+                {% endfor %}
+            </ul>
+            {% if test_runs_count > 5 %}<p class="workbench-footnote">显示最近 5 个，共 {{ test_runs_count }} 个未结束运行。</p>{% endif %}
+        </section>
+        <section class="workbench-card" aria-labelledby="workbench-plans-title">
+            <div class="workbench-card-heading"><h2 id="workbench-plans-title">我的测试计划</h2><a href="{% url 'plans-search' %}?author={{ user.username|urlencode }}">查看全部</a></div>
+            <ul class="workbench-records">
+                {% for plan in recent_plans %}
+                <li><div class="workbench-record-main"><a href="{% url 'test_plan_url' plan.pk %}">{{ plan.name }}</a><small>{{ plan.product.name }} · {{ plan.type }}</small></div><a class="workbench-status" href="{% url 'testruns-search' %}?plan={{ plan.pk }}">{{ plan.num_runs }} 次运行</a></li>
+                {% empty %}
+                <li class="workbench-empty">暂无启用的个人测试计划。用例准备好后，可将它们组织到测试计划中。</li>
+                {% endfor %}
+            </ul>
+            <p class="workbench-footnote">{{ active_plan_count }} 个启用计划 · {{ test_plans_disable_count }} 个停用计划，最多显示最近 5 个。</p>
+        </section>
+    </div>
+</div>
 {% endblock %}

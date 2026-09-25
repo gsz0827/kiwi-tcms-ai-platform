@@ -12,6 +12,7 @@ from django.views.generic import TemplateView
 from django.views.i18n import JavaScriptCatalog
 from grappelli import urls as grappelli_urls
 
+from tcms.ai_assistant import health as ai_health
 from tcms.core import views as core_views
 from tcms.kiwi_auth import urls as auth_urls
 from tcms.rpc.views import json_rpc_server, xml_rpc_server
@@ -23,6 +24,12 @@ from tcms.testruns import urls as testruns_urls
 urlpatterns = [
     re_path(r"^$", core_views.DashboardView.as_view(), name="core-views-index"),
     re_path(r"^ai/", include("tcms.ai_assistant.urls")),
+    # 存活/就绪探针，供容器健康检查与编排使用，不经过登录与限流。
+    # 带与不带结尾斜杠都接受，正规化形式（reverse 结果）带斜杠。
+    re_path(r"^health/$", ai_health.health, name="health"),
+    re_path(r"^health$", ai_health.health),
+    re_path(r"^ready/$", ai_health.ready, name="ready"),
+    re_path(r"^ready$", ai_health.ready),
     re_path(r"^captcha/", include(captcha_urls)),
     re_path(r"^xml-rpc/", xml_rpc_server.view),
     re_path(r"^json-rpc/$", json_rpc_server.view),

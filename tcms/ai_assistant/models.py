@@ -3,8 +3,240 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from tcms.management.models import Product
+
+
+class APIEnvironment(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    name = models.CharField("环境名称", max_length=100)
+    base_url = models.CharField("服务地址", max_length=500)
+    headers = models.JSONField("公共请求头", default=dict, blank=True)
+    variables = models.JSONField("环境变量", default=dict, blank=True)
+    secret_headers_encrypted = models.TextField(blank=True)
+    timeout = models.PositiveSmallIntegerField("单条超时（秒）", default=10)
+    updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.product} / {self.name}"
+
+
+class APICase(models.Model):
+    METHODS = [(value, value) for value in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")]
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    name = models.CharField("用例名称", max_length=200)
+    sequence = models.PositiveSmallIntegerField("执行顺序", default=100)
+    extracts = models.JSONField("响应变量提取", default=dict, blank=True)
+    method = models.CharField("请求方法", choices=METHODS, max_length=8, default="GET")
+    path = models.CharField("接口路径", max_length=1000)
+    headers = models.JSONField("请求头", default=dict, blank=True)
+    query = models.JSONField("查询参数", default=dict, blank=True)
+    body = models.JSONField("JSON 请求体", default=dict, blank=True)
+    send_body = models.BooleanField("发送 JSON 请求体", default=False)
+    expected_status = models.PositiveSmallIntegerField("预期状态码", default=200)
+    assertions = models.JSONField("JSON 字段断言", default=list, blank=True)
+    max_elapsed_ms = models.PositiveIntegerField("响应时间上限（毫秒）", default=0)
+    test_case = models.ForeignKey(
+        "testcases.TestCase", null=True, blank=True, on_delete=models.PROTECT,
+        verbose_name="关联平台测试用例",
+    )
+    updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.test_case.summary if self.test_case_id else self.name
+
+
+class APIRun(models.Model):
+    STATUSES = [("queued", "排队中"), ("running", "执行中"),
+                ("cancel_requested", "正在停止"), ("completed", "已完成"),
+                ("cancelled", "已停止"), ("interrupted", "执行中断")]
+    ACTIVE_STATUSES = ("queued", "running", "cancel_requested")
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    environment_name = models.CharField(max_length=100)
+    submission_token = models.UUIDField()
+    snapshot_encrypted = models.TextField()
+    source_run = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="reruns")
+    suite = models.ForeignKey("APISuite", null=True, blank=True, on_delete=models.SET_NULL,
+                              related_name="runs")
+    trigger = models.CharField(max_length=12, default="manual", choices=[
+        ("manual", "手动"), ("schedule", "定时"), ("ci", "CI")])
+    test_run = models.ForeignKey(
+        "testruns.TestRun", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    status = models.CharField(max_length=24, choices=STATUSES, default="queued")
+    error = models.CharField(max_length=500, blank=True)
+    created = models.DateTimeField(auto_now_add=True)
+    started = models.DateTimeField(null=True, blank=True)
+    completed = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created",)
+        constraints = [models.UniqueConstraint(
+            fields=("owner", "submission_token"), name="unique_api_submission"
+        )]
+        indexes = [models.Index(fields=("status", "created"), name="api_run_queue")]
+
+    @property
+    def is_terminal(self):
+        return self.status in ("completed", "cancelled", "interrupted")
+
+
+class APIResult(models.Model):
+    STATUSES = [("pending", "未执行"), ("passed", "通过"), ("failed", "断言失败"),
+                ("error", "请求异常"), ("skipped", "已跳过")]
+    run = models.ForeignKey(APIRun, related_name="results", on_delete=models.CASCADE)
+    test_case = models.ForeignKey("testcases.TestCase", null=True, blank=True,
+                                  on_delete=models.SET_NULL, related_name="api_results")
+    position = models.PositiveSmallIntegerField()
+    name = models.CharField(max_length=255)
+    status = models.CharField(max_length=16, choices=STATUSES, default="pending")
+    status_code = models.PositiveSmallIntegerField(null=True)
+    elapsed_ms = models.PositiveIntegerField(null=True)
+    request_summary = models.JSONField(default=dict)
+    response_summary = models.TextField(blank=True)
+    checks = models.JSONField(default=list)
+    error = models.CharField(max_length=500, blank=True)
+    writeback = models.CharField(max_length=500, blank=True)
+    started = models.DateTimeField(null=True)
+    completed = models.DateTimeField(null=True)
+
+    class Meta:
+        ordering = ("position",)
+        constraints = [models.UniqueConstraint(
+            fields=("run", "position"), name="unique_api_run_position"
+        )]
+
+
+class APISuite(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    name = models.CharField("套件名称", max_length=100)
+    environment = models.ForeignKey(APIEnvironment, on_delete=models.PROTECT)
+    # Preserve the selected IDs if a configuration disappears: fail validation,
+    # rather than silently running a smaller suite.
+    case_ids = models.JSONField(default=list)
+    stop_on_failure = models.BooleanField("失败后停止", default=False)
+    share_cookies = models.BooleanField("本次执行共享 Cookie", default=False)
+    schedule_enabled = models.BooleanField("启用定时执行", default=False)
+    interval_minutes = models.PositiveIntegerField("执行间隔（分钟）", default=60)
+    next_run_at = models.DateTimeField("下次执行时间", null=True, blank=True, db_index=True)
+    last_triggered = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True)
+    ci_token_hash = models.CharField(max_length=64, blank=True, editable=False)
+    ci_token_expires = models.DateTimeField(null=True, blank=True, editable=False)
+    updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
+class APIAIRequest(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    category = models.ForeignKey("testcases.Category", on_delete=models.PROTECT)
+    target_case = models.ForeignKey("testcases.TestCase", null=True, blank=True, on_delete=models.PROTECT)
+    title = models.CharField(max_length=200)
+    submission_token = models.UUIDField()
+    fingerprint = models.CharField(max_length=64)
+    input_encrypted = models.TextField()
+    generated = models.BooleanField(default=False)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created",)
+        constraints = [models.UniqueConstraint(fields=("owner", "submission_token"), name="unique_api_ai_submission")]
+
+
+class APIAIDraft(models.Model):
+    request = models.ForeignKey(APIAIRequest, on_delete=models.CASCADE, related_name="drafts")
+    position = models.PositiveSmallIntegerField()
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    evidence = models.TextField(blank=True)
+    questions = models.JSONField(default=list)
+    configuration = models.JSONField(default=dict)
+    review_notes = models.TextField(blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    imported_at = models.DateTimeField(null=True, blank=True)
+    api_case = models.ForeignKey(APICase, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ("position",)
+        constraints = [models.UniqueConstraint(fields=("request", "position"), name="unique_api_ai_position")]
+
+
+class AIInstructionProfile(models.Model):
+    """Versioned, user-owned guidance injected into new AI requirement jobs."""
+
+    OPERATION_CHOICES = (
+        ("all", "所有需求任务"),
+        ("requirement_analysis", "需求分析"),
+        ("test_case_generation", "生成测试用例"),
+    )
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_instruction_profiles",
+        verbose_name="所属账号",
+    )
+    name = models.CharField(max_length=100, verbose_name="规则包名称")
+    description = models.CharField(max_length=255, blank=True, verbose_name="说明")
+    product = models.ForeignKey(
+        Product,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="ai_instruction_profiles",
+        verbose_name="适用产品",
+    )
+    operation = models.CharField(
+        max_length=32,
+        choices=OPERATION_CHOICES,
+        default="all",
+        verbose_name="适用任务",
+    )
+    instructions = models.TextField(verbose_name="测试规则")
+    version = models.PositiveIntegerField(default=1, verbose_name="版本")
+    is_active = models.BooleanField(default=True, verbose_name="已启用")
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-is_active", "name", "-version")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("owner", "product"),
+                name="unique_ai_instruction_profile_per_project",
+            )
+        ]
+        verbose_name = "AI 规则包"
+        verbose_name_plural = "AI 规则包"
+
+    def __str__(self):
+        return f"{self.name} v{self.version}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "instructions", "description", "product_id", "operation", "version"
+            ).first()
+            if previous and any(
+                getattr(self, field) != previous[field]
+                for field in ("instructions", "description", "product_id", "operation")
+            ):
+                self.version = max(self.version, previous["version"]) + 1
+        super().save(*args, **kwargs)
+
 
 class AIRequest(models.Model):
+    submission_token = models.UUIDField(null=True, blank=True, editable=False)
+    submission_fingerprint = models.CharField(max_length=64, blank=True, editable=False)
     title = models.CharField(max_length=200, verbose_name="需求标题")
     requirement = models.TextField(verbose_name="需求描述")
     version = models.PositiveIntegerField(default=1, verbose_name="需求版本")
@@ -40,6 +272,11 @@ class AIRequest(models.Model):
         related_name="requirement_analyses",
         verbose_name="需求分析使用的模型配置",
     )
+    skill_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="需求任务使用的 AI 规则包快照",
+    )
     analyzed_at = models.DateTimeField(blank=True, null=True, verbose_name="分析时间")
     coverage_analysis = models.JSONField(
         default=dict, blank=True, verbose_name="AI用例覆盖分析"
@@ -62,6 +299,12 @@ class AIRequest(models.Model):
     class Meta:
         verbose_name = "AI请求"
         verbose_name_plural = "AI请求"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("created_by", "submission_token"),
+                name="unique_ai_submission_per_owner",
+            )
+        ]
 
     def __str__(self):
         return self.title
@@ -790,6 +1033,7 @@ class AIRequirementVersion(models.Model):
 
 class AIJob(models.Model):
     OPERATION_CHOICES = (
+        ("api_case_generation", "AI 生成接口用例"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
         ("coverage_analysis", "覆盖率分析"),
@@ -863,6 +1107,7 @@ class AIJob(models.Model):
 
 class AIUsageLog(models.Model):
     OPERATION_CHOICES = (
+        ("api_case_generation", "AI 生成接口用例"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
         ("coverage_analysis", "覆盖率分析"),

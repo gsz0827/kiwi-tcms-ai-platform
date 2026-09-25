@@ -24,6 +24,7 @@ from django.views import i18n
 from django.views.decorators.csrf import requires_csrf_token
 from django.views.generic.base import TemplateView, View
 
+from tcms.ai_assistant.models import AIJob, AIModelConfig, AIRequest, AITestCaseDraft
 from tcms.testplans.models import TestPlan
 from tcms.testruns.models import TestRun
 
@@ -114,12 +115,62 @@ class DashboardView(TemplateView):  # pylint: disable=missing-permission-require
             .distinct()
         )
 
+        requirements = AIRequest.objects.filter(created_by=self.request.user)
+        jobs = AIJob.objects.filter(owner=self.request.user)
+        job_counts = jobs.aggregate(
+            active=Count("pk", filter=Q(status__in=AIJob.ACTIVE_STATUSES)),
+            failed=Count("pk", filter=Q(status="failed")),
+        )
+        draft_count = AITestCaseDraft.objects.filter(
+            request__created_by=self.request.user, imported_case__isnull=True
+        ).count()
+        recent_requirements = (
+            requirements.select_related("category__product")
+            .annotate(
+                draft_count=Count("drafts"),
+                pending_count=Count("drafts", filter=Q(drafts__imported_case__isnull=True)),
+            )
+            .order_by("-created")[:5]
+        )
+        run_count = test_runs.count()
+        plan_count = test_plans.count()
+        # Count all executions in each visible run, not just the executions
+        # matching the assignee filter which made the run visible.
+        recent_runs = (
+            TestRun.objects.filter(pk__in=test_runs.values("pk"))
+            .annotate(
+                execution_count=Count("executions"),
+                completed_count=Count("executions", filter=~Q(executions__status__weight=0)),
+                failed_count=Count("executions", filter=Q(executions__status__weight__lt=0)),
+            )
+            .select_related("plan__product")
+            .order_by("-pk")[:5]
+        )
+        for run in recent_runs:
+            run.completion_percent = (
+                round(100 * run.completed_count / run.execution_count)
+                if run.execution_count
+                else 0
+            )
+
         return {
-            "test_plans_count": test_plans.count(),
+            "requirement_count": requirements.count(),
+            "pending_draft_count": draft_count,
+            "active_job_count": job_counts["active"],
+            "failed_job_count": job_counts["failed"],
+            "has_active_model": AIModelConfig.objects.filter(
+                owner=self.request.user, is_active=True
+            ).exists(),
+            "recent_requirements": recent_requirements,
+            "recent_jobs": jobs.order_by("-created")[:5],
+            "recent_runs": recent_runs,
+            "recent_plans": test_plans.filter(is_active=True)[:5],
+            "active_plan_count": plan_count - test_plans_disable_count,
+            "test_plans_count": plan_count,
             "test_plans_disable_count": test_plans_disable_count,
             "last_15_test_plans": test_plans.filter(is_active=True)[:15],
             "last_15_test_runs": test_runs[:15],
-            "test_runs_count": test_runs.count(),
+            "test_runs_count": run_count,
         }
 
 
@@ -128,9 +179,16 @@ def server_error(request):  # pylint: disable=missing-permission-required
     """
     Render the error page with request object which supports
     static URLs so we can load a nice picture.
+
+    The request identifier is passed explicitly instead of relying on the
+    template context: it is attached to the request by the logging
+    middleware and is the only handle a user can quote when reporting a
+    failure, so it has to survive even when context processors are not run.
     """
     template = loader.get_template("500.html")
-    return http.HttpResponseServerError(template.render({}, request))
+    return http.HttpResponseServerError(
+        template.render({"request_id": getattr(request, "request_id", "")}, request)
+    )
 
 
 class IterOpen(subprocess.Popen):  # pylint: disable=missing-permission-required

@@ -1,4 +1,5 @@
 {% extends "ai_assistant/base_ai.html" %}
+{% load static %}
 
 {% block ai_contents %}
 <div class="container-fluid">
@@ -7,7 +8,7 @@
         <div class="btn-group pull-right" style="margin-top:20px"><a class="btn btn-default" href="{% url 'ai_assistant:job_list' %}">全部后台任务</a><a class="btn btn-default" href="{% url 'ai_assistant:index' %}">AI 测试助手</a></div>
     </div>
     <p class="text-muted">任务编号：{{ job.pk }} · 提交时间：{{ job.created }} · 第 {{ job.attempts }} 次尝试</p>
-    <div id="job-panel" class="panel {% if job.status == 'completed' %}panel-success{% elif job.status == 'failed' %}panel-danger{% else %}panel-info{% endif %}">
+    <div id="job-panel" data-status-url="{% url 'ai_assistant:job_status' job.pk %}" class="panel {% if job.status == 'completed' %}panel-success{% elif job.status == 'failed' %}panel-danger{% else %}panel-info{% endif %}">
         <div class="panel-heading"><strong id="job-status-label">{{ job.get_status_display }}</strong></div>
         <div class="panel-body">
             <div class="progress">
@@ -29,42 +30,6 @@
     </div>
 </div>
 {% if not job.is_terminal %}
-<script>
-(function () {
-    var statusUrl = "{% url 'ai_assistant:job_status' job.pk %}";
-    var timer = window.setInterval(function () {
-        window.fetch(statusUrl, {credentials: "same-origin"}).then(function (response) {
-            if (!response.ok) { throw new Error("状态请求失败"); }
-            return response.json();
-        }).then(function (data) {
-            var bar = document.getElementById("job-progress-bar");
-            document.getElementById("job-status-label").textContent = data.status_label;
-            document.getElementById("job-progress-text").textContent = data.progress + "%";
-            document.getElementById("job-stage").innerHTML = "<strong>当前阶段：</strong>" + data.stage;
-            bar.style.width = data.progress + "%";
-            bar.setAttribute("aria-valuenow", data.progress);
-            if (!data.is_terminal) { return; }
-            window.clearInterval(timer);
-            bar.classList.remove("active");
-            document.getElementById("job-actions").style.display = "none";
-            if (data.status === "completed") {
-                document.getElementById("job-result").style.display = "block";
-                var link = document.getElementById("result-link");
-                if (data.result_url) { link.href = data.result_url; link.style.display = "inline-block"; }
-                if (data.result && data.result.reply) {
-                    document.getElementById("connection-result").textContent = "模型响应：" + data.result.reply + "，耗时 " + data.result.elapsed_ms + " 毫秒。";
-                }
-            } else {
-                var error = document.getElementById("job-error");
-                error.textContent = data.error_message || data.status_label;
-                error.style.display = "block";
-                window.setTimeout(function () { window.location.reload(); }, 800);
-            }
-        }).catch(function () {
-            document.getElementById("job-stage").innerHTML = "<strong>当前阶段：</strong>暂时无法读取状态，正在重试……";
-        });
-    }, 1000);
-}());
-</script>
+<script src="{% static 'ai_assistant/job_detail.js' %}"></script>
 {% endif %}
 {% endblock %}

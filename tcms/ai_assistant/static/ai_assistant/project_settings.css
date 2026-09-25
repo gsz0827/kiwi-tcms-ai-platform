@@ -1,0 +1,13 @@
+.project-settings-page { max-width: 1320px; padding: 28px; margin: 0 auto; color: #243746; }
+.project-settings-page h1 { margin: 0 0 14px; font-size: 28px; font-weight: 600; }
+.project-settings-page header p { margin: 0 0 28px; color: #637585; line-height: 1.8; }
+.project-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.project-settings-card { display: flex; flex-direction: column; align-items: flex-start; padding: 24px; background: #fff; border: 1px solid #dde6ec; border-radius: 8px; }
+.project-settings-icon { padding: 12px; border-radius: 8px; background: #edf6fc; color: #00659c; font-size: 22px; }
+.project-settings-card h2 { margin: 20px 0 12px; font-size: 18px; font-weight: 600; }
+.project-settings-card p { flex: 1; margin-bottom: 24px; color: #637585; line-height: 1.9; }
+.project-settings-permission { color: #637585; font-size: 12px; line-height: 1.8; }
+.project-settings-hint { margin: 24px 0 0; color: #637585; line-height: 1.9; }
+.project-settings-card a:focus-visible { outline: 2px solid #00659c; outline-offset: 3px; }
+@media (max-width: 1000px) { .project-settings-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .project-settings-page { padding: 20px 16px; } }

@@ -1,12 +1,45 @@
 from django.urls import path
 
 from . import views
+from . import api_views
+from . import api_ai_views
+from . import api_suite_views, case_library
 
 
 app_name = "ai_assistant"
 
 
 urlpatterns = [
+    path("case-library/", case_library.library, name="case_library"),
+    path("case-library/products/<int:product_id>/new/", case_library.create_case, name="library_case_new"),
+    path("api-testing/products/<int:product_id>/suites/new/", api_suite_views.suite_edit, name="api_suite_new"),
+    path("api-testing/products/<int:product_id>/suites/<int:pk>/edit/", api_suite_views.suite_edit, name="api_suite_edit"),
+    path("api-testing/suites/<int:pk>/", api_suite_views.suite_detail, name="api_suite"),
+    path("api-testing/suites/<int:pk>/actions/<str:action>/", api_suite_views.suite_action, name="api_suite_action"),
+    path("api-testing/ci/suites/<int:pk>/runs/", api_suite_views.ci_runs, name="api_ci_submit"),
+    path("api-testing/ci/suites/<int:pk>/runs/<uuid:run_id>/", api_suite_views.ci_runs, name="api_ci_run"),
+    path(
+        "api-testing/products/<int:product_id>/ai-requests/new/",
+        api_ai_views.generate,
+        name="api_ai_generate",
+    ),
+    path("api-testing/ai-requests/<int:pk>/", api_ai_views.detail, name="api_ai_detail"),
+    path("api-testing/ai-requests/<int:pk>/import/", api_ai_views.import_selected, name="api_ai_import"),
+    path("api-testing/ai-drafts/<int:pk>/review/", api_ai_views.review, name="api_ai_review"),
+    path("project-settings/", views.project_settings, name="project_settings"),
+    path("api-testing/", api_views.home, name="api_home"),
+    path("api-testing/products/<int:product_id>/environments/new/", api_views.environment_edit, name="api_environment_new"),
+    path("api-testing/products/<int:product_id>/environments/<int:pk>/", api_views.environment_edit, name="api_environment_edit"),
+    path("api-testing/products/<int:product_id>/cases/new/", api_views.case_edit, name="api_case_new"),
+    path("api-testing/products/<int:product_id>/cases/<int:pk>/", api_views.case_edit, name="api_case_edit"),
+    path("api-testing/products/<int:product_id>/execute/", api_views.submit, name="api_submit"),
+    path("api-testing/products/<int:product_id>/demo/", api_views.demo, name="api_demo"),
+    path("api-testing/products/<int:product_id>/chain-demo/", api_views.chain_demo, name="api_chain_demo"),
+    path("api-testing/reports/<uuid:pk>/", api_views.report, name="api_report"),
+    path("api-testing/reports/<uuid:pk>/status/", api_views.status, name="api_status"),
+    path("api-testing/reports/<uuid:pk>/cancel/", api_views.cancel, name="api_cancel"),
+    path("api-testing/reports/<uuid:pk>/rerun/", api_views.submit, name="api_rerun"),
+    path("api-testing/reports/<uuid:pk>/export/", api_views.export_report, name="api_export"),
     path("", views.index, name="index"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path(
@@ -69,6 +102,23 @@ urlpatterns = [
     path("reviews/case/<int:pk>/", views.review_case, name="review_case"),
     path("reviews/<int:pk>/apply/", views.apply_review, name="apply_review"),
     path("models/", views.model_settings, name="model_settings"),
+    path("products/create/", views.create_product, name="create_product"),
+    path(
+        "classifications/create/",
+        views.create_classification,
+        name="create_classification",
+    ),
+    path("instruction-profiles/", views.instruction_profiles, name="instruction_profiles"),
+    path(
+        "instruction-profiles/<int:pk>/edit/",
+        views.edit_instruction_profile,
+        name="edit_instruction_profile",
+    ),
+    path(
+        "instruction-profiles/<int:pk>/toggle/",
+        views.toggle_instruction_profile,
+        name="toggle_instruction_profile",
+    ),
     path("usage/", views.usage_logs, name="usage_logs"),
     path("runs/<int:pk>/analysis/", views.run_analysis, name="run_analysis"),
     path("runs/<int:pk>/report/", views.run_report, name="run_report"),

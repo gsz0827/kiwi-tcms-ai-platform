@@ -1,0 +1,36 @@
+{% extends "ai_assistant/api/base.html" %}
+{% block title %}AI 生成接口用例{% endblock %}
+{% block api_content %}
+<header class="api-header">
+<div>
+<p class="text-muted">{{ product.name }} / 接口自动化</p>
+<h1>AI 生成接口用例</h1>
+<p>粘贴接口资料，由模型生成供人工复核的声明式草稿。生成过程不会发送任何测试请求，也不会覆盖已有用例与接口配置。</p>
+</div>
+<a href="{% url 'ai_assistant:api_home' %}?product={{ product.pk }}">返回接口自动化</a>
+</header>
+
+<div class="api-guide"><strong>提交生成 → 逐条复核 → 选择导入</strong>
+<p>草稿必须逐条复核并解决待确认问题后才能导入用例库。导入只创建测试用例与接口配置；选择关联已有测试用例时，原步骤和已有配置不会被覆盖。真实凭据请用变量占位符表示。</p></div>
+
+<section class="api-card"><header><h2>接口资料</h2></header>
+<form method="post" class="api-edit-form">{% csrf_token %}
+{{ form.non_field_errors }}
+{% for hidden in form.hidden_fields %}{{ hidden }}{{ hidden.errors }}{% endfor %}
+{% for field in form.visible_fields %}<div class="form-group{% if field.errors %} has-error{% endif %}">{{ field.label_tag }}{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div>{% endfor %}
+<button class="btn btn-primary" type="submit">提交生成</button> <a class="btn btn-default" href="{% url 'ai_assistant:api_home' %}?product={{ product.pk }}">返回</a>
+</form></section>
+
+<section class="api-card"><header><h2>本次生成记录 <small>{{ batches|length }} 条</small></h2></header>
+<div class="api-table-scroll"><table class="table">
+<thead><tr><th>主题</th><th>业务分类</th><th>提交时间</th><th>草稿状态</th><th>操作</th></tr></thead>
+<tbody>
+{% for batch in batches %}<tr>
+<td>{{ batch.title }}</td>
+<td>{{ batch.category }}</td>
+<td>{{ batch.created|date:"Y-m-d H:i:s" }}</td>
+<td>{% if batch.generated %}已生成{% else %}生成中{% endif %}</td>
+<td><a href="{% url 'ai_assistant:api_ai_detail' batch.pk %}">查看草稿</a></td>
+</tr>{% empty %}<tr><td colspan="5" class="api-empty">还没有生成记录。填写上方资料后提交，草稿会显示在这里。</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

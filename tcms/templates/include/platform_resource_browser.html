@@ -1,4 +1,4 @@
-{% load extra_filters %}
+{% load static extra_filters %}
 <section class="kiwi-resource-browser" data-resource-browser="{{ browser.kind }}">
     <div class="kiwi-resource-browser-header">
         <span class="fa {{ browser.icon }}"></span>{{ browser.title }}
@@ -141,10 +141,10 @@
                                         <input class="form-control input-sm" type="text" name="name" maxlength="120" value="{{ folder.name }}" required>
                                         <button class="btn btn-default btn-sm" type="submit">重命名</button>
                                     </form>
-                                    <form class="kiwi-folder-inline-form"
+                                    <form class="kiwi-folder-inline-form kiwi-folder-delete-form"
                                           method="post"
                                           action="{% url 'ai_assistant:delete_resource_folder' folder.pk %}"
-                                          onsubmit="return confirm('删除该目录及其子目录？资源会回到未归档，不会被删除。')">
+                                          data-confirm="删除该目录及其子目录？资源会回到未归档，不会被删除。">
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <button class="btn btn-danger btn-sm" type="submit">删除</button>
@@ -254,42 +254,4 @@
 {% endfor %}
 </div>
 
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    var browser = document.querySelector('[data-resource-browser="{{ browser.kind }}"]');
-    if (!browser) return;
-
-    document.querySelectorAll(".kiwi-resource-modal").forEach(function (modal) {
-        document.body.appendChild(modal);
-    });
-
-    var filter = browser.querySelector(".kiwi-resource-filter");
-    var noMatch = browser.querySelector(".kiwi-resource-no-match");
-    filter.addEventListener("input", function () {
-        var term = filter.value.trim().toLocaleLowerCase();
-        var visibleCount = 0;
-        browser.querySelectorAll(".kiwi-resource-item").forEach(function (item) {
-            var visible = !term || item.textContent.toLocaleLowerCase().indexOf(term) !== -1;
-            item.hidden = !visible;
-            if (visible) visibleCount += 1;
-        });
-        noMatch.hidden = visibleCount !== 0;
-    });
-
-    var productSelect = document.getElementById("folder-product-{{ browser.kind }}");
-    var parentSelect = document.getElementById("folder-parent-{{ browser.kind }}");
-    if (productSelect && parentSelect) {
-        var filterParents = function () {
-            var productId = productSelect.value;
-            Array.prototype.forEach.call(parentSelect.options, function (option) {
-                option.hidden = Boolean(option.value) && option.dataset.product !== productId;
-            });
-            if (parentSelect.selectedOptions.length && parentSelect.selectedOptions[0].hidden) {
-                parentSelect.value = "";
-            }
-        };
-        productSelect.addEventListener("change", filterParents);
-        filterParents();
-    }
-});
-</script>
+<script src="{% static 'ai_assistant/platform_resource_browser.js' %}"></script>
