@@ -35,28 +35,6 @@
         </div>
     {% endif %}
 
-    <div id="run-analysis-progress"
-         class="panel panel-info"
-         style="display: none; margin-top: 20px">
-        <div class="panel-heading"><strong>AI 正在分析测试执行结果</strong></div>
-        <div class="panel-body">
-            <div class="progress">
-                <div id="run-analysis-progress-bar"
-                     class="progress-bar progress-bar-info progress-bar-striped active"
-                     role="progressbar"
-                     aria-valuemin="0"
-                     aria-valuemax="100"
-                     aria-valuenow="3"
-                     style="width: 3%">
-                    <span id="run-analysis-progress-percent">等待进度 3%</span>
-                </div>
-            </div>
-            <p id="run-analysis-status">正在汇总执行状态、失败用例和缺陷关联……</p>
-            <p class="text-muted">
-                已等待 <span id="run-analysis-elapsed">0</span> 秒，请勿重复点击或关闭页面。
-            </p>
-        </div>
-    </div>
 
     <hr>
     <h3>失败执行处理</h3>
@@ -192,40 +170,4 @@
     {% endfor %}
 </div>
 
-<script>
-(function () {
-    var form = document.getElementById("run-analysis-form");
-    if (!form) { return; }
-    form.addEventListener("submit", function () {
-        var button = document.getElementById("run-analysis-button");
-        var progress = document.getElementById("run-analysis-progress");
-        var bar = document.getElementById("run-analysis-progress-bar");
-        var percentText = document.getElementById("run-analysis-progress-percent");
-        var elapsedText = document.getElementById("run-analysis-elapsed");
-        var statusText = document.getElementById("run-analysis-status");
-        var startedAt = Date.now();
-
-        button.disabled = true;
-        button.textContent = "正在分析，请稍候…";
-        progress.style.display = "block";
-        progress.scrollIntoView({behavior: "smooth", block: "center"});
-
-        window.setInterval(function () {
-            var seconds = Math.floor((Date.now() - startedAt) / 1000);
-            var percent = Math.min(90, 3 + Math.floor(seconds * 87 / 300));
-            elapsedText.textContent = seconds;
-            bar.style.width = percent + "%";
-            bar.setAttribute("aria-valuenow", percent);
-            percentText.textContent = "等待进度 " + percent + "%";
-            if (seconds >= 180) {
-                statusText.textContent = "模型仍在分析复杂执行结果，请继续等待……";
-            } else if (seconds >= 30) {
-                statusText.textContent = "模型正在归纳失败聚类、风险和回归范围……";
-            } else if (seconds >= 5) {
-                statusText.textContent = "模型正在区分执行证据与待验证原因……";
-            }
-        }, 1000);
-    });
-}());
-</script>
 {% endblock %}

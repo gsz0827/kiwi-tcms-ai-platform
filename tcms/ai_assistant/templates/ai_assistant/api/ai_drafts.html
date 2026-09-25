@@ -12,7 +12,7 @@
 </header>
 
 <div class="api-guide"><strong>复核 → 导入 → 执行</strong>
-<p>导入只会创建测试用例与接口配置，不会发送任何测试请求。存在校验错误或原文依据不足的草稿无法导入，需先在复核页解决。关联已有测试用例时，原有步骤与配置不会被覆盖。</p></div>
+<p>复核通过后可导入，导入后选择执行环境运行。</p></div>
 
 {% if job %}<section class="api-card" id="api-ai-job" data-status-url="{% url 'ai_assistant:job_status' job.pk %}"><header><h2>生成任务</h2><a href="{% url 'ai_assistant:job_detail' job.pk %}">任务详情</a></header>
 <p class="api-result-body">状态：<strong id="api-ai-job-status">{{ job.get_status_display }}</strong> · 进度 <span id="api-ai-job-progress">{{ job.progress }}%</span><span id="api-ai-job-stage">{% if job.stage %} · {{ job.stage }}{% endif %}</span><br><span id="api-ai-job-error" class="text-danger"{% if not job.error_message %} style="display:none"{% endif %}>{{ job.error_message }}</span></p>
@@ -38,8 +38,7 @@
 
 <details><summary>请求与断言配置</summary><pre>{{ draft.display_config }}</pre></details>
 
-<p class="api-result-body">{% if draft.imported_at %}<a href="{% url 'ai_assistant:api_ai_review' draft.pk %}">查看草稿</a>
-{% else %}<a href="{% url 'ai_assistant:api_ai_review' draft.pk %}">进入复核</a>{% endif %}
+<p class="api-result-body">{% if not draft.imported_at %}<a href="{% url 'ai_assistant:api_ai_review' draft.pk %}">进入复核</a>{% endif %}
 {% if draft.api_case_id %} · <a href="{% url 'testcases-get' draft.api_case.test_case_id %}">查看已创建的测试用例</a>{% endif %}</p>
 </section>
 {% empty %}

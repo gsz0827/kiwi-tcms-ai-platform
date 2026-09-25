@@ -136,6 +136,10 @@ def _set_progress(job, progress, stage):
     job.refresh_from_db(fields=("status",))
     if job.status == "cancel_requested":
         raise JobCancelled("用户已请求取消任务")
+    if job.status != "running":
+        raise JobCancelled("任务已停止，不再继续执行")
+    if not get_user_model().objects.filter(pk=job.owner_id, is_active=True).exists():
+        raise JobCancelled("所属账号已停用，任务已停止")
     now = timezone.now()
     AIJob.objects.filter(pk=job.pk, status="running").update(
         progress=progress, stage=stage, heartbeat=now
@@ -149,10 +153,36 @@ def _result(url, **summary):
     return url, summary
 
 
+def _requirement_fingerprint(ai_request, include_drafts=False):
+    context = {key: getattr(ai_request, key) for key in (
+        "version", "title", "requirement", "category_id", "skill_snapshot", "analysis",
+    )}
+    if include_drafts:
+        context["coverage_analysis"] = ai_request.coverage_analysis
+        context["drafts"] = [
+            {key: getattr(draft, key) for key in (
+                "pk", "case_number", "summary", "priority", "test_type", "preconditions",
+                "steps", "requirement_version", "needs_update",
+            )}
+            for draft in ai_request.drafts.all()
+        ]
+    return canonical_hash(context)
+
+
+def _lock_unchanged_requirement(ai_request, fingerprint, include_drafts=False):
+    locked = AIRequest.objects.select_for_update().get(
+        pk=ai_request.pk, created_by=ai_request.created_by
+    )
+    if _requirement_fingerprint(locked, include_drafts) != fingerprint:
+        raise RuntimeError("生成期间需求或用例已变更，本次结果未保存，请基于最新内容重新生成。")
+    return locked
+
+
 def _execute_requirement_analysis(job):
     ai_request = AIRequest.objects.get(
         pk=job.payload["request_id"], created_by=job.owner
     )
+    fingerprint = _requirement_fingerprint(ai_request)
     _set_progress(job, 25, "正在调用模型分析需求")
     analysis, config, raw_result = analyze_requirement(
         ai_request.title,
@@ -162,18 +192,15 @@ def _execute_requirement_analysis(job):
         skill_snapshot=ai_request.skill_snapshot,
     )
     _set_progress(job, 82, "模型已返回，正在保存需求分析")
-    ai_request.analysis = analysis
-    ai_request.analysis_raw = raw_result
-    ai_request.analysis_model_config = config
-    ai_request.analyzed_at = timezone.now()
-    ai_request.save(
-        update_fields=(
-            "analysis",
-            "analysis_raw",
-            "analysis_model_config",
-            "analyzed_at",
+    with transaction.atomic():
+        ai_request = _lock_unchanged_requirement(ai_request, fingerprint)
+        ai_request.analysis = analysis
+        ai_request.analysis_raw = raw_result
+        ai_request.analysis_model_config = config
+        ai_request.analyzed_at = timezone.now()
+        ai_request.save(
+            update_fields=("analysis", "analysis_raw", "analysis_model_config", "analyzed_at")
         )
-    )
     return _result(
         f"{reverse('ai_assistant:index')}#request-{ai_request.pk}",
         request_id=ai_request.pk,
@@ -185,6 +212,7 @@ def _execute_test_case_generation(job):
     ai_request = AIRequest.objects.get(
         pk=job.payload["request_id"], created_by=job.owner
     )
+    fingerprint = _requirement_fingerprint(ai_request)
     _set_progress(job, 25, "正在调用模型生成测试用例")
     test_cases = generate_test_cases(
         ai_request.title,
@@ -196,9 +224,7 @@ def _execute_test_case_generation(job):
     )
     _set_progress(job, 82, "模型已返回，正在保存用例草稿")
     with transaction.atomic():
-        locked_request = AIRequest.objects.select_for_update().get(
-            pk=ai_request.pk, created_by=job.owner
-        )
+        locked_request = _lock_unchanged_requirement(ai_request, fingerprint)
         if locked_request.drafts.exists():
             raise RuntimeError("该请求已经生成过测试用例草稿")
         locked_request.result = json.dumps(test_cases, ensure_ascii=False, indent=2)
@@ -224,23 +250,24 @@ def _execute_coverage_analysis(job):
     ai_request = AIRequest.objects.prefetch_related("drafts").get(
         pk=job.payload["request_id"], created_by=job.owner
     )
+    fingerprint = _requirement_fingerprint(ai_request, include_drafts=True)
     _set_progress(job, 25, "正在调用模型分析需求覆盖")
     result, config, raw_result = analyze_test_coverage(
         ai_request, job.owner, model_config=job.model_config
     )
     _set_progress(job, 82, "模型已返回，正在保存覆盖矩阵")
-    ai_request.coverage_analysis = result
-    ai_request.coverage_raw = raw_result
-    ai_request.coverage_model_config = config
-    ai_request.coverage_analyzed_at = timezone.now()
-    ai_request.save(
-        update_fields=(
-            "coverage_analysis",
-            "coverage_raw",
-            "coverage_model_config",
-            "coverage_analyzed_at",
+    with transaction.atomic():
+        ai_request = _lock_unchanged_requirement(ai_request, fingerprint, include_drafts=True)
+        ai_request.coverage_analysis = result
+        ai_request.coverage_raw = raw_result
+        ai_request.coverage_model_config = config
+        ai_request.coverage_analyzed_at = timezone.now()
+        ai_request.save(
+            update_fields=(
+                "coverage_analysis", "coverage_raw",
+                "coverage_model_config", "coverage_analyzed_at",
+            )
         )
-    )
     return _result(
         f"{reverse('ai_assistant:index')}#request-{ai_request.pk}",
         request_id=ai_request.pk,
@@ -252,15 +279,14 @@ def _execute_coverage_supplement(job):
     ai_request = AIRequest.objects.prefetch_related("drafts").get(
         pk=job.payload["request_id"], created_by=job.owner
     )
+    fingerprint = _requirement_fingerprint(ai_request, include_drafts=True)
     _set_progress(job, 25, "正在调用模型补充覆盖缺口")
     test_cases = generate_coverage_gap_test_cases(
         ai_request, job.owner, model_config=job.model_config
     )
     _set_progress(job, 82, "模型已返回，正在保存补充用例")
     with transaction.atomic():
-        locked_request = AIRequest.objects.select_for_update().get(
-            pk=ai_request.pk, created_by=job.owner
-        )
+        locked_request = _lock_unchanged_requirement(ai_request, fingerprint, include_drafts=True)
         existing_numbers = list(
             locked_request.drafts.values_list("case_number", flat=True)
         )
@@ -473,7 +499,7 @@ def execute_job(job):
         result_url, result = handler(job)
         _set_progress(job, 94, "业务结果已保存，正在完成任务")
     except JobCancelled as exc:
-        AIJob.objects.filter(pk=job.pk).update(
+        AIJob.objects.filter(pk=job.pk, status__in=("running", "cancel_requested")).update(
             status="cancelled",
             progress=100,
             stage="任务已取消",

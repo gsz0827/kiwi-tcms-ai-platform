@@ -344,6 +344,19 @@ def _record_ai_usage(config, operation, status, started_at, usage=None, error=No
         pass
 
 
+MAX_AI_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+class _NoModelRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never forward model credentials or requirement text to a redirect.
+        return None
+
+
+def _open_ai_request(request, timeout):
+    return urllib.request.build_opener(_NoModelRedirect()).open(request, timeout=timeout)
+
+
 def _request_config_content(
     config, system_prompt, user_prompt, max_tokens=None, operation="other"
 ):
@@ -375,21 +388,28 @@ def _request_config_content(
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=config.timeout) as response:
-                body = response.read().decode("utf-8")
+            with _open_ai_request(request, timeout=config.timeout) as response:
+                raw_body = response.read(MAX_AI_RESPONSE_BYTES + 1)
+                if len(raw_body) > MAX_AI_RESPONSE_BYTES:
+                    raise RuntimeError("AI 响应超过 4 MB，请缩小本次生成范围。")
+                body = raw_body.decode("utf-8")
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"AI接口返回HTTP {exc.code}: {error_body[:500]}"
-            ) from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"无法连接AI接口: {exc.reason}") from exc
+            # Provider error bodies may echo the API key or submitted documents.
+            code = exc.code
+            exc.close()
+            if 300 <= code < 400:
+                raise RuntimeError("AI 服务返回重定向，请填写最终服务的 Base URL。") from None
+            raise RuntimeError(f"AI 服务返回 HTTP {code}，请检查模型配置或服务状态。") from None
+        except (urllib.error.URLError, OSError):
+            raise RuntimeError("无法连接 AI 服务，请检查地址、网络、证书或超时设置。") from None
+        except UnicodeError:
+            raise RuntimeError("AI 服务响应编码异常。") from None
 
         try:
             data = json.loads(body)
             content = data["choices"][0]["message"]["content"].strip()
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"AI接口响应格式异常: {body[:500]}") from exc
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError, RecursionError):
+            raise RuntimeError("AI 服务响应格式异常，请确认支持 Chat Completions 接口。") from None
         if not content:
             raise RuntimeError("AI返回内容为空")
     except Exception as exc:
@@ -1467,6 +1487,9 @@ def apply_test_case_review(review, user):
         test_case = TestCase.objects.select_for_update().get(
             pk=locked_review.test_case_id
         )
+        if (test_case.summary != locked_review.original_summary
+                or (test_case.text or "") != (locked_review.original_text or "")):
+            raise ValueError("测试用例已在评审后修改，请重新评审，避免覆盖最新内容。")
         test_case.summary = locked_review.optimized_summary
         test_case.text = format_optimized_test_case_text(locked_review)
         test_case.reviewer = user

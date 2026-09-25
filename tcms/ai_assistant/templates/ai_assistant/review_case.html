@@ -41,24 +41,6 @@
         </div>
     {% endif %}
 
-    <div id="review-progress" class="panel panel-info"
-         style="display: none; margin-top: 20px">
-        <div class="panel-heading"><strong>AI 正在评审测试用例</strong></div>
-        <div class="panel-body">
-            <div class="progress">
-                <div id="review-progress-bar"
-                     class="progress-bar progress-bar-info progress-bar-striped active"
-                     role="progressbar" aria-valuemin="0" aria-valuemax="100"
-                     aria-valuenow="3" style="width: 3%">
-                    <span id="review-progress-percent">等待进度 3%</span>
-                </div>
-            </div>
-            <p id="review-status">正在提交用例，请勿重复点击或关闭页面……</p>
-            <p class="text-muted">
-                已等待 <span id="review-elapsed">0</span> 秒，最长可能需要约 5 分钟。
-            </p>
-        </div>
-    </div>
 
     <hr>
     <h3>我的评审记录</h3>
@@ -121,38 +103,4 @@
     {% endfor %}
 </div>
 
-<script>
-(function () {
-    var form = document.getElementById("review-form");
-    if (!form) { return; }
-    form.addEventListener("submit", function () {
-        var progress = document.getElementById("review-progress");
-        var button = document.getElementById("review-button");
-        var bar = document.getElementById("review-progress-bar");
-        var percentText = document.getElementById("review-progress-percent");
-        var elapsedText = document.getElementById("review-elapsed");
-        var statusText = document.getElementById("review-status");
-        var startedAt = Date.now();
-
-        button.disabled = true;
-        button.textContent = "正在评审，请稍候…";
-        progress.style.display = "block";
-        progress.scrollIntoView({behavior: "smooth", block: "center"});
-
-        window.setInterval(function () {
-            var seconds = Math.floor((Date.now() - startedAt) / 1000);
-            var percent = Math.min(90, 3 + Math.floor(seconds * 87 / 300));
-            elapsedText.textContent = seconds;
-            bar.style.width = percent + "%";
-            bar.setAttribute("aria-valuenow", percent);
-            percentText.textContent = "等待进度 " + percent + "%";
-            if (seconds >= 60) {
-                statusText.textContent = "模型仍在检查边界、异常和权限场景，请继续等待……";
-            } else if (seconds >= 5) {
-                statusText.textContent = "模型正在分析用例完整性并组织优化建议……";
-            }
-        }, 1000);
-    });
-}());
-</script>
 {% endblock %}

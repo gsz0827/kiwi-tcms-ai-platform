@@ -8,7 +8,6 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -89,6 +88,7 @@ class ReviewForm(StyledForm, forms.ModelForm):
             data["configuration"] = validate_configuration(data["configuration"])
         except (ValueError, RecursionError) as exc:
             self.add_error("configuration", str(exc) if isinstance(exc, ValueError) else "配置嵌套过深。")
+            return data
         candidate = APIAIDraft(configuration=data["configuration"], evidence=data["evidence"])
         for error in draft_errors(candidate, self.context):
             self.add_error(None, error)
@@ -118,8 +118,28 @@ def generate(request, product_id):
             form.add_error(None, str(exc))
         else:
             return redirect("ai_assistant:api_ai_detail", pk=batch.pk)
-    return private(render(request, "ai_assistant/api/ai_generate.html", dict(form=form, product=product,
-        batches=APIAIRequest.objects.filter(owner=request.user, product=product)[:20])))
+    batches = list(
+        APIAIRequest.objects.filter(owner=request.user, product=product)
+        .select_related("category")[:20]
+    )
+    jobs = AIJob.objects.filter(
+        owner=request.user, operation="api_case_generation",
+        dedupe_key__in=[f"api-generation:{row.pk}" for row in batches],
+    ).order_by("created")
+    latest = {job.dedupe_key: job for job in jobs}
+    for batch in batches:
+        job = latest.get(f"api-generation:{batch.pk}")
+        if batch.generated:
+            batch.status_label = "已生成"
+        else:
+            batch.status_label = job.get_status_display() if job else "任务记录缺失"
+    return private(
+        render(
+            request,
+            "ai_assistant/api/ai_generate.html",
+            dict(form=form, product=product, batches=batches),
+        )
+    )
 
 
 @login_required
@@ -172,6 +192,10 @@ def import_selected(request, pk):
     get_object_or_404(APIAIRequest, pk=pk, owner=request.user)
     try:
         ids = [int(value) for value in request.POST.getlist("draft_ids")]
+    except ValueError:
+        messages.error(request, "草稿编号无效，请重新选择。")
+        return redirect("ai_assistant:api_ai_detail", pk=pk)
+    try:
         import_drafts(request.user, pk, ids)
     except ValueError as exc:
         messages.error(request, str(exc))

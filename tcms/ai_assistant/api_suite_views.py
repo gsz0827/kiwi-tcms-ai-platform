@@ -46,15 +46,18 @@ def suite_edit(request, product_id, pk=None):
                     raise ValueError("缺少前置变量：" + ", ".join(sorted(missing)))
                 prepare_case(config, env)
                 env["variables"].update({key: "runtime-value" for key in case.extracts})
-            if suite.schedule_enabled:
-                suite.next_run_at = suite.next_run_at or timezone.now() + timedelta(minutes=suite.interval_minutes)
-            else:
-                suite.next_run_at = None
             with transaction.atomic():
                 get_user_model().objects.select_for_update().get(pk=request.user.pk)
                 # Only form-owned fields: never overwrite a concurrent token rotation.
+                current = APISuite.objects.select_for_update().get(pk=suite.pk) if suite.pk else None
+                if not suite.schedule_enabled:
+                    suite.next_run_at = None
+                elif (current and current.schedule_enabled and current.next_run_at
+                      and current.interval_minutes == suite.interval_minutes):
+                    suite.next_run_at = current.next_run_at
+                else:
+                    suite.next_run_at = timezone.now() + timedelta(minutes=suite.interval_minutes)
                 if suite.pk:
-                    APISuite.objects.select_for_update().get(pk=suite.pk)
                     suite.save(update_fields=("name", "environment", "case_ids", "stop_on_failure", "share_cookies",
                         "schedule_enabled", "interval_minutes", "next_run_at", "updated"))
                 else:

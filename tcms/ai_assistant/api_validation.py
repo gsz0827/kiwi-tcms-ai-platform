@@ -98,7 +98,11 @@ def validate_case(data):
         if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
                 or not isinstance(path, str) or not JSON_PATH.fullmatch(path)):
             raise ValueError('响应提取示例：{"access_token":"data.token"}，变量名只能包含字母、数字和下划线。')
-    if len(json.dumps(data, ensure_ascii=False).encode()) > 65536:
+    try:
+        encoded = json.dumps(data, ensure_ascii=False, allow_nan=False).encode()
+    except (ValueError, RecursionError) as exc:
+        raise ValueError("用例配置需为有效 JSON，不支持 NaN、Infinity 或过深嵌套。") from exc
+    if len(encoded) > 65536:
         raise ValueError("单条用例配置不能超过 64 KB。")
 
 

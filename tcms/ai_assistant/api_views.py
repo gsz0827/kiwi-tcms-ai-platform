@@ -106,8 +106,8 @@ def submit(request, product_id=None, pk=None):
             "stop_on_failure": original.get("stop_on_failure", False),
             "share_cookies": original.get("share_cookies", False),
         }
-    elif request.GET.get("case", "").isdigit():
-        initial["cases"] = [request.GET["case"]]
+    else:
+        initial["cases"] = [value for value in request.GET.getlist("case") if value.isdigit()][:20]
     product = get_object_or_404(Product, pk=product_id)
     form = APISubmitForm(
         request.POST if request.method == "POST" else None, owner=request.user, product=product,
@@ -166,8 +166,10 @@ def export_report(request, pk):
 @login_required
 def status(request, pk):
     run = get_object_or_404(APIRun, pk=pk, owner=request.user)
-    return JsonResponse({"status": run.status, "terminal": run.is_terminal,
-                         "finished": run.results.exclude(status="pending").count()})
+    response = JsonResponse({"status": run.status, "terminal": run.is_terminal,
+                             "finished": run.results.exclude(status="pending").count()})
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 @login_required

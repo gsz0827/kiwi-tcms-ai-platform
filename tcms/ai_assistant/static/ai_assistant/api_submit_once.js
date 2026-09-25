@@ -3,11 +3,19 @@
 (function () {
     var forms = document.querySelectorAll(".api-workspace form.api-edit-form");
     Array.prototype.forEach.call(forms, function (form) {
-        form.addEventListener("submit", function () {
+        form.addEventListener("submit", function (event) {
+            if (form.dataset.submitting === "true") {
+                event.preventDefault();
+                return;
+            }
+            form.dataset.submitting = "true";
             var button = form.querySelector("button[type=submit], button:not([type])");
             if (!button) { return; }
             button.disabled = true;
             button.textContent = "正在提交……";
         });
+    });
+    window.addEventListener("pageshow", function (event) {
+        if (event.persisted) { window.location.reload(); }
     });
 }());

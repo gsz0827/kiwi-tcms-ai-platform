@@ -882,18 +882,24 @@ def edit_draft(request, pk):
 
     form = AITestCaseDraftForm(request.POST or None, instance=draft)
     if request.method == "POST" and form.is_valid():
-        draft = form.save(commit=False)
-        draft.requirement_version = draft.request.version
-        draft.needs_update = False
-        draft.save()
-        AIRequest.objects.filter(pk=draft.request_id).update(
-            coverage_analysis={},
-            coverage_raw="",
-            coverage_model_config=None,
-            coverage_analyzed_at=None,
-        )
-        if not draft.request.drafts.filter(needs_update=True).exists():
-            AIRequest.objects.filter(pk=draft.request_id).update(needs_case_review=False)
+        with transaction.atomic():
+            parent = AIRequest.objects.select_for_update().get(pk=draft.request_id)
+            current = AITestCaseDraft.objects.select_for_update().get(pk=draft.pk)
+            if current.imported_case_id or parent.version != draft.request.version:
+                messages.error(request, "需求或草稿已变化，请刷新后重新复核。")
+                return redirect("ai_assistant:edit_draft", pk=draft.pk)
+            draft = form.save(commit=False)
+            draft.requirement_version = parent.version
+            draft.needs_update = False
+            draft.save()
+            AIRequest.objects.filter(pk=draft.request_id).update(
+                coverage_analysis={},
+                coverage_raw="",
+                coverage_model_config=None,
+                coverage_analyzed_at=None,
+            )
+            if not parent.drafts.filter(needs_update=True).exists():
+                AIRequest.objects.filter(pk=parent.pk).update(needs_case_review=False)
         messages.success(request, f"{draft.case_number} 草稿已保存。")
         return redirect("ai_assistant:index")
     return render(
@@ -928,7 +934,13 @@ def edit_requirement(request, pk):
                     locked.needs_case_review = True
                     locked.changed_at = timezone.now()
                     locked.analysis = {}
+                    locked.analysis_raw = ""
+                    locked.analysis_model_config = None
+                    locked.analyzed_at = None
                     locked.coverage_analysis = {}
+                    locked.coverage_raw = ""
+                    locked.coverage_model_config = None
+                    locked.coverage_analyzed_at = None
                     locked.save()
                     locked.drafts.update(needs_update=True)
                     AIRequirementVersion.objects.create(
@@ -1839,7 +1851,11 @@ def apply_review(request, pk):
     review = get_object_or_404(
         AITestCaseReview, pk=pk, owner=request.user
     )
-    test_case, applied = apply_test_case_review(review, request.user)
+    try:
+        test_case, applied = apply_test_case_review(review, request.user)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("ai_assistant:review_case", pk=review.test_case_id)
     if applied:
         messages.success(request, f"已将 AI 优化应用到 TC-{test_case.pk}。")
     else:

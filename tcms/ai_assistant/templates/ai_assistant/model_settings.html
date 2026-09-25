@@ -83,19 +83,4 @@
     </form>
 </div>
 
-<script>
-(function () {
-    var forms = document.querySelectorAll(".model-test-form");
-    for (var index = 0; index < forms.length; index++) {
-        forms[index].addEventListener("submit", function (event) {
-            var button = event.submitter || this.querySelector("button");
-            var allButtons = document.querySelectorAll(".model-test-form button");
-            for (var buttonIndex = 0; buttonIndex < allButtons.length; buttonIndex++) {
-                allButtons[buttonIndex].disabled = true;
-            }
-            button.textContent = "提交中…";
-        });
-    }
-}());
-</script>
 {% endblock %}

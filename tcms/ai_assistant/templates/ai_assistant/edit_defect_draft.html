@@ -36,7 +36,7 @@
             {% csrf_token %}
             <div class="form-group">{{ link_form.name.label_tag }} {{ link_form.name }}</div>
             <div class="form-group">{{ link_form.url.label_tag }} {{ link_form.url }}</div>
-            <button type="submit" class="btn btn-success" onclick="return confirm('确认把此缺陷地址关联到当前测试执行？');">确认关联</button>
+            <button type="submit" class="btn btn-success" data-confirm="确认把此缺陷地址关联到当前测试执行？">确认关联</button>
         </form>
     {% else %}
         <div class="alert alert-warning">你可以编辑草稿，但没有修改此测试运行的权限，不能写入缺陷关联。</div>

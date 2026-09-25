@@ -16,6 +16,7 @@ DNS 解析主机名要 8 秒才报错，驱动层再加上重试，单次连接�
 """
 
 import os
+import math
 import threading
 import time
 
@@ -33,6 +34,7 @@ DEFAULT_READINESS_TIMEOUT = 3.0
 
 # 进程启动时刻，暴露 uptime 便于区分"持续运行"与"刚刚重启过"
 _STARTED_AT = time.monotonic()
+_PROBE_SLOT = threading.BoundedSemaphore(1)
 
 
 def _describe(exc):
@@ -45,7 +47,7 @@ def _readiness_timeout():
         value = float(os.environ.get("KIWI_READINESS_TIMEOUT", DEFAULT_READINESS_TIMEOUT))
     except (TypeError, ValueError):
         return DEFAULT_READINESS_TIMEOUT
-    return value if value > 0 else DEFAULT_READINESS_TIMEOUT
+    return value if math.isfinite(value) and value > 0 else DEFAULT_READINESS_TIMEOUT
 
 
 def _check_database():
@@ -104,6 +106,11 @@ def _run_bounded(func, timeout):
     返回 ``("ok", 结果)`` / ``("timeout", None)`` / ``("error", 异常)``。
     超时后不再等待：调用方必须立刻给出结论，把工作进程让出来。
     """
+    # Timed-out database calls cannot be killed. Keep at most one alive per
+    # process instead of spawning another thread for every readiness request.
+    slot = _PROBE_SLOT
+    if not slot.acquire(blocking=False):
+        return "timeout", None
     outcome = {}
 
     def target():
@@ -114,10 +121,17 @@ def _run_bounded(func, timeout):
         finally:
             # 该线程第一次访问数据库会创建线程私有的连接，必须显式关闭，
             # 否则每次探测都会占用一个数据库连接直到线程对象被回收
-            connection.close()
+            try:
+                connection.close()
+            finally:
+                slot.release()
 
     thread = threading.Thread(target=target, name="ai-readiness-probe", daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except Exception:
+        slot.release()
+        raise
     thread.join(timeout)
 
     if thread.is_alive():

@@ -62,7 +62,7 @@ class EnvironmentForm(StyledForm, forms.ModelForm):
                 raise ValueError("环境变量应是 JSON 对象，变量名由字母、数字、下划线组成，值为简单类型。")
             if data.get("timeout") is not None and not 1 <= data["timeout"] <= 30:
                 raise ValueError("超时应在 1 到 30 秒之间。")
-            if len(json.dumps(data, default=str).encode()) > 32768:
+            if len(json.dumps(data, default=str, allow_nan=False).encode()) > 32768:
                 raise ValueError("环境配置不能超过 32 KB。")
         except ValueError as exc:
             raise forms.ValidationError(str(exc)) from exc

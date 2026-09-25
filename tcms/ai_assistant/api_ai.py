@@ -195,10 +195,33 @@ def import_drafts(owner, batch_id, selected_ids):
         context = inputs(batch)
         available = set(context["environment_variables"])
         relevant = [d for d in drafts if d.imported_at or d.pk in selected_ids]
-        for draft in sorted(relevant, key=lambda d: (d.configuration.get("sequence", 0), d.position)):
-            if not draft.reviewed_at or draft_errors(draft, context):
-                raise ValueError("所选草稿中有未复核或不完整的配置，请先逐条复核。")
-            config = validate_configuration(draft.configuration)
+        configurations = {}
+        for draft in relevant:
+            if draft.imported_at:
+                # Dependencies must reflect the executable configuration, which
+                # may have been edited or deleted since the original import.
+                saved = APICase.objects.select_for_update().filter(
+                    pk=draft.api_case_id, owner=owner, product=batch.product
+                ).first()
+                if not saved:
+                    if draft.pk in selected_ids:
+                        raise ValueError("已导入的接口配置已删除或变更归属，请重新生成。")
+                    continue
+                config = validate_configuration({key: getattr(saved, key) for key in CONFIG_FIELDS})
+                order = (config["sequence"], 0, saved.pk)
+            else:
+                if not draft.reviewed_at or draft_errors(draft, context):
+                    raise ValueError("所选草稿中有未复核或不完整的配置，请先逐条复核。")
+                config = validate_configuration(draft.configuration)
+                # Existing IDs always precede new IDs at the same sequence.
+                order = (config["sequence"], 1, draft.position)
+            configurations[draft.pk] = (config, order)
+        ordered = sorted(
+            (draft for draft in relevant if draft.pk in configurations),
+            key=lambda draft: configurations[draft.pk][1],
+        )
+        for draft in ordered:
+            config = configurations[draft.pk][0]
             required = variable_names([config["path"], config["headers"], config["query"], config["assertions"],
                                        config["body"] if config["send_body"] else {}])
             missing = required - available
@@ -209,8 +232,8 @@ def import_drafts(owner, batch_id, selected_ids):
         priority = Priority.objects.filter(is_active=True).first()
         if not status or not priority:
             raise ValueError("请先完成平台初始化，配置用例状态与优先级。")
-        for draft in chosen:
-            if draft.imported_at:
+        for draft in ordered:
+            if draft.imported_at or draft.pk not in selected_ids:
                 continue
             case = batch.target_case
             if case is None:
@@ -218,6 +241,12 @@ def import_drafts(owner, batch_id, selected_ids):
                     category=batch.category, author=owner, case_status=status, priority=priority, is_automated=True)
                 for permission in ("view_testcase", "change_testcase"):
                     assign_perm(permission, owner, case)
+            else:
+                case = TestCase.objects.select_for_update().get(pk=case.pk)
+                if not case.is_automated:
+                    case.is_automated = True
+                    case._history_user = owner
+                    case.save(update_fields=("is_automated",))
             # Existing scenarios/configurations are never overwritten by generated drafts.
             config = APICase.objects.create(owner=owner, product=batch.product, test_case=case,
                 name=draft.name, **validate_configuration(draft.configuration))

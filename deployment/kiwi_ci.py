@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -18,9 +19,17 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+def xml_text(value):
+    return re.sub(r"[^\x09\x0a\x0d\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]", "\ufffd", value)
+
+
 def write_reports(payload, output):
     Path(output).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    results = payload.get("results", [])
+    results = list(payload.get("results", []))
+    if payload.get("status") != "completed" or not results:
+        # JUnit consumers must not turn a cancelled/empty run into a green build.
+        results.append(dict(name="平台执行完整性", status="error", elapsed_ms=0,
+                            error=payload.get("error") or "任务未完整执行", checks=[]))
     suite = ET.Element("testsuite", name="Kiwi API automation", tests=str(len(results)),
         failures=str(sum(r["status"] == "failed" for r in results)),
         errors=str(sum(r["status"] == "error" for r in results)),
@@ -33,6 +42,11 @@ def write_reports(payload, output):
             node = ET.SubElement(case, {"failed": "failure", "error": "error"}.get(status, "skipped"),
                                  message=result.get("error") or status)
             node.text = json.dumps(result.get("checks", []), ensure_ascii=False)
+    # XML 1.0 forbids control characters which are valid inside JSON strings.
+    for element in suite.iter():
+        element.attrib = {key: xml_text(value) for key, value in element.attrib.items()}
+        if element.text:
+            element.text = xml_text(element.text)
     ET.ElementTree(suite).write(str(Path(output).with_suffix(".xml")), encoding="utf-8", xml_declaration=True)
 
 

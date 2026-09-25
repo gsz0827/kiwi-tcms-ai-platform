@@ -23,13 +23,6 @@
         <div class="alert alert-warning">请先配置并设为默认 <a href="{% url 'ai_assistant:model_settings' %}">AI 模型</a>。</div>
     {% endif %}
 
-    <div id="defect-progress" class="panel panel-info" style="display:none; margin-top:20px">
-        <div class="panel-heading"><strong>AI 正在整理失败执行证据</strong></div>
-        <div class="panel-body">
-            <div class="progress"><div id="defect-progress-bar" class="progress-bar progress-bar-info progress-bar-striped active" style="width:3%">3%</div></div>
-            <p>正在生成可编辑草稿，已等待 <span id="defect-elapsed">0</span> 秒。</p>
-        </div>
-    </div>
 
     <hr>
     <h3>已有缺陷关联</h3>
@@ -47,23 +40,4 @@
         {% empty %}<p class="text-muted">暂无草稿。</p>{% endfor %}
     </div>
 </div>
-<script>
-(function () {
-    var form = document.getElementById("defect-generation-form");
-    if (!form) { return; }
-    form.addEventListener("submit", function () {
-        var button = document.getElementById("defect-generation-button");
-        var panel = document.getElementById("defect-progress");
-        var bar = document.getElementById("defect-progress-bar");
-        var elapsed = document.getElementById("defect-elapsed");
-        var started = Date.now();
-        button.disabled = true; button.textContent = "正在生成，请稍候…"; panel.style.display = "block";
-        window.setInterval(function () {
-            var seconds = Math.floor((Date.now() - started) / 1000);
-            var percent = Math.min(90, 3 + Math.floor(seconds * 87 / 300));
-            elapsed.textContent = seconds; bar.style.width = percent + "%"; bar.textContent = percent + "%";
-        }, 1000);
-    });
-}());
-</script>
 {% endblock %}

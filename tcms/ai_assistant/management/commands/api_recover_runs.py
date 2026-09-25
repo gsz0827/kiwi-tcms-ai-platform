@@ -25,4 +25,8 @@ class Command(BaseCommand):
             run.completed = timezone.now()
             run.error = "Worker 中断。未保存结果的请求可能已经发送，请人工核对目标服务；不会自动重放。"
             run.save(update_fields=("status", "completed", "error"))
+            run.results.filter(status="pending").update(
+                status="skipped", completed=run.completed,
+                error="任务中断，未取得执行结果；请求可能已发送，请核对目标服务。",
+            )
         self.stdout.write("已标记中断，保留已有结果，没有重新发送任何请求。")

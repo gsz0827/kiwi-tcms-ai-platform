@@ -1,5 +1,11 @@
 {% extends "base.html" %}
+{% load static %}
+
+{% block external_head_scripts %}{% endblock %}
+{% block external_footer_scripts %}{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
 
 {% block contents %}
     {% block ai_contents %}{% endblock %}
+    <script src="{% static 'ai_assistant/page_actions.js' %}" defer></script>
 {% endblock %}

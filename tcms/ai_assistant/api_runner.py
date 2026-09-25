@@ -444,10 +444,15 @@ def execute_run(run):
                 current.save(update_fields=("status", "completed"))
             current.results.filter(status="pending").update(status="skipped")
     except Exception:
-        APIRun.objects.filter(pk=run.pk).update(
-            status="interrupted", completed=timezone.now(),
-            error="执行中断。已发送的请求不会自动重放，请核对已有结果后再创建新任务。",
-        )
+        with transaction.atomic():
+            APIRun.objects.filter(pk=run.pk).update(
+                status="interrupted", completed=timezone.now(),
+                error="执行中断。已发送的请求不会自动重放，请核对已有结果后再创建新任务。",
+            )
+            run.results.filter(status="pending").update(
+                status="skipped", completed=timezone.now(),
+                error="任务中断，未取得执行结果；请求可能已发送，请核对目标服务。",
+            )
 
 
 def execute_next_api_run():
