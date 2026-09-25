@@ -1,3 +1,4 @@
+{% load ai_navigation %}
 {% with current=request.resolver_match.url_name path=request.path %}
 <aside class="kiwi-platform-sidebar" aria-label="测试平台功能菜单">
     <div class="kiwi-platform-sidebar-title">
@@ -85,6 +86,20 @@
             <a href="{% url 'ai_assistant:report_trends' %}"><span class="fa fa-line-chart"></span>质量趋势</a>
         </li>
     </ul>
+    {% platform_extra_menu as extra_menu %}
+    {% if extra_menu.entries %}
+    <a class="kiwi-tree-toggle {% if path in extra_menu.paths %}is-current{% endif %}"
+       href="#kiwi-nav-more" data-toggle="collapse"
+       aria-expanded="{% if path in extra_menu.paths %}true{% else %}false{% endif %}"
+       aria-controls="kiwi-nav-more">
+        <span class="fa fa-ellipsis-h"></span>更多功能
+        <span class="fa fa-angle-down kiwi-tree-caret"></span>
+    </a>
+    <ul id="kiwi-nav-more" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if path in extra_menu.paths %}in{% endif %}">
+        {% include "include/platform_extra_menu.html" with menu_items=extra_menu.entries %}
+    </ul>
+    {% endif %}
+
     <nav class="kiwi-project-settings" aria-label="项目配置">
         <ul class="nav nav-pills nav-stacked">
             <li class="{% if current == 'project_settings' or current == 'create_product' or current == 'create_classification' or current == 'instruction_profiles' or current == 'edit_instruction_profile' %}active{% endif %}">

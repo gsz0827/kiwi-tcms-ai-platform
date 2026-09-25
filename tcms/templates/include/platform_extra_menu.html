@@ -1,0 +1,14 @@
+{% load extra_filters %}
+{# 递归渲染 platform_extra_menu 取出的条目，层级与上游顶部菜单保持一致 #}
+{% for label, target in menu_items %}
+    {% if target|is_list %}
+        <li class="kiwi-extra-caption">{{ label }}</li>
+        <li class="kiwi-extra-children">
+            <ul class="kiwi-tree-children">
+                {% include "include/platform_extra_menu.html" with menu_items=target %}
+            </ul>
+        </li>
+    {% else %}
+        <li><a href="{{ target }}" target="_parent">{{ label }}</a></li>
+    {% endif %}
+{% endfor %}

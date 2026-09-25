@@ -1,6 +1,8 @@
 from collections import defaultdict
 
 from django import template
+from django.conf import settings
+from django.urls import NoReverseMatch, reverse
 
 from tcms.ai_assistant.models import (
     AIRequest,
@@ -216,4 +218,100 @@ def ai_project_switcher(context):
         "versions": versions,
         "selected_product": selected_product,
         "selected_version": selected_version,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 收编上游的顶部菜单（SETTINGS.MENU_ITEMS）
+#
+# 本分支用中文侧边栏取代了上游顶部的横向菜单，于是 MENU_ITEMS 里侧边栏没有给出
+# 入口的条目就再也没人渲染：插件注册的 MORE 菜单、度量、管理员、部分搜索页和
+# 快速新建入口都从界面上消失了。下面把侧边栏尚未覆盖的条目取出来，交给侧边栏的
+# "更多功能"分组渲染，保持单导航外观。
+# ---------------------------------------------------------------------------
+
+# 中文侧边栏已经提供链接的 URL，重复出现会让同一个页面在导航里出现两条入口
+SIDEBAR_MENU_URLS = (
+    "core-views-index",
+    "ai_assistant:index",
+    "ai_assistant:case_library",
+    "plans-search",
+    "testruns-search",
+    "ai_assistant:api_home",
+    "ai_assistant:job_list",
+    "bugs-search",
+    "ai_assistant:dashboard",
+    "ai_assistant:release_gate_settings",
+    "ai_assistant:iteration_reports",
+    "ai_assistant:report_trends",
+    "ai_assistant:project_settings",
+)
+
+
+def _sidebar_menu_urls():
+    urls = set()
+    for name in SIDEBAR_MENU_URLS:
+        try:
+            urls.add(reverse(name))
+        except NoReverseMatch:  # 名称写错不应该让整个页面渲染失败
+            continue
+    return urls
+
+
+def _collect_menu_entries(items, covered, seen, keep_all=False):
+    """把 MENU_ITEMS 中的一段整理成 (标题, 链接或子菜单) 列表。
+
+    keep_all=True 用于插件注册的菜单：那部分内容必须原样保留，即使链接与侧边栏
+    已有入口重合（例如插件菜单里的 "Go to Dashboard" 就指向 "/"）。
+    """
+    entries = []
+    for entry in items:
+        # MENU_ITEMS 里有些条目在可选应用未安装时是空元组，必须先挡住
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            continue
+        label, target = entry
+        if label == "-":
+            continue
+        if isinstance(target, list):
+            children = _collect_menu_entries(target, covered, seen, keep_all)
+            if children:
+                entries.append((label, children))
+            continue
+        url = str(target)
+        if not keep_all:
+            if url in covered or url in seen:
+                continue
+            seen.add(url)
+        entries.append((label, url))
+    return entries
+
+
+def _menu_leaf_paths(entries):
+    for _label, target in entries:
+        if isinstance(target, list):
+            yield from _menu_leaf_paths(target)
+        elif target.startswith("/"):
+            yield target
+
+
+@register.simple_tag
+def platform_extra_menu():
+    """侧边栏"更多功能"分组的内容，外加用于高亮当前项的一组本地路径。"""
+    groups = list(settings.MENU_ITEMS)
+    covered = _sidebar_menu_urls()
+    seen = set()
+    entries = []
+    for index, (label, target) in enumerate(groups):
+        if not isinstance(target, list):
+            # 单条入口（例如 "AI 测试助手"），侧边栏已有对应菜单
+            continue
+        # tcms/settings/common.py 的约定：最后一项固定是留给插件扩展的 MORE
+        is_plugin_group = index == len(groups) - 1
+        children = _collect_menu_entries(target, covered, seen, is_plugin_group)
+        if children:
+            entries.append((label, children))
+
+    return {
+        "entries": entries,
+        "paths": sorted(set(_menu_leaf_paths(entries))),
     }

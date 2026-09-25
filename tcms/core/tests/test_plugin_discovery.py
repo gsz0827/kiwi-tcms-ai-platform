@@ -11,6 +11,7 @@ from django.utils.translation import gettext_lazy as _
 
 from tcms.core.templatetags.extra_filters import markdown2html
 from tcms.telemetry.tests.plugin import menu as plugin_menu
+from tcms.tests import LoggedInTestCase
 from tcms.urls import urlpatterns
 
 
@@ -47,7 +48,7 @@ class UrlDiscoveryTestCase(TestCase):
         self.fail("No plugins found or urlpatterns not valid")
 
 
-class MenuDiscoveryTestCase(TestCase):
+class MenuDiscoveryTestCase(LoggedInTestCase):
     def test_menu_is_updated(self):
         """
         Given there are some plugins installed
@@ -67,25 +68,22 @@ class MenuDiscoveryTestCase(TestCase):
         Given there are some plugins installed
         Then navigation menu under MORE will be rendered
             with several levels of sub menus.
+
+        This fork replaces the upstream horizontal menu with a Chinese sidebar,
+        so the plugin entries are rendered inside the ``更多功能`` group of that
+        sidebar instead of a top-level dropdown. The request has to be
+        authenticated because the sidebar only exists for logged-in users.
         """
         response = self.client.get("/", follow=True)
         self.assertContains(response, _("MORE"))
         self.assertContains(response, "Fake Telemetry plugin")
-        self.assertContains(
-            response,
-            "<a class='dropdown-toggle' href='#' data-toggle='dropdown'>Fake Plugin sub-menu</a>",
-            html=True,
-        )
+        self.assertContains(response, "Fake Plugin sub-menu")
         self.assertContains(
             response,
             '<a href="/a_fake_plugin/example/" target="_parent">Example</a>',
             html=True,
         )
-        self.assertContains(
-            response,
-            "<a class='dropdown-toggle' href='#' data-toggle='dropdown'>3rd level menu</a>",
-            html=True,
-        )
+        self.assertContains(response, "3rd level menu")
         self.assertContains(response, "Go to Dashboard")
         self.assertContains(response, "Go to kiwitcms.org")
 
