@@ -1,0 +1,50 @@
+# Build this repository, including its AI extension and frontend assets.
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /build
+COPY tcms/package.json tcms/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY tcms/ ./
+RUN ./node_modules/.bin/webpack && npm prune --omit=dev --no-audit --no-fund
+
+FROM python:3.12-bookworm AS python-deps
+RUN python -m venv /venv
+ENV PATH=/venv/bin:$PATH
+COPY requirements /requirements
+RUN pip install --no-cache-dir -r /requirements/mariadb.txt
+
+FROM python:3.12-slim-bookworm AS application
+ARG DEBIAN_MIRROR=https://deb.debian.org
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 update \
+    && apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 install -y --no-install-recommends \
+    nginx openssl gettext libmariadb3 libpcre2-8-0 libxml2 libyaml-0-2 curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 1001 --create-home kiwi
+ENV PATH=/venv/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=tcms.settings.ai
+WORKDIR /Kiwi
+COPY --from=python-deps /venv /venv
+COPY . /Kiwi
+COPY --from=frontend /build/node_modules /Kiwi/tcms/node_modules
+COPY --from=frontend /build/static/js/bundle.js /Kiwi/tcms/static/js/bundle.js
+RUN DJANGO_SETTINGS_MODULE=tcms.settings.product python manage.py compilemessages \
+    && DJANGO_SETTINGS_MODULE=tcms.settings.product python manage.py collectstatic --noinput \
+    && mkdir -p /Kiwi/ssl /Kiwi/uploads \
+    && chown -R kiwi:kiwi /Kiwi
+USER 1001
+EXPOSE 8443
+# 存活探针只证明进程能响应 HTTP，不访问数据库。原先探测 /accounts/login/，
+# 会把数据库故障误判为进程故障。就绪探针是 /ready/，见 docker-compose.ai.yml。
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl --fail --silent --insecure https://localhost:8443/health/ || exit 1
+CMD ["bash", "/Kiwi/deployment/start-web.sh"]
+
+FROM application AS test
+ENV LANG=en_US.UTF-8
+USER root
+RUN pip install --no-cache-dir -r requirements/ai-test.txt
+USER 1001
+
+FROM application AS runtime

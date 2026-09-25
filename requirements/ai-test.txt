@@ -1,0 +1,2 @@
+# Needed by tcms.settings.test's shared factories and static-file validation.
+factory_boy>=3.3,<4

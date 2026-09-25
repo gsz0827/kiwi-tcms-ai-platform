@@ -1,0 +1,146 @@
+name: kiwi-ai
+
+x-app: &app
+  image: kiwi-tcms-ai:local
+  build:
+    context: .
+    dockerfile: Dockerfile.ai
+    target: runtime
+    args:
+      DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://deb.debian.org}
+  environment:
+    DJANGO_SETTINGS_MODULE: tcms.settings.ai
+    KIWI_SECRET_KEY: ${KIWI_SECRET_KEY:?Set KIWI_SECRET_KEY in .env}
+    KIWI_ALLOWED_HOSTS: ${KIWI_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    KIWI_CSRF_TRUSTED_ORIGINS: ${KIWI_CSRF_TRUSTED_ORIGINS:-https://localhost:9443,https://127.0.0.1:9443}
+    KIWI_DB_HOST: db
+    KIWI_DB_PORT: "3306"
+    KIWI_DB_NAME: kiwi
+    KIWI_DB_USER: kiwi
+    KIWI_DB_PASSWORD: ${KIWI_DB_PASSWORD:?Set KIWI_DB_PASSWORD in .env}
+    KIWI_REGISTRATION_ENABLED: "false"
+    KIWI_TIME_ZONE: ${KIWI_TIME_ZONE:-Asia/Shanghai}
+    KIWI_LOG_LEVEL: ${KIWI_LOG_LEVEL:-INFO}
+    KIWI_READINESS_TIMEOUT: ${KIWI_READINESS_TIMEOUT:-3}
+    KIWI_DB_CONNECT_TIMEOUT: ${KIWI_DB_CONNECT_TIMEOUT:-5}
+    KIWI_API_ALLOWED_ORIGINS: ${KIWI_API_ALLOWED_ORIGINS:-http://api-demo:8080}
+
+services:
+  api-demo:
+    image: kiwi-tcms-ai:local
+    profiles: ["automation-demo"]
+    command: ["python", "/Kiwi/deployment/api_demo.py"]
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: kiwi
+      MARIADB_USER: kiwi
+      MARIADB_PASSWORD: ${KIWI_DB_PASSWORD:?Set KIWI_DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${KIWI_DB_ROOT_PASSWORD:?Set KIWI_DB_ROOT_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    <<: *app
+    ports:
+      - "${KIWI_BIND_ADDRESS:-127.0.0.1}:${KIWI_HTTPS_PORT:-9443}:8443"
+    volumes:
+      - uploads:/Kiwi/uploads
+      - certificates:/Kiwi/ssl
+    # 用就绪探针而不是存活探针：数据库断开或迁移未跑完时，docker compose ps
+    # 会显示 unhealthy，一眼能看出"进程在但服务不可用"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--insecure", "https://localhost:8443/ready/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    command: ["python", "manage.py", "ai_worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 11m
+
+  scheduler:
+    <<: *app
+    command: ["python", "manage.py", "api_scheduler"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  tests: &tests
+    <<: *app
+    image: kiwi-tcms-ai:test
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+      target: test
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://deb.debian.org}
+    profiles: ["test"]
+    command: ["python", "manage.py", "test", "tcms.ai_assistant", "--settings=tcms.settings.test", "--noinput"]
+    healthcheck:
+      disable: true
+
+  test-db:
+    image: mariadb:11.4
+    profiles: ["test-mariadb"]
+    environment:
+      MARIADB_DATABASE: kiwi_ai_test_base
+      MARIADB_ROOT_PASSWORD: disposable-test-password
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  tests-mariadb:
+    <<: *tests
+    profiles: ["test-mariadb"]
+    environment:
+      DJANGO_SETTINGS_MODULE: tcms.settings.ai_test_mariadb
+      KIWI_TEST_DB_HOST: test-db
+      KIWI_TEST_DB_PASSWORD: disposable-test-password
+    command: ["python", "manage.py", "test", "tcms.ai_assistant", "--settings=tcms.settings.ai_test_mariadb", "--noinput"]
+    depends_on:
+      test-db:
+        condition: service_healthy
+
+volumes:
+  db_data:
+  uploads:
+  certificates:
