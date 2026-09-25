@@ -1,4 +1,5 @@
 import json
+import uuid
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -8,7 +9,12 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from .crypto import decrypt_api_key, encrypt_api_key
-from .forms import AIDefectDraftForm, AIModelConfigForm, AITestCaseDraftForm
+from .forms import (
+    AIDefectDraftForm,
+    AIInstructionProfileForm,
+    AIModelConfigForm,
+    AITestCaseDraftForm,
+)
 from .engineering import (
     duplicate_candidates,
     evaluate_release_gate,
@@ -19,6 +25,7 @@ from .models import (
     AIDefectDraft,
     AIDefectStatusHistory,
     AIIterationReport,
+    AIInstructionProfile,
     AIJob,
     AIModelConfig,
     AIReleaseGateRule,
@@ -43,6 +50,7 @@ from .services import (
     apply_test_case_review,
     assign_unique_case_numbers,
     build_test_run_snapshot,
+    capture_instruction_snapshot,
     format_test_case_text,
     generate_defect_draft,
     generate_coverage_gap_test_cases,
@@ -56,6 +64,7 @@ from .services import (
     parse_test_run_analysis,
     parse_test_report,
     test_model_connection,
+    render_instruction_context,
     verify_regression,
 )
 from tcms.core.contrib.linkreference.models import LinkReference
@@ -1102,6 +1111,7 @@ class PersonalAIModelConfigTests(TestCase):
                 "title": "登录",
                 "requirement": "用户通过验证码登录",
                 "action": "analyze",
+                "submission_token": str(uuid.uuid4()),
             },
             secure=True,
         )
@@ -1149,6 +1159,133 @@ class PersonalAIModelConfigTests(TestCase):
         self.assertEqual(ai_request.drafts.count(), 1)
         self.assertEqual(ai_request.drafts.get().summary, "成功场景")
         self.assertEqual(generate.call_args.kwargs["analysis"], ai_request.analysis)
+
+
+@override_settings(SECRET_KEY="ai-instruction-profile-test-secret")
+class AIInstructionProfileTests(TestCase):
+    def setUp(self):
+        self.owner = get_user_model().objects.create_user(
+            username="instruction-owner", password="password"
+        )
+        self.classification = Classification.objects.create(name="规则项目分类")
+        self.project_one = Product.objects.create(
+            name="规则项目一", classification=self.classification
+        )
+        self.project_two = Product.objects.create(
+            name="规则项目二", classification=self.classification
+        )
+
+    def test_each_project_has_one_rule_package(self):
+        first = AIInstructionProfile.objects.create(
+            owner=self.owner,
+            name="登录规范",
+            product=self.project_one,
+            instructions="检查验证码过期、错误次数和账号锁定。",
+        )
+        second = AIInstructionProfile.objects.create(
+            owner=self.owner,
+            name="登录规范",
+            product=self.project_two,
+            instructions="检查单点登录、会话超时和权限隔离。",
+        )
+
+        self.assertNotEqual(first.pk, second.pk)
+        form = AIInstructionProfileForm(
+            data={
+                "name": "登录规范",
+                "description": "重复项目内名称",
+                "product": self.project_one.pk,
+                "instructions": "同一项目不能绑定第二个规则包。",
+                "is_active": True,
+            },
+            owner=self.owner,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("一个项目只能绑定一个 AI 规则包", str(form.errors))
+
+    def test_snapshot_uses_the_product_rule_package(self):
+        AIInstructionProfile.objects.create(
+            owner=self.owner,
+            name="项目一规范",
+            product=self.project_one,
+            instructions="支付需求检查幂等性、回调重试、权限和异常路径。",
+        )
+        AIInstructionProfile.objects.create(
+            owner=self.owner,
+            name="项目二规范",
+            product=self.project_two,
+            instructions="这条规则不应该进入项目一任务。",
+        )
+
+        snapshot = capture_instruction_snapshot(
+            self.owner, self.project_one.category.get(name="--default--")
+        )
+        names = [
+            item["name"] for item in snapshot["requirement_analysis"]
+        ]
+        self.assertEqual(names, ["项目一规范"])
+        self.assertNotIn("项目二规范", names)
+        self.assertIn("幂等性", render_instruction_context(snapshot, "requirement_analysis"))
+
+    def test_editing_content_increments_version(self):
+        profile = AIInstructionProfile.objects.create(
+            owner=self.owner,
+            name="版本规则",
+            product=self.project_one,
+            instructions="检查正常流程和异常流程。",
+        )
+        profile.instructions = "检查正常、异常、边界和安全流程。"
+        profile.save()
+        profile.refresh_from_db()
+        self.assertEqual(profile.version, 2)
+
+    def test_product_creation_page_creates_kiwi_defaults(self):
+        permission = Permission.objects.get(
+            content_type__app_label="management", codename="add_product"
+        )
+        self.owner.user_permissions.add(permission)
+        self.client.force_login(self.owner)
+
+        home = self.client.get(reverse("ai_assistant:index"), secure=True)
+        self.assertContains(home, reverse("ai_assistant:project_settings"))
+        settings_page = self.client.get(reverse("ai_assistant:project_settings"), secure=True)
+        self.assertContains(settings_page, reverse("ai_assistant:create_product"))
+        self.assertNotContains(settings_page, reverse("ai_assistant:create_classification"))
+
+        response = self.client.post(
+            reverse("ai_assistant:create_product"),
+            {
+                "name": "新建 AI 产品",
+                "classification": self.classification.pk,
+                "description": "由 AI 助手创建",
+            },
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(name="新建 AI 产品")
+        self.assertTrue(product.category.filter(name="--default--").exists())
+        self.assertTrue(product.version.filter(value="unspecified").exists())
+
+    def test_classification_creation_returns_to_product_form(self):
+        permission = Permission.objects.get(
+            content_type__app_label="management", codename="add_classification"
+        )
+        self.owner.user_permissions.add(permission)
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse("ai_assistant:create_classification"),
+            {"name": "新建分类"},
+            secure=True,
+        )
+
+        classification = Classification.objects.get(name="新建分类")
+        self.assertRedirects(
+            response,
+            f"{reverse('ai_assistant:create_product')}?classification={classification.pk}",
+            fetch_redirect_response=False,
+        )
 
 
 @override_settings(SECRET_KEY="ai-run-analysis-test-secret")
@@ -1628,7 +1765,7 @@ class TestRunAnalysisTests(TestCase):
         self.assertContains(dashboard_page, "待办事项")
         self.assertContains(index_page, "需求分析")
         self.assertContains(index_page, "执行任务")
-        self.assertContains(index_page, reverse("testcases-search"))
+        self.assertContains(index_page, reverse("ai_assistant:case_library"))
         self.assertContains(index_page, reverse("testruns-search"))
         self.assertContains(index_page, reverse("ai_assistant:model_settings"))
 

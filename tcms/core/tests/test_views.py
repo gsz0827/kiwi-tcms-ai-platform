@@ -13,6 +13,7 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from tcms import urls
+from tcms.ai_assistant.models import AIJob, AIRequest, AITestCaseDraft
 from tcms.tests import LoggedInTestCase
 from tcms.tests.factories import (
     TestExecutionFactory,
@@ -20,6 +21,7 @@ from tcms.tests.factories import (
     TestRunFactory,
     UserFactory,
 )
+from tcms.testruns.models import TestExecutionStatus
 
 
 class TestDashboard(LoggedInTestCase):
@@ -55,9 +57,52 @@ class TestDashboard(LoggedInTestCase):
     def test_when_logged_in_renders_dashboard(self):
         response = self.client.get(reverse("core-views-index"))
 
-        self.assertContains(response, _("Test executions"))
-        self.assertContains(response, _("Dashboard"))
-        self.assertContains(response, _("Your Test plans"))
+        self.assertContains(response, "待继续的测试运行")
+        self.assertContains(response, "工作台")
+        self.assertContains(response, "我的测试计划")
+
+    def test_workbench_ai_data_is_scoped_to_current_user(self):
+        own = AIRequest.objects.create(
+            created_by=self.tester, title="我的登录需求", requirement="登录"
+        )
+        other = UserFactory()
+        private = AIRequest.objects.create(
+            created_by=other, title="别人的私密需求", requirement="不可见"
+        )
+        for item in (own, private):
+            AITestCaseDraft.objects.create(request=item, summary="草稿", case_number="TC-1")
+        AIJob.objects.create(
+            owner=self.tester, operation="requirement_analysis", status="queued"
+        )
+        AIJob.objects.create(
+            owner=other, operation="test_case_generation", status="failed"
+        )
+        response = self.client.get(reverse("core-views-index"), secure=True)
+        self.assertEqual(response.context["requirement_count"], 1)
+        self.assertEqual(response.context["pending_draft_count"], 1)
+        self.assertEqual(response.context["active_job_count"], 1)
+        self.assertEqual(response.context["failed_job_count"], 0)
+        self.assertContains(response, own.title)
+        self.assertNotContains(response, private.title)
+        self.assertEqual(len(response.context["recent_jobs"]), 1)
+
+    def test_workbench_run_progress_counts_all_assignees(self):
+        run = TestRunFactory()
+        waiting = TestExecutionStatus.objects.filter(weight=0).first()
+        passed = TestExecutionStatus.objects.filter(weight__gt=0).first()
+        TestExecutionFactory(run=run, assignee=self.tester, status=waiting)
+        TestExecutionFactory(run=run, status=passed)
+        response = self.client.get(reverse("core-views-index"), secure=True)
+        row = response.context["recent_runs"][0]
+        self.assertEqual(row.execution_count, 2)
+        self.assertEqual(row.completed_count, 1)
+        self.assertEqual(row.completion_percent, 50)
+
+    def test_workbench_empty_run_does_not_divide_by_zero(self):
+        TestRunFactory(manager=self.tester)
+        response = self.client.get(reverse("core-views-index"), secure=True)
+        self.assertEqual(response.context["recent_runs"][0].completion_percent, 0)
+        self.assertContains(response, "继续 1 个测试运行")
 
     def test_dashboard_shows_testruns_for_manager(self):
         test_run = TestRunFactory(manager=self.tester)

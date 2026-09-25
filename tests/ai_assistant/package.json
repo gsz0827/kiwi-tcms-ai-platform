@@ -1,0 +1,6 @@
+{
+  "name": "kiwi-ai-browser-checks",
+  "private": true,
+  "scripts": { "test": "node browser_checks.cjs" },
+  "devDependencies": { "playwright": "1.63.0" }
+}
