@@ -601,7 +601,7 @@ def dashboard(request):
             {
                 "level": "warning",
                 "title": "配置 AI 模型",
-                "detail": "当前账号尚未启用模型，AI 功能暂不可用。",
+                "detail": "当前账号尚未设置默认模型，AI 功能暂不可用。",
                 "url": reverse("ai_assistant:model_settings"),
             }
         )
@@ -742,7 +742,7 @@ def index(request):
 
     if request.method == "POST":
         if active_config is None:
-            messages.warning(request, "请先配置并启用一个 AI 模型，再使用 AI 助手。")
+            messages.warning(request, "请先配置一个 AI 模型并设为默认，再使用 AI 助手。")
             return redirect("ai_assistant:model_settings")
 
         form = AIRequestForm(request.POST)
@@ -808,7 +808,7 @@ def generate_from_analysis(request, pk):
         messages.info(request, "该请求已经生成过测试用例草稿。")
         return redirect("ai_assistant:index")
     if not AIModelConfig.objects.filter(owner=request.user, is_active=True).exists():
-        messages.warning(request, "请先配置并启用一个 AI 模型，再生成测试用例。")
+        messages.warning(request, "请先配置一个 AI 模型并设为默认，再生成测试用例。")
         return redirect("ai_assistant:model_settings")
 
     return _queue_job(
@@ -831,7 +831,7 @@ def analyze_coverage(request, pk):
         messages.warning(request, "该请求还没有可分析的测试用例草稿。")
         return redirect("ai_assistant:index")
     if not AIModelConfig.objects.filter(owner=request.user, is_active=True).exists():
-        messages.warning(request, "请先配置并启用一个 AI 模型，再分析用例覆盖率。")
+        messages.warning(request, "请先配置一个 AI 模型并设为默认，再分析用例覆盖率。")
         return redirect("ai_assistant:model_settings")
 
     return _queue_job(
@@ -857,7 +857,7 @@ def supplement_from_coverage(request, pk):
         messages.info(request, "当前覆盖分析没有需要补充的测试缺口。")
         return redirect("ai_assistant:index")
     if not AIModelConfig.objects.filter(owner=request.user, is_active=True).exists():
-        messages.warning(request, "请先配置并启用一个 AI 模型，再补充测试用例。")
+        messages.warning(request, "请先配置一个 AI 模型并设为默认，再补充测试用例。")
         return redirect("ai_assistant:model_settings")
 
     return _queue_job(
@@ -1171,11 +1171,11 @@ def edit_model_config(request, pk):
 def activate_model_config(request, pk):
     config = get_object_or_404(AIModelConfig, pk=pk, owner=request.user)
     if not config.api_key_encrypted:
-        messages.error(request, "该模型没有 API 密钥，请先编辑后再启用。")
+        messages.error(request, "该模型没有 API Key，请先编辑后再设为默认。")
     else:
         config.is_active = True
         config.save()
-        messages.success(request, f"已启用模型“{config.name}”。")
+        messages.success(request, f"已将模型“{config.name}”设为默认。")
     return redirect("ai_assistant:model_settings")
 
 
@@ -1241,7 +1241,7 @@ def run_analysis(request, pk):
 
     if request.method == "POST":
         if active_config is None:
-            messages.warning(request, "请先配置并启用一个 AI 模型，再分析测试运行。")
+            messages.warning(request, "请先配置一个 AI 模型并设为默认，再分析测试运行。")
             return redirect("ai_assistant:model_settings")
         return _queue_job(
             request,
@@ -1294,7 +1294,7 @@ def execution_defect(request, pk):
     ).first()
     if request.method == "POST":
         if active_config is None:
-            messages.warning(request, "请先配置并启用一个 AI 模型，再生成缺陷草稿。")
+            messages.warning(request, "请先配置一个 AI 模型并设为默认，再生成缺陷草稿。")
             return redirect("ai_assistant:model_settings")
         return _queue_job(
             request,
@@ -1502,7 +1502,7 @@ def run_report(request, pk):
     ).first()
     if request.method == "POST":
         if active_config is None:
-            messages.warning(request, "请先配置并启用一个 AI 模型，再生成测试报告。")
+            messages.warning(request, "请先配置一个 AI 模型并设为默认，再生成测试报告。")
             return redirect("ai_assistant:model_settings")
         return _queue_job(
             request,
@@ -1808,7 +1808,7 @@ def review_case(request, pk):
 
     if request.method == "POST":
         if active_config is None:
-            messages.warning(request, "请先配置并启用一个 AI 模型，再开始评审。")
+            messages.warning(request, "请先配置一个 AI 模型并设为默认，再开始评审。")
             return redirect("ai_assistant:model_settings")
         return _queue_job(
             request,

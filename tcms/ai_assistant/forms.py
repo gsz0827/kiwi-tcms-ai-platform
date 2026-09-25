@@ -129,10 +129,14 @@ class AITestCaseDraftForm(forms.ModelForm):
 
 
 class AIModelConfigForm(forms.ModelForm):
+    field_order = ("name", "api_base", "api_key", "model", "timeout", "is_active")
+
     api_key = forms.CharField(
         required=False,
-        label="API 密钥",
-        help_text="密钥只会加密保存且不会回显；编辑时留空表示保留原密钥。",
+        label="API Key",
+        # required 在 __init__ 里按「是否已有密钥」决定，这里只负责把必填
+        # 提示语统一成界面用词，否则会落到 Django 默认的「这个字段是必填项。」
+        error_messages={"required": "新建模型配置时必须填写 API Key。"},
         widget=forms.PasswordInput(
             attrs={"class": "form-control", "autocomplete": "new-password"}
         ),
@@ -141,13 +145,21 @@ class AIModelConfigForm(forms.ModelForm):
     class Meta:
         model = AIModelConfig
         fields = ("name", "api_base", "model", "timeout", "is_active")
+        labels = {
+            "name": "配置名称",
+            "api_base": "服务地址（Base URL）",
+            "model": "模型 ID",
+            "timeout": "请求超时（秒）",
+            "is_active": "设为默认模型",
+        }
+        help_texts = {"api_base": "不包含 /chat/completions。"}
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "api_base": forms.URLInput(
                 attrs={"class": "form-control", "placeholder": "https://api.example.com/v1"}
             ),
             "model": forms.TextInput(
-                attrs={"class": "form-control", "placeholder": "模型标识"}
+                attrs={"class": "form-control", "placeholder": "服务商提供的模型 ID"}
             ),
             "timeout": forms.NumberInput(
                 attrs={"class": "form-control", "min": 10, "max": 600}
@@ -158,6 +170,10 @@ class AIModelConfigForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.owner = owner
         self.instance.owner = owner
+        has_key = bool(self.instance.api_key_encrypted)
+        self.fields["api_key"].required = not has_key
+        if has_key:
+            self.fields["api_key"].help_text = "留空保留现有密钥。"
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
@@ -165,19 +181,19 @@ class AIModelConfigForm(forms.ModelForm):
             pk=self.instance.pk
         )
         if duplicate.exists():
-            raise forms.ValidationError("你已经有一个同名模型配置")
+            raise forms.ValidationError("已存在同名模型配置。")
         return name
 
     def clean_api_key(self):
         api_key = self.cleaned_data["api_key"].strip()
         if not api_key and not self.instance.api_key_encrypted:
-            raise forms.ValidationError("新建模型配置时必须填写 API 密钥")
+            raise forms.ValidationError("新建模型配置时必须填写 API Key。")
         return api_key
 
     def clean_timeout(self):
         timeout = self.cleaned_data["timeout"]
         if not 10 <= timeout <= 600:
-            raise forms.ValidationError("超时时间必须在 10 到 600 秒之间")
+            raise forms.ValidationError("请求超时必须在 10 到 600 秒之间。")
         return timeout
 
     def save(self, commit=True):

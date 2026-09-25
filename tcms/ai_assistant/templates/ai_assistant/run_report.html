@@ -10,7 +10,7 @@
     {% if active_config %}
         <form method="post" id="report-generation-form">{% csrf_token %}<button id="report-generation-button" class="btn btn-primary" type="submit">生成测试报告</button> <span class="text-muted">报告生成后仍可全文编辑</span></form>
     {% else %}
-        <div class="alert alert-warning">请先配置并启用 <a href="{% url 'ai_assistant:model_settings' %}">AI 模型</a>。</div>
+        <div class="alert alert-warning">请先配置并设为默认 <a href="{% url 'ai_assistant:model_settings' %}">AI 模型</a>。</div>
     {% endif %}
     <div id="report-progress" class="panel panel-info" style="display:none; margin-top:20px"><div class="panel-heading"><strong>AI 正在整理测试报告</strong></div><div class="panel-body"><div class="progress"><div id="report-progress-bar" class="progress-bar progress-bar-info progress-bar-striped active" style="width:3%">3%</div></div><p>正在核对执行指标、缺陷和发布结论，已等待 <span id="report-elapsed">0</span> 秒。</p></div></div>
     <hr><h3>我的报告历史</h3>

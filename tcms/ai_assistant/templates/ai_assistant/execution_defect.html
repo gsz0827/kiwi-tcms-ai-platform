@@ -20,7 +20,7 @@
             <span class="text-muted">当前模型：{{ active_config.name }}（{{ active_config.model }}）</span>
         </form>
     {% else %}
-        <div class="alert alert-warning">请先配置并启用 <a href="{% url 'ai_assistant:model_settings' %}">AI 模型</a>。</div>
+        <div class="alert alert-warning">请先配置并设为默认 <a href="{% url 'ai_assistant:model_settings' %}">AI 模型</a>。</div>
     {% endif %}
 
     <div id="defect-progress" class="panel panel-info" style="display:none; margin-top:20px">

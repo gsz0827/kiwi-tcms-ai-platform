@@ -104,7 +104,7 @@ def enqueue_ai_job(
         owner=owner, is_active=True
     ).first()
     if config is None:
-        raise RuntimeError("请先在“AI 模型管理”中配置并启用一个模型")
+        raise RuntimeError("请先在“AI 模型配置”中设置默认模型")
     if config.owner_id != owner.pk:
         raise RuntimeError("模型配置不属于当前账号")
 

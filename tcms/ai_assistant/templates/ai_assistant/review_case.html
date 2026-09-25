@@ -36,7 +36,7 @@
         </form>
     {% else %}
         <div class="alert alert-warning">
-            当前账号尚未配置并启用 AI 模型。
+            当前账号尚未配置并设为默认的 AI 模型。
             <a class="alert-link" href="{% url 'ai_assistant:model_settings' %}">现在去配置</a>
         </div>
     {% endif %}

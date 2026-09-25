@@ -18,7 +18,7 @@
         </div>
     {% else %}
         <div class="alert alert-warning">
-            你还没有启用 AI 模型。
+            你还没有设置默认模型。
             <a class="alert-link" href="{% url 'ai_assistant:model_settings' %}">
                 现在去配置
             </a>
@@ -64,7 +64,7 @@
             生成测试用例
         </button>
         {% if not active_config %}
-            <span class="text-muted">请先配置并启用模型</span>
+            <span class="text-muted">请先配置并设为默认模型</span>
         {% endif %}
     </form>
 

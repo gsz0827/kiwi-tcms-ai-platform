@@ -303,7 +303,7 @@ def _active_model_config(user):
         .first()
     )
     if config is None:
-        raise RuntimeError("请先在“AI 模型管理”中配置并启用一个模型")
+        raise RuntimeError("请先在“AI 模型配置”中设置默认模型")
     return config
 
 
@@ -311,7 +311,7 @@ def _get_config(user):
     config = _active_model_config(user)
     api_key = decrypt_api_key(config.api_key_encrypted)
     if not api_key:
-        raise RuntimeError("当前模型没有 API 密钥，请先编辑模型配置")
+        raise RuntimeError("当前模型没有 API Key，请先编辑模型配置")
     return config.api_base.rstrip("/"), api_key, config.model, config.timeout
 
 
@@ -351,7 +351,7 @@ def _request_config_content(
     try:
         api_key = decrypt_api_key(config.api_key_encrypted)
         if not api_key:
-            raise RuntimeError("当前模型没有 API 密钥，请先编辑模型配置")
+            raise RuntimeError("当前模型没有 API Key，请先编辑模型配置")
 
         payload = {
             "model": config.model,
