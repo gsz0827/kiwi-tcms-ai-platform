@@ -17,6 +17,7 @@ docs/target/
 .vscode/
 .cache/
 tcms/node_modules/
+tests/ai_assistant/node_modules/
 tcms/static/js/bundle.js
 
 # Local development credentials, runtime data and editor backups

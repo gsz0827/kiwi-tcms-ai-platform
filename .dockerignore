@@ -2,3 +2,13 @@
 *.pyc
 docs/
 *.egg-info/
+.git/
+.env
+.env.*
+.venv/
+backups/
+certs/
+uploads/
+tcms/node_modules/
+tests/ai_assistant/node_modules/
+tcms/settings/local_settings.py
