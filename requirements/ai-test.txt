@@ -1,2 +1,8 @@
 # Needed by tcms.settings.test's shared factories and static-file validation.
 factory_boy>=3.3,<4
+
+# Needed by the rest of the Kiwi TCMS suite. Without these the test image can
+# only import tcms.ai_assistant tests, and every module below reports a
+# ModuleNotFoundError instead of running.
+parameterized
+tcms-api

@@ -83,6 +83,22 @@ ai-test-image:
 ai-test: ai-test-image
 	$(AI_COMPOSE) --profile test-mariadb run --rm -T tests-mariadb
 
+# 全量套件。tests-mariadb 的默认命令只跑 tcms.ai_assistant，平台改动过的
+# tcms/core、tcms/testcases 等上游代码不会被覆盖到，这个目标把整个代码库跑一遍。
+# 注意：RPC 用例在这个进程里会因 guardian 匿名用户重复插入而报错，原因见
+# docs/ai-platform-operations.md；单独跑 RPC 用下面的 ai-test-rpc。
+.PHONY: ai-test-full
+ai-test-full: ai-test-image
+	$(AI_COMPOSE) --profile test-mariadb run --rm -T tests-mariadb \
+	    python manage.py test --settings=tcms.settings.ai_test_mariadb --noinput
+
+# RPC 用例是 LiveServerTestCase + serialized_rollback，与全量套件同进程运行会互相
+# 干扰，单独运行（SQLite）是绿的，用它拿到完整的 RPC 覆盖。
+.PHONY: ai-test-rpc
+ai-test-rpc: ai-test-image
+	$(AI_COMPOSE) --profile test run --rm -T tests \
+	    python manage.py test tcms.rpc.tests --settings=tcms.settings.test --noinput
+
 # 校验模型改动是否都有对应迁移，避免部署时才暴露缺迁移
 .PHONY: ai-test-missing-migrations
 ai-test-missing-migrations: ai-test-image
@@ -194,6 +210,8 @@ help:
 	@echo '  ai-logs          - Follow logs for web, worker and scheduler'
 	@echo '  ai-migrate       - Apply database migrations inside the running web container'
 	@echo '  ai-test          - Rebuild the test image, then run the AI test suite'
+	@echo '  ai-test-full     - Rebuild the test image, then run the whole test suite'
+	@echo '  ai-test-rpc      - Run the RPC suite on its own (see operations doc)'
 	@echo '  ai-test-missing-migrations - Fail if model changes lack migrations'
 	@echo '  ai-health        - Probe /health/ and /ready/ on the running platform'
 	@echo '  docker-image     - Build Docker image'
