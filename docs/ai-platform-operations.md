@@ -81,6 +81,39 @@ npm test
 
 上面两条 `docker compose ... run` 命令都带 `--build`，不要省略：`tests` 与 `tests-mariadb` 在 Compose 里固定引用 `kiwi-tcms-ai:test` 镜像，而 `run` 默认不会重建镜像，省略后会跑在旧镜像的代码上。等价且更省心的写法是 `make ai-test`（内部固定先 build 再 run）。
 
+`make ai-test` 只跑 `tcms.ai_assistant`，因为 Compose 里 `tests-mariadb` 的命令写死了这个应用名。平台改动过 `tcms/core`、`tcms/testcases`、`tcms/urls.py` 等上游代码，只跑应用测试覆盖不到，因此发版前还要跑一次全量套件：
+
+```bash
+make ai-test-full
+```
+
+上游测试依赖 `parameterized` 与 `tcms-api`，由 `requirements/ai-test.txt` 装进测试镜像，缺失时相关模块会以 `ModuleNotFoundError` 整体报错而不是真正运行。
+
+补齐依赖后，全量套件当前会报一批 `Duplicate entry 'AnonymousUser'`（SQLite 下表现为 `UNIQUE constraint failed: auth_user.username`）。已确认这不是平台代码的问题，而是上游 RPC 用例的隔离问题：
+
+| 验证方式 | 结果 |
+| --- | --- |
+| `python manage.py test tcms.rpc.tests` 单独运行 | 358 个用例全部通过 |
+| `tcms.rpc.tests.test_version` 单独运行 | 通过 |
+| `kiwi_auth.tests.test_backends` + `tcms.rpc.tests.test_version` | 通过 |
+| 全量套件同进程运行 | RPC 用例在 fixture 反序列化阶段报匿名用户重复 |
+
+`tcms/rpc/tests/utils.py` 里的 `serialized_rollback = True`、`tcms/settings/common.py` 里的 `ANONYMOUS_USER_NAME` 以及 django-guardian 3.3.3 都是上游原样内容，本平台未改动。触发条件是 guardian 的匿名用户被写入数据库后，`serialized_rollback` 的快照又插入一次；具体是哪个用例把它写进了数据库尚未定位。因此 RPC 覆盖请改用单独命令：
+
+```bash
+make ai-test-rpc
+```
+
+## 导航：侧边栏与上游菜单的关系
+
+本平台用中文侧边栏替代上游顶部的横向菜单，但 `SETTINGS.MENU_ITEMS` 中侧边栏没有提供入口的条目不能就此消失——插件通过 `kiwitcms.plugins` 注册的 MORE 菜单正是追加在该列表最后一项上的。侧边栏的「更多功能」分组由 `platform_extra_menu` 模板标签生成：取出 MENU_ITEMS 中侧边栏尚未覆盖的条目，剔除与侧边栏重复的链接，插件部分则原样保留。
+
+维护时注意三点：
+
+- 侧边栏只在已登录时渲染，检查插件菜单是否出现必须以登录态访问，匿名请求只会拿到登录页；
+- `tcms/settings/common.py` 约定 MENU_ITEMS 的最后一项固定是留给插件扩展的 MORE，判断插件分组依赖这个位置；
+- 侧边栏新增入口时，若该入口对应上游 MENU_ITEMS 里的链接，要把它的 URL 名补进 `ai_navigation.SIDEBAR_MENU_URLS`，否则同一个页面会在「更多功能」里再出现一次。
+
 ## 健康检查与日志
 
 平台提供两个语义不同的探针，注意不要混用：
