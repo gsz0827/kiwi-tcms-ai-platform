@@ -100,7 +100,7 @@
                         <label class="sr-only" for="folder-product-{{ browser.kind }}">所属项目</label>
                         <select id="folder-product-{{ browser.kind }}" class="form-control kiwi-folder-product" name="product" required>
                             <option value="">选择项目</option>
-                            {% for product in browser.products %}<option value="{{ product.pk }}">{{ product.name }}</option>{% endfor %}
+                            {% for product in browser.products %}<option value="{{ product.pk }}"{% if product.pk == browser.default_product_id %} selected{% endif %}>{{ product.name }}</option>{% endfor %}
                         </select>
                     </div>
                     <div class="form-group">

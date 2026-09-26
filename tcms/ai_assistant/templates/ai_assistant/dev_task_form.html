@@ -1,0 +1,40 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">{% if task %}编辑任务单{% else %}新建任务单{% endif %}</h1>
+    </div>
+    {% include "ai_assistant/include/workspace_tabs.html" with active_tab="dev_tasks" %}
+    <p class="text-muted">
+        {% if can_manage %}
+            开发说明写清改哪一层、关键逻辑是什么；验收标准写清怎样算做完，两份都要能被人直接执行。
+        {% else %}
+            你是这条任务单的负责人，可以更新它的进度；标题、工时、负责人等内容由需求提出人或测试经理维护。
+        {% endif %}
+    </p>
+
+    <form method="post" class="form-horizontal">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div class="form-group{% if field.errors %} has-error{% endif %}">
+                <label class="col-sm-2 control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                <div class="col-sm-8">
+                    {{ field }}
+                    {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
+                    {% for error in field.errors %}<p class="help-block">{{ error }}</p>{% endfor %}
+                </div>
+            </div>
+        {% endfor %}
+        <div class="form-group">
+            <div class="col-sm-offset-2 col-sm-8">
+                <button class="btn btn-primary">保存</button>
+                <a class="btn btn-default" href="{% url 'ai_assistant:dev_task_list' %}{% if task %}?request={{ task.request_id }}{% endif %}">取消</a>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

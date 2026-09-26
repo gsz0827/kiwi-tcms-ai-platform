@@ -6,6 +6,15 @@
 {% block page_id %}page-testruns-search{% endblock %}
 
 {% block contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">执行任务</h1>
+        {% if perms.testruns.add_testrun %}
+            <a class="btn btn-primary pull-right" style="margin-top: 20px" href="{% url 'testruns-new' %}">新建执行任务</a>
+        {% endif %}
+    </div>
+    <p class="text-muted">执行任务是一次具体的测试执行：选择测试计划与构建版本，把用例分给执行人并记录结果。</p>
+</div>
 <div class="container-fluid container-cards-pf"
      id="main-element"
      data-trans-no-records-found="{% trans 'No records found' %}"

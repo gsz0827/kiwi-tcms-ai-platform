@@ -25,6 +25,48 @@ OPEN_DEFECT_STATUSES = (
     "pending_verification",
 )
 
+# 没有产品规则时使用的内置默认门禁。名字会写进报告，让「你现在用的是内置默认」
+# 这件事在界面上可见——否则没人配规则时门禁看起来像不存在。
+BUILTIN_GATE_NAME = "内置默认门禁"
+BUILTIN_GATE = {
+    "block_priority": "P1",
+    "max_open_defects": 0,
+    "min_success_rate": 95.0,
+    "require_all_executed": True,
+}
+
+
+def gate_rule_for(product):
+    """产品当前生效的门禁规则；没有则返回 None（调用方套用内置默认）。"""
+    if product is None:
+        return None
+    return AIReleaseGateRule.objects.filter(product=product, is_active=True).first()
+
+
+def gate_settings_for(product):
+    """(生效规则或 None, 生效参数 dict)，界面与判定共用同一套取值。"""
+    rule = gate_rule_for(product)
+    if rule is None:
+        return None, dict(BUILTIN_GATE)
+    return rule, {
+        "block_priority": rule.block_priority,
+        "max_open_defects": rule.max_open_defects,
+        "min_success_rate": float(rule.min_success_rate),
+        "require_all_executed": rule.require_all_executed,
+    }
+
+
+def derived_release_decision(gate_result, approval_status, waived=False):
+    """发布结论由门禁与审批推导，不由人手改。
+
+    门禁未通过且没有风险放行 → 不建议发布；否则审批通过就是可以发布，还没审批
+    就是有条件发布（审批中）。
+    """
+    passed = bool((gate_result or {}).get("passed"))
+    if not passed and not waived:
+        return "no_go"
+    return "go" if approval_status == "approved" else "conditional_go"
+
 
 def canonical_hash(value):
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -141,24 +183,22 @@ def report_snapshot(report):
     }
 
 
-def evaluate_release_gate(owner, product, metrics_snapshot, test_run_ids):
-    rule = AIReleaseGateRule.objects.filter(
-        owner=owner, product=product, is_active=True
-    ).first()
-    if rule is None:
-        rule = AIReleaseGateRule.objects.filter(
-            owner=owner, product__isnull=True, is_active=True
-        ).first()
+def evaluate_release_gate(product, metrics_snapshot, test_run_ids):
+    """按产品级规则判定发布门禁。
+
+    缺陷口径是「这批运行里登记的未关闭缺陷」，**不按登记人过滤**：同事登记的 P1
+    同样阻断发布，否则同一批运行里别人提的阻断缺陷会被门禁忽略而假通过。
+    """
+    rule, settings = gate_settings_for(product)
     metrics = metrics_snapshot.get("metrics", metrics_snapshot)
     open_defects = AIDefectDraft.objects.filter(
-        owner=owner,
-        execution__run_id__in=test_run_ids,
+        execution__run_id__in=list(test_run_ids),
         status__in=OPEN_DEFECT_STATUSES,
     )
-    block_priority = rule.block_priority if rule else "P1"
-    max_open = rule.max_open_defects if rule else 0
-    min_success = float(rule.min_success_rate) if rule else 95.0
-    require_all = rule.require_all_executed if rule else True
+    block_priority = settings["block_priority"]
+    max_open = settings["max_open_defects"]
+    min_success = float(settings["min_success_rate"])
+    require_all = settings["require_all_executed"]
     open_count = open_defects.count()
     blocking_count = open_defects.filter(priority=block_priority).count()
     checks = [
@@ -188,7 +228,9 @@ def evaluate_release_gate(owner, product, metrics_snapshot, test_run_ids):
         )
     return {
         "passed": all(check["passed"] for check in checks),
-        "rule": rule.name if rule else "内置默认门禁",
+        "rule": rule.name if rule else BUILTIN_GATE_NAME,
+        "rule_scope": "product" if rule else "builtin",
+        "rule_id": rule.pk if rule else None,
         "evaluated_at": timezone.now().isoformat(),
         "checks": checks,
     }

@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from django.views.generic.base import RedirectView, View
 from django.views.generic.edit import FormView
@@ -88,7 +89,7 @@ class Register(View):  # pylint: disable=missing-permission-required
     def show_messages_with_site_admins_emails_as_links(request):
         """Show messages with site admins emails as links."""
         for name, email in settings.ADMINS:
-            mailto = f'<a href="mailto:{email}">{name}</a>'
+            mailto = format_html('<a href="mailto:{}">{}</a>', email, name)
             messages.add_message(request, messages.WARNING, mailto)
 
     @staticmethod
@@ -96,7 +97,9 @@ class Register(View):  # pylint: disable=missing-permission-required
         """Show messages with super users emails as links."""
         for user in User.objects.filter(is_superuser=True):
             email_display_name = user.get_full_name() or user.username
-            mailto = f'<a href="mailto:{user.email}">{email_display_name}</a>'
+            mailto = format_html(
+                '<a href="mailto:{}">{}</a>', user.email, email_display_name
+            )
             messages.add_message(request, messages.INFO, mailto)
 
     def get(self, request):

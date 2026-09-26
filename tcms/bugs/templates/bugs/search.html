@@ -6,6 +6,15 @@
 {% block page_id %}page-bugs-search{% endblock %}
 
 {% block contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">缺陷</h1>
+        {% if perms.bugs.add_bug %}
+            <a class="btn btn-primary pull-right" style="margin-top: 20px" href="{% url 'bugs-new' %}">新建缺陷</a>
+        {% endif %}
+    </div>
+    <p class="text-muted">这里维护正式缺陷记录；AI 报告里登记的缺陷草稿在质量与缺陷页确认后才会同步到这里。</p>
+</div>
 <div class="container-fluid container-cards-pf"
      id="main-element"
      data-trans-no-records-found="{% trans 'No records found' %}"

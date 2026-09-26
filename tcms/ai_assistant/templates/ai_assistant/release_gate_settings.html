@@ -1,1 +1,48 @@
-{% extends "ai_assistant/base_ai.html" %}{% block ai_contents %}<div class="container-fluid"><div class="clearfix"><h1 class="pull-left">发布门禁规则</h1><a class="btn btn-default pull-right" style="margin-top:20px" href="{% url 'ai_assistant:dashboard' %}">返回看板</a></div><p class="text-muted">产品规则优先于账号默认规则；未配置时使用内置规则：P1 缺陷为 0、未关闭缺陷为 0、成功率至少 95%、全部执行。</p><div class="row"><div class="col-md-5"><form method="post" class="panel panel-default"><div class="panel-heading"><strong>新增规则</strong></div><div class="panel-body">{% csrf_token %}{% for field in form %}<div class="form-group{% if field.errors %} has-error{% endif %}"><label>{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}<button class="btn btn-primary" type="submit">保存规则</button></div></form></div><div class="col-md-7"><table class="table table-bordered"><thead><tr><th>产品</th><th>规则</th><th>阻断优先级</th><th>最低成功率</th><th>未关闭上限</th><th>启用</th></tr></thead><tbody>{% for rule in rules %}<tr><td>{{ rule.product|default:"账号默认" }}</td><td>{{ rule.name }}</td><td>{{ rule.block_priority }}</td><td>{{ rule.min_success_rate }}%</td><td>{{ rule.max_open_defects }}</td><td>{% if rule.is_active %}是{% else %}否{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="text-muted">尚未配置自定义规则。</td></tr>{% endfor %}</tbody></table></div></div></div>{% endblock %}
+{% extends "ai_assistant/base_ai.html" %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <h1>发布门禁规则</h1>
+    <p class="text-muted">门禁规则挂在<strong>产品</strong>上：同一产品下所有报告（不论是谁生成的）都按同一条规则判定，只有测试经理能维护。没有自定义规则的产品使用<strong>内置默认门禁</strong>：P1 缺陷为 0、未关闭缺陷为 0、成功率至少 95%、全部执行。</p>
+    <div class="row">
+        <div class="col-md-5">
+            <div class="panel panel-default">
+                <div class="panel-heading"><strong>新增 / 更新规则</strong></div>
+                <div class="panel-body">
+                    <p class="text-muted">选择产品后保存即为该产品生效：一个产品只有一条规则，重复保存会覆盖。</p>
+                    <form method="post" class="form-horizontal">{% csrf_token %}{% for field in form %}<div class="form-group{% if field.errors %} has-error{% endif %}"><label class="col-sm-4 control-label">{{ field.label }}</label><div class="col-sm-8">{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div></div>{% endfor %}<div class="form-group"><div class="col-sm-offset-4 col-sm-8"><button class="btn btn-primary" type="submit">保存规则</button></div></div></form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="panel panel-default">
+                <div class="panel-heading"><strong>各产品当前生效的规则</strong></div>
+                <table class="table table-condensed">
+                    <thead><tr><th>产品</th><th>规则</th><th>阻断优先级</th><th>最低成功率</th><th>未关闭上限</th><th>状态</th><th>最后修改</th></tr></thead>
+                    <tbody>
+                    {% for item in products %}
+                        <tr>
+                            <td>{{ item.product.name }}</td>
+                            {% if item.rule %}
+                                <td>{{ item.rule.name }}</td>
+                                <td>{{ item.rule.block_priority }}</td>
+                                <td>{{ item.rule.min_success_rate }}%</td>
+                                <td>{{ item.rule.max_open_defects }}</td>
+                                <td>{% if item.rule.is_active %}<span class="label label-success">启用</span>{% else %}<span class="label label-default">停用（回落到内置默认）</span>{% endif %}</td>
+                                <td>{{ item.rule.updated_by|default:"-" }} · {{ item.rule.updated }}</td>
+                            {% else %}
+                                <td colspan="4" class="text-muted">尚未配置，正在使用内置默认门禁</td>
+                                <td><span class="label label-info">内置默认</span></td>
+                                <td><a href="{% url 'ai_assistant:release_gate_settings' %}?product={{ item.product.pk }}">配置</a></td>
+                            {% endif %}
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="7" class="text-muted">还没有产品。</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

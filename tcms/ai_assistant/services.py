@@ -71,6 +71,31 @@ priority 只能是 P1、P2、P3、P4、P5。至少生成 5 条、最多生成 30
 """
 
 
+DEV_TASK_SYSTEM_PROMPT = """
+你是一名资深开发负责人。请把需求拆成可以直接排期开发的任务单（开发文档），
+按实际动手顺序排列：先把数据模型和接口定下来，再写业务逻辑，最后收尾联调。
+
+只输出一个 JSON 对象，不要输出 Markdown、解释或推理过程。格式必须是：
+{
+  "dev_tasks": [
+    {
+      "task_number": "DEV-001",
+      "title": "任务标题",
+      "module": "涉及模块",
+      "description": "开发说明：改哪个文件或哪一层、关键逻辑是什么",
+      "acceptance": "验收标准：怎样算做完，要可验证",
+      "priority": "P2",
+      "estimate_hours": 4
+    }
+  ]
+}
+
+priority 只能是 P1、P2、P3、P4、P5。estimate_hours 是预估工时（小时），填正整数。
+至少拆 3 条、最多拆 15 条，每条只做一件事，不要出现「完成后端开发」这种包住整个需求的
+大任务。module 用需求里出现的模块名，不要编造需求中不存在的功能和字段。
+"""
+
+
 COVERAGE_SYSTEM_PROMPT = """
 你是一名资深测试评审专家。请把需求、需求分析和当前测试用例逐项对照，评估测试覆盖，
 指出已覆盖、部分覆盖和未覆盖的检查项，并给出补充建议。评分必须依据实际用例内容，
@@ -232,6 +257,19 @@ class AIResponseError(RuntimeError):
     pass
 
 
+def _empty_skill_snapshot():
+    """Return one bucket per operation that can consume a rule package.
+
+    新增 operation 时必须在这里补一个空列表，否则
+    ``_build_skill_snapshot`` 里的 ``{profile.operation: []}`` 会直接 KeyError。
+    """
+    return {
+        "requirement_analysis": [],
+        "test_case_generation": [],
+        "dev_task_breakdown": [],
+    }
+
+
 def capture_instruction_snapshot(user, category=None):
     """Capture published runtime rules for a new requirement workflow.
 
@@ -240,7 +278,7 @@ def capture_instruction_snapshot(user, category=None):
     """
     product_id = category.product_id if category is not None else None
     if product_id is None:
-        return {"requirement_analysis": [], "test_case_generation": []}
+        return _empty_skill_snapshot()
     profiles = AIInstructionProfile.objects.filter(
         owner=user,
         is_active=True,
@@ -248,7 +286,7 @@ def capture_instruction_snapshot(user, category=None):
     ).order_by(
         "operation", "product_id", "name"
     )
-    snapshot = {"requirement_analysis": [], "test_case_generation": []}
+    snapshot = _empty_skill_snapshot()
     for profile in profiles:
         item = {
             "id": profile.pk,
@@ -646,6 +684,53 @@ def parse_test_cases(content):
                 "test_type": str(item.get("test_type") or "").strip()[:64],
                 "preconditions": _string_list(item.get("preconditions")),
                 "steps": steps,
+            }
+        )
+    return normalized
+
+
+def parse_dev_tasks(content):
+    """把模型返回的开发任务单归一化成 AIDevTask 的字段字典列表。"""
+    data = _decode_json(content)
+    if isinstance(data, dict):
+        tasks = data.get("dev_tasks") or data.get("tasks")
+    else:
+        tasks = data
+    if not isinstance(tasks, list) or not tasks:
+        raise AIResponseError("AI 返回结果中没有 dev_tasks 数组")
+    if len(tasks) > 30:
+        raise AIResponseError("AI 返回任务单数量超过 30 条安全上限")
+
+    normalized, used_numbers = [], set()
+    for index, item in enumerate(tasks, start=1):
+        if not isinstance(item, dict):
+            raise AIResponseError(f"第 {index} 条任务单不是 JSON 对象")
+        title = str(item.get("title") or item.get("name") or "").strip()
+        if not title:
+            raise AIResponseError(f"第 {index} 条任务单缺少标题")
+        task_number = str(item.get("task_number") or f"DEV-{index:03d}").strip()[:50]
+        if task_number in used_numbers:
+            task_number = f"DEV-{index:03d}"
+        used_numbers.add(task_number)
+        priority = str(item.get("priority") or "P3").strip().upper()
+        if priority not in {"P1", "P2", "P3", "P4", "P5"}:
+            priority = "P3"
+        try:
+            estimate = int(item.get("estimate_hours"))
+        except (TypeError, ValueError):
+            estimate = None
+        if estimate is not None:
+            estimate = min(estimate, 999) if estimate > 0 else None
+        normalized.append(
+            {
+                "task_number": task_number,
+                "title": title[:200],
+                "module": str(item.get("module") or "").strip()[:200],
+                "description": str(item.get("description") or "").strip(),
+                "acceptance": str(item.get("acceptance") or "").strip(),
+                "priority": priority,
+                "estimate_hours": estimate,
+                "position": index,
             }
         )
     return normalized
@@ -1091,6 +1176,43 @@ def generate_test_cases(
         model_config=model_config,
     )
     return parse_test_cases(content)
+
+
+def break_down_dev_tasks(
+    title, requirement, user, analysis=None, model_config=None, skill_snapshot=None
+):
+    """把需求拆成可以直接排期的开发任务单（开发文档）。"""
+    analysis_context = ""
+    if analysis:
+        analysis_context = f"""
+
+已确认的需求分析结果：
+{json.dumps(analysis, ensure_ascii=False, indent=2)}
+
+拆分任务时必须覆盖上述功能点、业务规则、边界条件、异常场景与安全风险。
+"""
+    user_prompt = f"""
+需求标题：
+{title}
+
+需求描述：
+{requirement}
+{analysis_context}
+
+请把这份需求拆成开发任务单。
+"""
+    skill_context = render_instruction_context(skill_snapshot, "dev_task_breakdown")
+    system_prompt = DEV_TASK_SYSTEM_PROMPT
+    if skill_context:
+        system_prompt += f"\n\n运行时 AI 规则包：\n{skill_context}"
+    content, _config = _request_ai_content(
+        user,
+        system_prompt,
+        user_prompt,
+        operation="dev_task_breakdown",
+        model_config=model_config,
+    )
+    return parse_dev_tasks(content)
 
 
 def analyze_test_coverage(ai_request, user, model_config=None):

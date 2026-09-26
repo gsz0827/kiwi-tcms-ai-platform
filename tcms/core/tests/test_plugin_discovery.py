@@ -66,26 +66,31 @@ class MenuDiscoveryTestCase(LoggedInTestCase):
     def test_menu_rendering(self):
         """
         Given there are some plugins installed
-        Then navigation menu under MORE will be rendered
-            with several levels of sub menus.
+        Then the plugin entries are rendered inside the ``平台管理`` section of
+            the Chinese sidebar, under a ``插件`` caption.
 
-        This fork replaces the upstream horizontal menu with a Chinese sidebar,
-        so the plugin entries are rendered inside the ``更多功能`` group of that
-        sidebar instead of a top-level dropdown. The request has to be
-        authenticated because the sidebar only exists for logged-in users.
+        This fork replaces the upstream horizontal menu with a Chinese sidebar and
+        no longer projects ``settings.MENU_ITEMS`` onto the page, so plugin entries
+        have to be collected at runtime instead. Plugin sub-menus keep one level of
+        caption while deeper levels are flattened, because the sidebar is only
+        232px wide. The request has to be authenticated because the sidebar only
+        exists for logged-in users.
         """
         response = self.client.get("/", follow=True)
-        self.assertContains(response, _("MORE"))
+        self.assertContains(response, '<li class="kiwi-nav-caption">插件</li>', html=True)
         self.assertContains(response, "Fake Telemetry plugin")
         self.assertContains(response, "Fake Plugin sub-menu")
-        self.assertContains(
-            response,
-            '<a href="/a_fake_plugin/example/" target="_parent">Example</a>',
-            html=True,
-        )
-        self.assertContains(response, "3rd level menu")
+        self.assertContains(response, "Example")
         self.assertContains(response, "Go to Dashboard")
         self.assertContains(response, "Go to kiwitcms.org")
+        self.assertContains(
+            response,
+            '<a href="/a_fake_plugin/example/">'
+            '<span class="fa fa-puzzle-piece" aria-hidden="true"></span>Example</a>',
+            html=True,
+        )
+        # 第三层分组标题（"3rd level menu"）被有意拍平，侧边栏不做三层缩进
+        self.assertNotContains(response, "3rd level menu")
 
 
 class MarkdownPluginTestCase(TestCase):

@@ -6,6 +6,15 @@
 {% block page_id %}page-testplans-search{% endblock %}
 
 {% block contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">测试计划</h1>
+        {% if perms.testplans.add_testplan %}
+            <a class="btn btn-primary pull-right" style="margin-top: 20px" href="{% url 'plans-new' %}">新建测试计划</a>
+        {% endif %}
+    </div>
+    <p class="text-muted">测试计划是「这轮要测什么」的清单：把测试用例挂到计划上，再从计划创建执行任务。列表为空时先建一个计划。</p>
+</div>
 <div
     class="container-fluid container-cards-pf"
     id="main-element"

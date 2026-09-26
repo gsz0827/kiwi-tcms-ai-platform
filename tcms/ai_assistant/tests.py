@@ -4,26 +4,32 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Group, Permission
+from django.db import IntegrityError, transaction
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
+from . import roles
 from .crypto import decrypt_api_key, encrypt_api_key
 from .forms import (
     AIDefectDraftForm,
+    AIDevTaskForm,
     AIInstructionProfileForm,
     AIModelConfigForm,
     AITestCaseDraftForm,
 )
 from .engineering import (
+    derived_release_decision,
     duplicate_candidates,
     evaluate_release_gate,
+    gate_settings_for,
     make_chinese_pdf,
     transition_defect,
 )
 from .models import (
     AIDefectDraft,
     AIDefectStatusHistory,
+    AIDevTask,
     AIIterationReport,
     AIInstructionProfile,
     AIJob,
@@ -40,7 +46,12 @@ from .models import (
     ProjectResourceAssignment,
     ProjectResourceFolder,
 )
-from .jobs import _execute_test_report, enqueue_ai_job, execute_next_job
+from .jobs import (
+    _execute_dev_task_breakdown,
+    _execute_test_report,
+    enqueue_ai_job,
+    execute_next_job,
+)
 from .services import (
     AIResponseError,
     _get_config,
@@ -57,6 +68,7 @@ from .services import (
     generate_test_report,
     generate_test_cases,
     parse_defect_draft,
+    parse_dev_tasks,
     parse_requirement_analysis,
     parse_coverage_analysis,
     parse_test_case_review,
@@ -1281,13 +1293,17 @@ class AIInstructionProfileTests(TestCase):
         self.assertContains(home, reverse("ai_assistant:project_settings"))
         settings_page = self.client.get(reverse("ai_assistant:project_settings"), secure=True)
         self.assertContains(settings_page, reverse("ai_assistant:create_product"))
-        self.assertNotContains(settings_page, reverse("ai_assistant:create_classification"))
+        self.assertNotContains(settings_page, "产品分类")
+
+        # 平台界面不暴露「产品分类」：表单里既没有该字段，提交时也不需要它。
+        form_page = self.client.get(reverse("ai_assistant:create_product"), secure=True)
+        self.assertNotContains(form_page, 'name="classification"')
+        self.assertNotContains(form_page, "新建分类")
 
         response = self.client.post(
             reverse("ai_assistant:create_product"),
             {
                 "name": "新建 AI 产品",
-                "classification": self.classification.pk,
                 "description": "由 AI 助手创建",
             },
             secure=True,
@@ -1295,28 +1311,27 @@ class AIInstructionProfileTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         product = Product.objects.get(name="新建 AI 产品")
+        self.assertIsNotNone(product.classification_id)
         self.assertTrue(product.category.filter(name="--default--").exists())
         self.assertTrue(product.version.filter(value="unspecified").exists())
 
-    def test_classification_creation_returns_to_product_form(self):
+    def test_product_creation_falls_back_to_a_default_classification(self):
+        Classification.objects.all().delete()
         permission = Permission.objects.get(
-            content_type__app_label="management", codename="add_classification"
+            content_type__app_label="management", codename="add_product"
         )
         self.owner.user_permissions.add(permission)
         self.client.force_login(self.owner)
 
         response = self.client.post(
-            reverse("ai_assistant:create_classification"),
-            {"name": "新建分类"},
+            reverse("ai_assistant:create_product"),
+            {"name": "没有分类时的产品"},
             secure=True,
         )
 
-        classification = Classification.objects.get(name="新建分类")
-        self.assertRedirects(
-            response,
-            f"{reverse('ai_assistant:create_product')}?classification={classification.pk}",
-            fetch_redirect_response=False,
-        )
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(name="没有分类时的产品")
+        self.assertEqual(product.classification.name, "默认分类")
 
 
 @override_settings(SECRET_KEY="ai-run-analysis-test-secret")
@@ -2083,20 +2098,58 @@ class TestRunAnalysisTests(TestCase):
             status="in_progress",
         )
         AIReleaseGateRule.objects.create(
-            owner=self.owner,
             product=self.test_run.plan.product,
             min_success_rate=0,
             require_all_executed=False,
             max_open_defects=10,
         )
         result = evaluate_release_gate(
-            self.owner,
             self.test_run.plan.product,
             build_test_run_snapshot(self.test_run),
             [self.test_run.pk],
         )
         self.assertFalse(result["passed"])
         self.assertFalse(result["checks"][0]["passed"])
+
+    def test_release_gate_counts_defects_drafted_by_other_people(self):
+        """门禁是产品级的：同事登记的 P1 也算数，不能因为不是自己登记的就放行。"""
+        other = get_user_model().objects.create_user(username="gate-other", password="pw")
+        AIDefectDraft.objects.create(
+            owner=other,
+            execution=self.failed_execution,
+            title="同事登记的阻断缺陷",
+            priority="P1",
+            status="pending_submission",
+        )
+        result = evaluate_release_gate(
+            self.test_run.plan.product,
+            build_test_run_snapshot(self.test_run),
+            [self.test_run.pk],
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["rule_scope"], "builtin")
+
+    def test_gate_rule_is_per_product_and_upserted(self):
+        product = self.test_run.plan.product
+        AIReleaseGateRule.objects.create(product=product, min_success_rate=10)
+        rule, settings = gate_settings_for(product)
+        self.assertIsNotNone(rule)
+        self.assertEqual(settings["min_success_rate"], 10)
+        self.assertEqual(settings["block_priority"], "P1")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            AIReleaseGateRule.objects.create(product=product, min_success_rate=20)
+
+    def test_derived_release_decision_follows_the_gate(self):
+        blocked = {"passed": False}
+        self.assertEqual(derived_release_decision(blocked, "pending"), "no_go")
+        self.assertEqual(derived_release_decision(blocked, "approved"), "no_go")
+        self.assertEqual(
+            derived_release_decision(blocked, "approved", waived=True), "go"
+        )
+        passed = {"passed": True}
+        self.assertEqual(derived_release_decision(passed, "pending"), "conditional_go")
+        self.assertEqual(derived_release_decision(passed, "approved"), "go")
+        self.assertEqual(derived_release_decision(passed, "rejected"), "conditional_go")
 
     def test_requirement_change_versions_and_marks_cases_for_update(self):
         ai_request = AIRequest.objects.create(
@@ -2171,6 +2224,13 @@ class TestRunAnalysisTests(TestCase):
 
     def test_report_approval_exports_and_iteration_snapshot(self):
         snapshot = build_test_run_snapshot(self.test_run)
+        # 这个 run 有 1 条失败（成功率 50%），内建门禁会阻断审批；先给产品配一条宽松规则。
+        AIReleaseGateRule.objects.create(
+            product=self.test_run.plan.product,
+            min_success_rate=0,
+            require_all_executed=False,
+            max_open_defects=10,
+        )
         report = AITestReport.objects.create(
             owner=self.owner,
             test_run=self.test_run,
@@ -2350,3 +2410,529 @@ class ApplyTestCaseReviewTests(TestCase):
     generate_test_report,
     parse_defect_draft,
     parse_test_report,
+
+
+@override_settings(SECRET_KEY="ai-dev-task-test-secret")
+class AIDevTaskTests(TestCase):
+    """任务单（开发文档）：解析、后台生成、页面与权限范围。"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.owner = user_model.objects.create_user(
+            username="dev-task-owner", password="password"
+        )
+        self.other_user = user_model.objects.create_user(
+            username="dev-task-other", password="password"
+        )
+        self.config = AIModelConfig.objects.create(
+            owner=self.owner,
+            name="任务单模型",
+            api_base="https://api.example.test/v1",
+            model="dev-task-model",
+            timeout=300,
+            api_key_encrypted=encrypt_api_key("dev-task-key"),
+            is_active=True,
+        )
+        self.ai_request = AIRequest.objects.create(
+            title="登录接口改造",
+            requirement="登录接口要支持手机号加验证码登录。",
+            created_by=self.owner,
+            analysis={"summary": "登录接口改造", "risk_level": "high"},
+        )
+        self.task = AIDevTask.objects.create(
+            request=self.ai_request,
+            owner=self.owner,
+            position=1,
+            task_number="DEV-001",
+            title="扩展登录接口参数",
+            module="用户中心 / 登录接口",
+            description="新增 phone 与 sms_code 字段。",
+            acceptance="手机号加验证码可以换取 token。",
+            priority="P2",
+            estimate_hours=4,
+        )
+
+    def _new_request(self, title="第二个需求"):
+        return AIRequest.objects.create(
+            title=title, requirement="需求正文", created_by=self.owner
+        )
+
+    def test_parses_and_normalises_tasks(self):
+        tasks = parse_dev_tasks(
+            json.dumps(
+                {
+                    "dev_tasks": [
+                        {
+                            "title": "扩展接口",
+                            "module": "用户中心",
+                            "priority": "P9",
+                            "estimate_hours": "3",
+                        },
+                        {"title": "补充校验", "estimate_hours": 0},
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        self.assertEqual(
+            [task["task_number"] for task in tasks], ["DEV-001", "DEV-002"]
+        )
+        self.assertEqual([task["position"] for task in tasks], [1, 2])
+        self.assertEqual(tasks[0]["priority"], "P3")
+        self.assertEqual(tasks[0]["estimate_hours"], 3)
+        self.assertIsNone(tasks[1]["estimate_hours"])
+
+    def test_parse_rejects_payload_without_task_array(self):
+        with self.assertRaises(AIResponseError):
+            parse_dev_tasks("{}")
+
+    def test_standard_priority_and_hour_limits_survive_a_round_trip(self):
+        tasks = parse_dev_tasks(
+            json.dumps(
+                {
+                    "dev_tasks": [
+                        {"title": "一条", "priority": "P1", "estimate_hours": 9999}
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        self.assertEqual(tasks[0]["priority"], "P1")
+        self.assertEqual(tasks[0]["estimate_hours"], 999)
+
+    def test_rule_package_snapshot_has_a_dev_task_bucket(self):
+        snapshot = capture_instruction_snapshot(self.owner, None)
+
+        self.assertEqual(snapshot["dev_task_breakdown"], [])
+        self.assertEqual(snapshot["requirement_analysis"], [])
+        self.assertEqual(snapshot["test_case_generation"], [])
+
+    def test_generate_endpoint_enqueues_a_breakdown_job(self):
+        fresh = self._new_request()
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse("ai_assistant:generate_dev_tasks", args=[fresh.pk]), secure=True
+        )
+
+        self.assertEqual(response.status_code, 302)
+        job = AIJob.objects.get(owner=self.owner, operation="dev_task_breakdown")
+        self.assertEqual(job.payload["request_id"], fresh.pk)
+
+    def test_generate_endpoint_refuses_when_tasks_already_exist(self):
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse("ai_assistant:generate_dev_tasks", args=[self.ai_request.pk]),
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(
+            AIJob.objects.filter(
+                owner=self.owner, operation="dev_task_breakdown"
+            ).exists()
+        )
+
+    @patch(
+        "tcms.ai_assistant.jobs.break_down_dev_tasks",
+        return_value=[
+            {
+                "task_number": "DEV-001",
+                "title": "拆分出来的任务",
+                "module": "用户中心",
+                "description": "新增字段。",
+                "acceptance": "可以换取 token。",
+                "priority": "P2",
+                "estimate_hours": 2,
+                "position": 1,
+            }
+        ],
+    )
+    def test_executor_saves_the_breakdown_once(self, mocked_breakdown):
+        fresh = self._new_request()
+        job, _created = enqueue_ai_job(
+            self.owner,
+            "dev_task_breakdown",
+            {"request_id": fresh.pk},
+            model_config=self.config,
+        )
+        job.status = "running"
+        job.save(update_fields=["status"])
+
+        url, summary = _execute_dev_task_breakdown(job)
+
+        self.assertEqual(summary["generated_count"], 1)
+        self.assertIn(f"request={fresh.pk}", url)
+        saved = AIDevTask.objects.get(request=fresh)
+        self.assertEqual(saved.owner, self.owner)
+        self.assertEqual(saved.title, "拆分出来的任务")
+        self.assertEqual(saved.requirement_version, fresh.version)
+        mocked_breakdown.assert_called_once()
+
+        second_job, _created = enqueue_ai_job(
+            self.owner,
+            "dev_task_breakdown",
+            {"request_id": fresh.pk},
+            model_config=self.config,
+        )
+        second_job.status = "running"
+        second_job.save(update_fields=["status"])
+        with self.assertRaises(RuntimeError) as caught:
+            _execute_dev_task_breakdown(second_job)
+
+        self.assertIn("已经拆分过开发任务", str(caught.exception))
+        self.assertEqual(AIDevTask.objects.filter(request=fresh).count(), 1)
+
+    def test_task_list_shows_completion_and_keeps_other_requests_out(self):
+        """可见性按「需求」划分：同一条需求下的任务单一起看，别人的需求看不到。"""
+        AIDevTask.objects.create(
+            request=self.ai_request,
+            owner=self.owner,
+            position=2,
+            task_number="DEV-002",
+            title="补充联调",
+            status="done",
+        )
+        AIDevTask.objects.create(
+            request=self.ai_request,
+            owner=self.other_user,
+            position=3,
+            task_number="DEV-003",
+            title="别人补的任务",
+            status="done",
+        )
+        other_request = AIRequest.objects.create(
+            title="别人的需求", requirement="需求正文", created_by=self.other_user
+        )
+        AIDevTask.objects.create(
+            request=other_request,
+            owner=self.other_user,
+            position=1,
+            task_number="DEV-009",
+            title="别人的任务",
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse("ai_assistant:dev_task_list"), secure=True)
+
+        self.assertContains(response, "扩展登录接口参数")
+        self.assertContains(response, "别人补的任务")
+        self.assertNotContains(response, "别人的任务")
+        self.assertContains(response, "2/3 已完成 · 67%")
+        self.assertContains(response, "DEV-001")
+
+    def test_requirement_page_and_trace_show_the_completion(self):
+        AIDevTask.objects.create(
+            request=self.ai_request,
+            owner=self.owner,
+            position=2,
+            task_number="DEV-002",
+            title="补充联调",
+            status="done",
+        )
+        self.client.force_login(self.owner)
+
+        index_response = self.client.get(reverse("ai_assistant:index"), secure=True)
+        trace_response = self.client.get(
+            reverse("ai_assistant:requirement_trace", args=[self.ai_request.pk]),
+            secure=True,
+        )
+
+        self.assertContains(index_response, "需求与任务单")
+        self.assertContains(index_response, "任务单 1/2 · 50%")
+        self.assertContains(trace_response, "开发任务完成度")
+        self.assertContains(trace_response, "扩展登录接口参数")
+
+    def test_editing_and_deleting_a_task(self):
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse("ai_assistant:edit_dev_task", args=[self.task.pk]),
+            {
+                "request": self.ai_request.pk,
+                "task_number": "DEV-001",
+                "title": "扩展登录接口参数",
+                "module": "用户中心 / 登录接口",
+                "description": "新增 phone 与 sms_code 字段。",
+                "acceptance": "手机号加验证码可以换取 token。",
+                "priority": "P1",
+                "estimate_hours": 6,
+                "status": "doing",
+            },
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "doing")
+        self.assertEqual(self.task.priority, "P1")
+        self.assertEqual(self.task.estimate_hours, 6)
+
+        response = self.client.post(
+            reverse("ai_assistant:delete_dev_task", args=[self.task.pk]), secure=True
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(AIDevTask.objects.filter(pk=self.task.pk).exists())
+
+    def test_other_account_cannot_edit_or_delete_a_task(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(
+            reverse("ai_assistant:edit_dev_task", args=[self.task.pk]), secure=True
+        )
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.post(
+            reverse("ai_assistant:delete_dev_task", args=[self.task.pk]), secure=True
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(AIDevTask.objects.filter(pk=self.task.pk).exists())
+
+    def test_task_form_only_offers_the_owners_requests(self):
+        other_request = AIRequest.objects.create(
+            title="别人的需求", requirement="需求正文", created_by=self.other_user
+        )
+
+        form = AIDevTaskForm(user=self.owner)
+
+        self.assertIn(self.ai_request, form.fields["request"].queryset)
+        self.assertNotIn(other_request, form.fields["request"].queryset)
+
+
+@override_settings(SECRET_KEY="ai-roles-test-secret")
+class AIRoleTests(TestCase):
+    """角色矩阵：谁能拆、谁能指派、谁能看谁的东西。"""
+
+    def setUp(self):
+        roles.ensure_role_groups()
+        user_model = get_user_model()
+        self.manager = user_model.objects.create_user(username="role-manager", password="password")
+        self.engineer = user_model.objects.create_user(username="role-engineer", password="password")
+        self.developer = user_model.objects.create_user(
+            username="role-developer", password="password"
+        )
+        self.viewer = user_model.objects.create_user(username="role-viewer", password="password")
+        self.outsider = user_model.objects.create_user(username="role-outsider", password="password")
+
+        roles.set_user_roles(self.manager, [roles.ROLE_MANAGER])
+        roles.set_user_roles(self.engineer, [roles.ROLE_ENGINEER])
+        roles.set_user_roles(self.developer, [roles.ROLE_DEVELOPER])
+        roles.set_user_roles(self.viewer, [roles.ROLE_VIEWER])
+
+        self.classification = Classification.objects.create(name="角色测试分类")
+        self.product = Product.objects.create(
+            name="角色测试产品", classification=self.classification
+        )
+        for member in (self.manager, self.engineer, self.developer, self.viewer):
+            roles.add_product_member(member, self.product)
+
+        self.requirement = AIRequest.objects.create(
+            title="登录接口改造",
+            requirement="登录接口要支持手机号加验证码登录。",
+            created_by=self.manager,
+            category=self.product.category.get(name="--default--"),
+        )
+        self.task = AIDevTask.objects.create(
+            request=self.requirement,
+            owner=self.manager,
+            position=1,
+            task_number="DEV-001",
+            title="实现验证码校验",
+            priority="P2",
+        )
+
+    def test_role_groups_carry_the_expected_permissions(self):
+        created, missing = roles.ensure_role_groups()
+
+        self.assertEqual(created, [])
+        self.assertEqual(missing, [])
+        self.assertTrue(self.manager.has_perm(roles.PERM_SPLIT_DEV_TASK))
+        self.assertTrue(self.manager.has_perm(roles.PERM_ASSIGN_DEV_TASK))
+        self.assertTrue(self.manager.has_perm(roles.PERM_APPROVE_REPORT))
+        self.assertTrue(self.manager.has_perm(roles.PERM_MANAGE_MEMBERS))
+        # 工程师刻意没有全局拆分权限：他拆的是自己提的需求。
+        self.assertFalse(self.engineer.has_perm(roles.PERM_SPLIT_DEV_TASK))
+        self.assertTrue(self.engineer.has_perm("testcases.add_testcase"))
+        self.assertFalse(self.viewer.has_perm("testcases.add_testcase"))
+
+    def test_set_user_roles_replaces_only_role_groups(self):
+        other_group = Group.objects.create(name="上游用户组")
+        self.engineer.groups.add(other_group)
+
+        roles.set_user_roles(self.engineer, [roles.ROLE_VIEWER, "不存在的角色"])
+
+        self.assertEqual(roles.roles_of(self.engineer), {roles.ROLE_VIEWER})
+        self.assertTrue(self.engineer.groups.filter(name="上游用户组").exists())
+
+    def test_membership_round_trip(self):
+        self.assertIn(self.product, roles.member_products(self.viewer))
+        self.assertFalse(roles.is_product_member(self.outsider, self.product))
+        self.assertEqual(roles.members_of_product(self.product).count(), 4)
+        self.assertIn(
+            self.developer.pk,
+            set(roles.assignable_users(self.product).values_list("pk", flat=True)),
+        )
+
+        roles.remove_product_member(self.viewer, self.product)
+
+        self.assertFalse(roles.is_product_member(self.viewer, self.product))
+        self.assertEqual(roles.members_of_product(self.product).count(), 3)
+
+    def test_visibility_follows_product_membership(self):
+        self.assertTrue(
+            roles.visible_requests(self.viewer).filter(pk=self.requirement.pk).exists()
+        )
+        self.assertFalse(
+            roles.visible_requests(self.outsider).filter(pk=self.requirement.pk).exists()
+        )
+        self.assertTrue(roles.visible_dev_tasks(self.viewer).filter(pk=self.task.pk).exists())
+        self.assertFalse(roles.visible_dev_tasks(self.outsider).filter(pk=self.task.pk).exists())
+
+    def test_assignee_can_see_the_task_without_product_membership(self):
+        self.task.assignee = self.outsider
+        self.task.save(update_fields=["assignee"])
+
+        self.assertTrue(roles.visible_dev_tasks(self.outsider).filter(pk=self.task.pk).exists())
+
+    def test_capability_matrix(self):
+        own_request = AIRequest.objects.create(
+            title="工程师自己的需求", requirement="需求正文", created_by=self.engineer
+        )
+
+        self.assertTrue(roles.can_split_dev_tasks(self.manager, self.requirement))
+        self.assertFalse(roles.can_split_dev_tasks(self.engineer, self.requirement))
+        self.assertTrue(roles.can_split_dev_tasks(self.engineer, own_request))
+        self.assertFalse(roles.can_split_dev_tasks(self.viewer, self.requirement))
+        self.assertTrue(roles.can_assign_dev_tasks(self.manager, self.requirement))
+        self.assertFalse(roles.can_assign_dev_tasks(self.developer, self.requirement))
+        self.assertTrue(roles.can_edit_requirement(self.manager, self.requirement))
+        self.assertFalse(roles.can_edit_requirement(self.engineer, self.requirement))
+
+        self.task.assignee = self.developer
+        self.task.save(update_fields=["assignee"])
+
+        self.assertTrue(roles.can_update_dev_task_status(self.developer, self.task))
+        self.assertFalse(roles.can_edit_dev_task(self.developer, self.task))
+        self.assertTrue(roles.can_edit_dev_task(self.manager, self.task))
+        self.assertFalse(roles.can_update_dev_task_status(self.viewer, self.task))
+
+    def test_case_generation_permission(self):
+        self.assertTrue(roles.can_generate_cases(self.manager, self.requirement))
+        self.assertTrue(roles.can_generate_cases(self.engineer, self.requirement))
+        self.assertFalse(roles.can_generate_cases(self.developer, self.requirement))
+        self.assertFalse(roles.can_generate_cases(self.viewer, self.requirement))
+
+    def test_viewer_cannot_submit_or_split(self):
+        self.client.force_login(self.viewer)
+
+        page = self.client.get(reverse("ai_assistant:index"), secure=True)
+        self.assertNotContains(page, 'id="generation-form"')
+
+        response = self.client.post(
+            reverse("ai_assistant:generate_dev_tasks", args=[self.requirement.pk]), secure=True
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_viewer_cannot_open_member_management(self):
+        self.client.force_login(self.viewer)
+
+        response = self.client.get(reverse("ai_assistant:member_list"), secure=True)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_member_management_requires_the_permission(self):
+        self.client.force_login(self.engineer)
+        self.assertEqual(
+            self.client.get(reverse("ai_assistant:member_list"), secure=True).status_code, 403
+        )
+
+        self.client.force_login(self.manager)
+        page = self.client.get(reverse("ai_assistant:member_list"), secure=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "role-engineer")
+        self.assertContains(page, "成员与角色")
+
+    def test_manager_assigns_and_can_take_it_back(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.post(
+            reverse("ai_assistant:assign_dev_task", args=[self.task.pk]),
+            {"assignee": self.developer.pk},
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee, self.developer)
+        self.assertEqual(self.task.assigned_by, self.manager)
+        self.assertIsNotNone(self.task.assigned_at)
+
+        response = self.client.post(
+            reverse("ai_assistant:assign_dev_task", args=[self.task.pk]),
+            {"assignee": ""},
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.assignee)
+        self.assertIsNone(self.task.assigned_at)
+
+    def test_cannot_assign_to_a_non_member(self):
+        self.client.force_login(self.manager)
+
+        self.client.post(
+            reverse("ai_assistant:assign_dev_task", args=[self.task.pk]),
+            {"assignee": self.outsider.pk},
+            secure=True,
+        )
+
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.assignee)
+
+    def test_developer_cannot_assign(self):
+        self.client.force_login(self.developer)
+
+        response = self.client.post(
+            reverse("ai_assistant:assign_dev_task", args=[self.task.pk]),
+            {"assignee": self.developer.pk},
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_assignee_only_edits_the_status(self):
+        self.task.assignee = self.developer
+        self.task.save(update_fields=["assignee"])
+        self.client.force_login(self.developer)
+
+        page = self.client.get(
+            reverse("ai_assistant:edit_dev_task", args=[self.task.pk]), secure=True
+        )
+
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, 'name="title"')
+        self.assertContains(page, 'name="status"')
+
+        response = self.client.post(
+            reverse("ai_assistant:edit_dev_task", args=[self.task.pk]),
+            {"status": "doing", "title": "被篡改的标题", "priority": "P1"},
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "doing")
+        self.assertEqual(self.task.title, "实现验证码校验")
+
+    def test_unrelated_account_sees_nothing(self):
+        self.client.force_login(self.outsider)
+
+        page = self.client.get(reverse("ai_assistant:dev_task_list"), secure=True)
+
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, "实现验证码校验")

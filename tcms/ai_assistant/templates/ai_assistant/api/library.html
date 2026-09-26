@@ -9,12 +9,12 @@
 <label class="sr-only" for="library-q">搜索标题</label><input id="library-q" class="form-control" name="q" value="{{ request.GET.q }}" placeholder="搜索标题"><button class="btn btn-default">筛选</button>
 </form>
 {% if product %}<p><a href="{% url 'ai_assistant:api_home' %}?product={{ product.pk }}">自动化执行、环境与套件</a> · <a href="{% url 'testcases-search' %}">高级检索与批量管理</a></p>{% endif %}
-<section class="api-card"><header><h2>用例库 <small>{{ cases.paginator.count }} 条</small></h2></header><div class="api-table-scroll"><table class="table"><thead><tr><th>用例</th><th>分类</th><th>执行方式</th><th>操作</th></tr></thead><tbody>
-{% for case in cases %}<tr><td><a href="{% url 'testcases-get' case.pk %}">TC-{{ case.pk }} · {{ case.summary }}</a></td><td>{{ case.category }}</td><td>{% if case.has_api %}<span class="label label-info">自动化 · 接口</span>{% elif case.is_automated %}<span class="label label-info">自动化</span>{% else %}<span class="label label-default">手工</span>{% endif %}</td><td>
+<section class="api-card"><header><h2>用例库 <small>{{ cases.paginator.count }} 条</small></h2></header><div class="api-table-scroll"><table class="table"><thead><tr><th>用例</th><th>执行方式</th><th>操作</th></tr></thead><tbody>
+{% for case in cases %}<tr><td><a href="{% url 'testcases-get' case.pk %}">TC-{{ case.pk }} · {{ case.summary }}</a></td><td>{% if case.has_api %}<span class="label label-info">自动化 · 接口</span>{% elif case.is_automated %}<span class="label label-info">自动化</span>{% else %}<span class="label label-default">手工</span>{% endif %}</td><td>
 <a href="{% url 'testcases-get' case.pk %}">查看步骤</a>
 {% for config in case.api_configs %}<br><a href="{% url 'ai_assistant:api_case_edit' product.pk config.pk %}">接口配置{% if case.api_configs|length > 1 %} #{{ config.pk }}{% endif %}</a> · <a href="{% url 'ai_assistant:api_submit' product.pk %}?case={{ config.pk }}">自动化执行</a>
 {% empty %}{% if case.has_api %}<br><small>执行配置由其所属账号管理</small>{% else %}<br><a href="{% url 'ai_assistant:api_case_new' product.pk %}?test_case={{ case.pk }}">配置接口自动化</a>{% endif %}{% endfor %}
-</td></tr>{% empty %}<tr><td colspan="4" class="api-empty">没有符合条件的用例。可新建测试用例，或从需求分析导入。</td></tr>{% endfor %}
+</td></tr>{% empty %}<tr><td colspan="3" class="api-empty">没有符合条件的用例。可新建测试用例，或从需求分析导入。</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% if cases.has_other_pages %}<p class="api-pagination">{% if cases.has_previous %}<a href="?{{ query }}&page={{ cases.previous_page_number }}">上一页</a>{% endif %} {{ cases.number }} / {{ cases.paginator.num_pages }} {% if cases.has_next %}<a href="?{{ query }}&page={{ cases.next_page_number }}">下一页</a>{% endif %}</p>{% endif %}
 {% endblock %}

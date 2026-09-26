@@ -18,6 +18,48 @@ def visible_cases(owner):
     return get_objects_for_user(owner, "testcases.view_testcase", klass=TestCase)
 
 
+def library_products():
+    """用例库产品下拉用的查询集。"""
+    return Product.objects.order_by("name")
+
+
+def selected_product(request, products=None):
+    """用例库当前产品：GET 参数指定，否则取第一个。返回 (下拉查询集, 当前产品)。
+
+    页面表格与左侧共享目录都从这里取产品，避免两处口径漂移。
+    """
+    products = library_products() if products is None else products
+    product_id = request.GET.get("product")
+    if product_id and product_id.isdigit():
+        return products, get_object_or_404(products, pk=product_id)
+    return products, products.first()
+
+
+def library_cases(request, product, user=None):
+    """当前筛选条件下的可见用例。
+
+    表格和左侧共享目录共用这一套范围：目录栏必须跟随 type/category/q，
+    否则被筛掉的用例又会从目录里冒出来。
+    """
+    user = user or request.user
+    cases = visible_cases(user).none()
+    if product is None:
+        return cases
+    cases = visible_cases(user).filter(category__product=product).annotate(
+        has_api=Exists(APICase.objects.filter(test_case_id=OuterRef("pk"))))
+    mode = request.GET.get("type", "")
+    if mode == "manual":
+        cases = cases.filter(is_automated=False, has_api=False)
+    elif mode == "automated":
+        cases = cases.filter(Q(is_automated=True) | Q(has_api=True))
+    category_id = request.GET.get("category", "")
+    if category_id.isdigit():
+        cases = cases.filter(category_id=category_id)
+    if request.GET.get("q"):
+        cases = cases.filter(summary__icontains=request.GET["q"][:200])
+    return cases
+
+
 def attach_case(config):
     """Used by owned API creation/demo paths; existing links keep their identity."""
     if config.test_case_id:
@@ -39,32 +81,20 @@ def attach_case(config):
 
 @login_required
 def library(request):
-    products = Product.objects.order_by("name")
-    product_id = request.GET.get("product")
-    product = get_object_or_404(products, pk=product_id) if product_id and product_id.isdigit() else products.first()
-    cases = visible_cases(request.user).none()
+    products, product = selected_product(request)
+    cases = library_cases(request, product)
     categories = Category.objects.none()
-    mode = request.GET.get("type", "")
     if product:
         categories = Category.objects.filter(product=product)
-        cases = visible_cases(request.user).filter(category__product=product).annotate(
-            has_api=Exists(APICase.objects.filter(test_case_id=OuterRef("pk"))))
-        if mode == "manual":
-            cases = cases.filter(is_automated=False, has_api=False)
-        elif mode == "automated":
-            cases = cases.filter(Q(is_automated=True) | Q(has_api=True))
-        category_id = request.GET.get("category", "")
-        if category_id.isdigit():
-            cases = cases.filter(category_id=category_id)
-        if request.GET.get("q"):
-            cases = cases.filter(summary__icontains=request.GET["q"][:200])
         cases = cases.select_related("category", "priority").prefetch_related(Prefetch(
-            "apicase_set", queryset=APICase.objects.filter(owner=request.user, product=product), to_attr="api_configs"))
+            "apicase_set", queryset=APICase.objects.filter(owner=request.user, product=product),
+            to_attr="api_configs"))
     page = Paginator(cases.order_by("-pk"), 30).get_page(request.GET.get("page"))
     query = request.GET.copy()
     query.pop("page", None)
     return render(request, "ai_assistant/api/library.html", dict(products=products, product=product,
-        cases=page, categories=categories, mode=mode, query=query.urlencode()))
+        cases=page, categories=categories, mode=request.GET.get("type", ""),
+        query=query.urlencode()))
 
 
 @login_required

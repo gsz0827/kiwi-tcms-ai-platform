@@ -177,6 +177,7 @@ class AIInstructionProfile(models.Model):
         ("all", "所有需求任务"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
+        ("dev_task_breakdown", "拆分开发任务"),
     )
 
     owner = models.ForeignKey(
@@ -299,6 +300,10 @@ class AIRequest(models.Model):
     class Meta:
         verbose_name = "AI请求"
         verbose_name_plural = "AI请求"
+        permissions = (
+            ("manage_members", "可以管理产品成员与角色"),
+            ("manage_requirement", "可以编辑与删除产品内他人的需求"),
+        )
         constraints = [
             models.UniqueConstraint(
                 fields=("created_by", "submission_token"),
@@ -375,6 +380,101 @@ class AITestCaseDraft(models.Model):
 
     def __str__(self):
         return f"{self.case_number} {self.summary}"
+
+
+class AIDevTask(models.Model):
+    """需求拆分出来的开发任务单（开发文档）。
+
+    一个需求对应多个任务单：需求分析回答「要做什么、有什么风险」，任务单回答
+    「谁按什么顺序动手、改哪儿、怎么算做完」。任务单由 AI 拆分后落库，之后由
+    人在页面上改状态和内容，所以这里保存的是可编辑的正式数据，不是草稿。
+    """
+
+    STATUS_CHOICES = (
+        ("todo", "待开始"),
+        ("doing", "开发中"),
+        ("done", "已完成"),
+        ("blocked", "阻塞"),
+    )
+
+    request = models.ForeignKey(
+        AIRequest,
+        on_delete=models.CASCADE,
+        related_name="dev_tasks",
+        verbose_name="所属需求",
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="ai_dev_tasks",
+        verbose_name="所属账号",
+    )
+    assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_dev_tasks",
+        verbose_name="负责人",
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="dispatched_dev_tasks",
+        verbose_name="指派人",
+    )
+    assigned_at = models.DateTimeField(blank=True, null=True, verbose_name="指派时间")
+    position = models.PositiveIntegerField(default=1, verbose_name="顺序")
+    task_number = models.CharField(max_length=50, blank=True, verbose_name="任务编号")
+    title = models.CharField(max_length=200, verbose_name="任务标题")
+    module = models.CharField(max_length=200, blank=True, verbose_name="涉及模块")
+    description = models.TextField(blank=True, verbose_name="开发说明")
+    acceptance = models.TextField(blank=True, verbose_name="验收标准")
+    priority = models.CharField(max_length=8, default="P3", verbose_name="优先级")
+    estimate_hours = models.PositiveIntegerField(
+        blank=True, null=True, verbose_name="预估工时（小时）"
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default="todo",
+        db_index=True,
+        verbose_name="状态",
+    )
+    requirement_version = models.PositiveIntegerField(
+        default=1, verbose_name="来源需求版本"
+    )
+    needs_update = models.BooleanField(default=False, verbose_name="需要随需求更新")
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("position", "id")
+        verbose_name = "开发任务单"
+        verbose_name_plural = "开发任务单"
+        permissions = (
+            ("split_devtask", "可以拆分开发任务单"),
+            ("assign_devtask", "可以指派开发任务单"),
+        )
+        indexes = [
+            models.Index(fields=("owner", "status"), name="ai_dev_task_owner_status"),
+            models.Index(fields=("assignee", "status"), name="ai_dev_task_assignee_status"),
+        ]
+
+    def __str__(self):
+        return f"{self.task_number} {self.title}".strip()
+
+    @property
+    def is_done(self):
+        return self.status == "done"
+
+    @property
+    def is_assigned(self):
+        return self.assignee_id is not None
 
 
 class AIModelConfig(models.Model):
@@ -709,6 +809,16 @@ class AITestReport(models.Model):
     metrics_snapshot = models.JSONField(default=dict, verbose_name="执行指标快照")
     snapshot_hash = models.CharField(max_length=64, blank=True, verbose_name="快照校验值")
     gate_result = models.JSONField(default=dict, blank=True, verbose_name="发布门禁结果")
+    gate_waived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="gate_waived_ai_test_reports",
+        verbose_name="风险放行人",
+    )
+    gate_waived_at = models.DateTimeField(blank=True, null=True, verbose_name="风险放行时间")
+    gate_waive_reason = models.TextField(blank=True, verbose_name="风险放行理由")
     defect_summary = models.JSONField(default=list, blank=True, verbose_name="缺陷摘要")
     recommendations = models.JSONField(default=list, blank=True, verbose_name="后续建议")
     raw_result = models.TextField(blank=True, verbose_name="AI 原始结果")
@@ -753,6 +863,9 @@ class AITestReport(models.Model):
         ]
         verbose_name = "AI 测试报告"
         verbose_name_plural = "AI 测试报告"
+        permissions = (
+            ("approve_aireport", "可以审批 AI 测试报告"),
+        )
 
     def __str__(self):
         return f"TR-{self.test_run_id} 测试报告 #{self.pk}"
@@ -915,16 +1028,15 @@ class AITestReportRevision(models.Model):
 
 
 class AIReleaseGateRule(models.Model):
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="ai_release_gate_rules",
-        verbose_name="所属账号",
-    )
+    """产品级发布门禁规则：一个产品一条，由测试经理维护。
+
+    规则不挂在账号上：门禁是产品的发布政策，不是某个人的偏好。挂账号时
+    ``evaluate_release_gate`` 只会看报告自己的 owner，经理配的规则管不到工程师
+    生成的报告，等于没有门禁。
+    """
+
     product = models.ForeignKey(
         "management.Product",
-        blank=True,
-        null=True,
         on_delete=models.CASCADE,
         related_name="ai_release_gate_rules",
         verbose_name="产品",
@@ -942,17 +1054,26 @@ class AIReleaseGateRule(models.Model):
     require_all_executed = models.BooleanField(default=True, verbose_name="要求全部执行")
     max_open_defects = models.PositiveIntegerField(default=0, verbose_name="允许未关闭缺陷数")
     is_active = models.BooleanField(default=True, verbose_name="启用")
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="ai_release_gate_rules_updated",
+        verbose_name="最后修改人",
+    )
     updated = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ("product__name", "name")
         constraints = [
-            models.UniqueConstraint(
-                fields=("owner", "product", "name"), name="unique_ai_gate_rule"
-            ),
+            models.UniqueConstraint(fields=("product",), name="unique_ai_gate_rule"),
         ]
         verbose_name = "AI 发布门禁规则"
         verbose_name_plural = "AI 发布门禁规则"
+
+    def __str__(self):
+        return f"{self.product.name} · {self.name}"
 
 
 class AIIterationReport(models.Model):
@@ -1036,6 +1157,7 @@ class AIJob(models.Model):
         ("api_case_generation", "AI 生成接口用例"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
+        ("dev_task_breakdown", "拆分开发任务"),
         ("coverage_analysis", "覆盖率分析"),
         ("coverage_supplement", "补充覆盖缺口"),
         ("test_case_review", "测试用例评审"),
@@ -1110,6 +1232,7 @@ class AIUsageLog(models.Model):
         ("api_case_generation", "AI 生成接口用例"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
+        ("dev_task_breakdown", "拆分开发任务"),
         ("coverage_analysis", "覆盖率分析"),
         ("coverage_supplement", "补充覆盖缺口"),
         ("test_case_review", "测试用例评审"),

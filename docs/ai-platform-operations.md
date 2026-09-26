@@ -21,7 +21,9 @@ Web 与 Worker 来自同一份源码镜像，使用同一个数据库和 SECRET_
 
 登录后从左侧“项目配置 → AI 规则包”进入，或打开 `/ai/instruction-profiles/`。每个项目（Kiwi 中对应一个 Product）绑定一个规则包，在包内集中维护登录、支付、权限、接口等测试规范。
 
-首页和业务页面左侧统一提供一个“项目配置”入口，进入独立导航页后可选择“新建产品”和“维护 AI 规则包”。产品分类统一在新建产品表单中选择；如果没有合适的分类，使用表单里的“新建分类”入口。创建分类和产品分别要求 `management.add_classification`、`management.add_product` 权限；产品创建后 Kiwi 会自动生成默认用例分类、`unspecified` 版本和构建。
+首页和业务页面左侧统一提供一个“项目配置”入口，进入独立导航页后可选择“新建产品”和“维护 AI 规则包”。创建产品要求 `management.add_product` 权限；产品创建后 Kiwi 会自动生成默认用例分类、`unspecified` 版本和构建。
+
+产品分类（上游 `Classification`）不作为平台概念：新建产品表单里没有这个字段，保存时自动归入已有分类，一个分类都没有时自动创建“默认分类”（`ai_assistant.views._default_classification`）。这样做的原因是平台里没有任何页面按分类筛选或分组，一个分类一个产品的形态下它只会多出一次选择。分类模型本身保留，系统后台（`/admin/`）与 XML-RPC 的 `Classification.*` 接口未受影响；如果将来确实要按分类组织项目，需要统一改造的入口是：项目切换器（`_project_switcher.html`，按分类分 `optgroup`）、用例库与共享目录的产品下拉、以及项目配置页。补充一条实测结论：`Product.classification` 是必需的 CASCADE 外键，删分类会级联删产品；而接口自动化的 `APIEnvironment` / `APICase` / `APIRun` / `APISuite` / `APIAIRequest` 对 `Product` 用的是 `PROTECT`，所以直接 `Classification.objects.all().delete()` 会抛 `ProtectedError`，必须先按依赖顺序清掉这些表。也就是说“彻底删掉分类”要动上游模型、表单、系统后台与 XML-RPC 四个面，收益为零——保留模型、只从界面撤退是顺的走法。
 
 规则包在新需求提交时被保存为任务快照。管理员之后修改或停用规则包，不会改变已经排队或正在执行的任务；新的需求任务会读取最新的启用版本。每次修改内容或适用项目都会自动递增版本号，需求记录中保留使用过的规则内容，便于复盘。
 
@@ -106,13 +108,158 @@ make ai-test-rpc
 
 ## 导航：侧边栏与上游菜单的关系
 
-本平台用中文侧边栏替代上游顶部的横向菜单，但 `SETTINGS.MENU_ITEMS` 中侧边栏没有提供入口的条目不能就此消失——插件通过 `kiwitcms.plugins` 注册的 MORE 菜单正是追加在该列表最后一项上的。侧边栏的「更多功能」分组由 `platform_extra_menu` 模板标签生成：取出 MENU_ITEMS 中侧边栏尚未覆盖的条目，剔除与侧边栏重复的链接，插件部分则原样保留。
+本平台用中文侧边栏替代上游顶部的横向菜单。侧边栏自身的结构（分区、条目、图标、选中态判据）定义在 `tcms/ai_assistant/templatetags/ai_navigation.py` 的 `NAV_SECTIONS` 与 `platform_navigation` 模板标签里，`include/platform_navigation.html` 只负责循环渲染。**新增或移动菜单项请改 `NAV_SECTIONS`，不要在模板里写高亮判断**：早期版本把 `/case/ in path` 这类判据在模板里复制了三份（`is-current` / `aria-expanded` / `collapse in`），新增页面必然漏掉其中一处，于是「展开了 A 却高亮 B」成了常态。
+
+当前分区与归属：
+
+| 分区 | 条目 |
+| --- | --- |
+| 需求与设计 | 需求与任务单 `ai_assistant:index`（页面内两个 Tab：需求分析 / 任务单 `ai_assistant:dev_task_list`）、用例库 `ai_assistant:case_library` |
+| 测试执行 | 测试计划 `plans-search`、执行任务 `testruns-search`、接口自动化 `ai_assistant:api_home`、后台任务 `ai_assistant:job_list` |
+| 质量与缺陷 | 质量看板 `ai_assistant:dashboard`、测试报告 `ai_assistant:iteration_reports`、质量趋势 `ai_assistant:report_trends`、缺陷列表 `bugs-search`、缺陷与回归 `ai_assistant:dashboard#defect-management`、门禁设置 `ai_assistant:release_gate_settings`（**只对 `ai_assistant.approve_aireport` 可见**） |
+| 度量分析 | 测试分布 `testing-breakdown`、执行总览 `execution-dashboard`、状态矩阵 `testing-status-matrix`、执行趋势 `testing-execution-trends`、用例健康度 `test-case-health` |
+| 平台管理 | 项目配置 `ai_assistant:project_settings`、AI 模型配置 `ai_assistant:model_settings`、AI 调用记录 `ai_assistant:usage_logs`、AI 规则包 `ai_assistant:instruction_profiles`、成员与角色 `ai_assistant:member_list`（**只对 `ai_assistant.manage_members` 可见**） |
+
+`SETTINGS.MENU_ITEMS`（上游顶部横向菜单的定义）**不再投影到界面上**。它有两个渲染者：页面级对象菜单用的是 `OBJECT_MENU_ITEMS`，与这里无关；真正读 `MENU_ITEMS` 的只有下面的插件收集逻辑。历史上它的条目曾被整体搬进侧边栏的一个「上游功能」分组，结果是导航里出现两套语汇（中文主菜单 + 英文分组标题）、四层缩进和 `○ / ▪` 列表符号。现在改为按语义逐个收编：
+
+- 有价值的入口直接进上表的分区（度量类页面归入「度量分析」），或进右上角账户下拉——`用户管理` / `用户组` / `系统后台` 三项都在 `navbar.html` 的账户下拉里，它们是系统级管理而非日常工作流，且本就都通向 Django admin（`admin-users-router` 302 到 `/admin/auth/user/`，`admin-groups-router` 302 到 `/admin/auth/group/`）。三项分别用 `perms.auth.view_user` / `perms.auth.view_group` / `user.is_staff` 控制显隐；
+- `测试计划` 放在「测试执行」而不是「需求与设计」：上游的「计划 → 执行」是一对，执行任务（`TestRun`）必须属于某个测试计划，用例与计划是多对多（`tcms/testcases/models.py` 的 `TestCase.plan` 走 `TestCasePlan` 中间表）。两者拆到两个分组会让这条因果链断开，看起来像互不相干的两个功能。**注意平台的应用代码不会替你建计划**：`case_library.attach_case()` 与 `create_case()` 建用例时都不挂计划，AI 生成的执行任务也只认已有的计划，所以计划要自己建——入口在测试计划搜索页标题旁的「新建测试计划」按钮；
+- 与侧边栏已有入口重复的快捷方式（新建测试用例 / 搜索测试用例）直接删除。`testcases-search` 也不给入口——AI 用例库（`ai_assistant:case_library`）本来就是上游 `TestCase` 按产品切片的视图（`tcms/ai_assistant/case_library.py` 的 `visible_cases()` 用 `get_objects_for_user(..., "testcases.view_testcase")`），再列一个跨产品搜索只会制造两条通往同一模型的入口；
+- 上游那组「新建 XXX」快捷方式不属于侧边栏，而是**各自列表页标题旁的按钮**（见下一条）。
+- 剩下无法预知、只能运行时收集的是**插件**：`tcms/settings/common.py` 约定 `MENU_ITEMS` 的最后一项（标签为 `MORE`）固定留给 `kiwitcms.plugins` 的 entry point 追加，`plugin_menu_entries()` 读这一项，在「平台管理」末尾加一个「插件」小标题后渲染。插件自己分出来的顶层子菜单保留为 `kiwi-nav-caption` 小标题，更深的层级一律拍平成叶子——侧边栏只有 232px 宽，再缩进就没法看了。没有安装任何插件时它返回空列表，界面上不会出现多余分组。
 
 维护时注意三点：
 
 - 侧边栏只在已登录时渲染，检查插件菜单是否出现必须以登录态访问，匿名请求只会拿到登录页；
-- `tcms/settings/common.py` 约定 MENU_ITEMS 的最后一项固定是留给插件扩展的 MORE，判断插件分组依赖这个位置；
-- 侧边栏新增入口时，若该入口对应上游 MENU_ITEMS 里的链接，要把它的 URL 名补进 `ai_navigation.SIDEBAR_MENU_URLS`，否则同一个页面会在「更多功能」里再出现一次。
+- 判断插件分组依赖「`MENU_ITEMS` 最后一项」这个位置约定。升级上游版本后请比对 `tcms/settings/common.py` 的 `MENU_ITEMS`，确认新增的入口已经在 `NAV_SECTIONS` 里找到位置——上游加了入口而这里没跟上时，界面上会静默少一条；
+- `platform_navigation` 对 `reverse()` 抛 `NoReverseMatch` 的条目是跳过而不是报错，所以「某条菜单没出现」的第一嫌疑是 URL 名拼错，而不是权限；上表里的名字可以直接拿去比对。
+
+### 列表页的新建入口
+
+上游把「新建测试计划 / 新建执行任务 / 新建缺陷」放在顶部横向菜单里，侧边栏取代它之后这三个入口整组丢了——搜索页只有筛选表单和结果表，`plans-new` / `testruns-new` / `bugs-new` 三个 URL 全仓没有任何模板引用，只能手敲地址。补法是**在各自搜索页的 `{% block contents %}` 顶部加一行「页面标题 + 权限门禁按钮」**，不塞进侧边栏：
+
+| 页面模板 | 按钮 | 目标 URL 名 | 显隐判据 |
+| --- | --- | --- | --- |
+| `tcms/testplans/templates/testplans/search.html` | 新建测试计划 | `plans-new` | `perms.testplans.add_testplan` |
+| `tcms/testruns/templates/testruns/search.html` | 新建执行任务 | `testruns-new` | `perms.testruns.add_testrun` |
+| `tcms/bugs/templates/bugs/search.html` | 新建缺陷 | `bugs-new` | `perms.bugs.add_bug` |
+
+三条约定：按钮文案用平台口径（「新建执行任务」而不是上游译文「新的测试执行」，两个搜索页标题也补成「测试计划」「执行任务」）；URL 名不带命名空间；`testcases/search.html` **刻意不加**——AI 用例库已经有「新建测试用例」，而平台那条创建 URL 需要 product id，从上游搜索页挂一条无状态链接会造出第二条易混淆的创建路径。回归测试在 `tcms/ai_assistant/test_create_entries.py`（只授 view 权限的账号看不到按钮，只授 view 权限也能打开搜索页）。
+
+## 导航：顶部栏（右上角）
+
+顶部栏由 `include/navbar.html` 渲染，除品牌标识与页面级对象菜单外只有四块：项目切换器、时钟、帮助下拉、账户下拉。
+
+- **语言下拉（地球图标）已删除**。上游那个下拉并不切换语言，五个条目分别是 Kiwi 文档、Crowdin 项目页、GitHub 新语言申请，以及只对翻译贡献者有用的「翻译模式」。本平台的语言由个人资料决定，`translation-mode` 的 URL 与视图仍然保留；将来若要多语言入口，应该做成真正的语言切换，而不是把外链加回来。
+- **帮助下拉收窄**。`SETTINGS.HELP_MENU_ITEMS` 已在 `tcms/settings/ai.py` 里覆盖，只留 User Guide / Administration Guide / API Help 三条文档链接。上游默认的「Report an Issue」「Ask for help on StackOverflow」「Donate €5 via Open Collective」是社区向的，对内网使用者没有意义——他们不是 Kiwi 的用户，出问题也不该去找上游。
+- **账户下拉**分四段：快捷入口（我的测试执行 / 我的测试计划）、账户与偏好（个人资料 / 修改密码 / 重置邮箱）、系统管理（用户管理 / 用户组 / 系统后台）、退出登录。
+- 上游的第三方广告位 `include/ads.html`（EthicalAds）已从 `base.html` 移除。本部署的 `ANONYMOUS_ANALYTICS` 在 `tcms/settings/ai.py` 里是 `False`，Plausible 与 Scarf 像素本就不输出，那个广告条是唯一还在向外部发请求的脚本。
+
+## 需求与任务单
+
+需求分析回答「要做什么、有什么风险」，任务单回答「按什么顺序动手、改哪儿、怎么算做完」。两者是同一条链路的上下游，所以共用一个侧边栏入口（`ai_assistant:index`，标签「需求与任务单」），页面内用 `ai_assistant/include/workspace_tabs.html` 的两个 Tab 切换：需求分析（`ai_assistant:index`）与任务单（`ai_assistant:dev_task_list`）。
+
+- 任务单落在 `AIDevTask`（`tcms/ai_assistant/models.py`）里，**不是草稿**：它由 AI 拆分后直接生成正式记录，之后由人在页面上改状态和内容，因此字段是结构化的（编号 / 标题 / 涉及模块 / 开发说明 / 验收标准 / 优先级 / 预估工时 / 状态）。
+- 状态只有四档：`todo` 待开始、`doing` 开发中、`done` 已完成、`blocked` 阻塞。完成度 = `done / 总数`，显示在任务单页顶部、每个需求的标题旁、需求分析列表的标签里，以及全链路追踪页的第四个汇总卡片。
+- 生成走后台作业：`dev_task_breakdown` 操作（`AIJob.OPERATION_CHOICES` 与 `AIUsageLog.OPERATION_CHOICES` 都要有这一项），执行器是 `jobs._execute_dev_task_breakdown`，服务函数是 `services.break_down_dev_tasks`，解析函数 `services.parse_dev_tasks` 限制 3~15 条、优先级只在 P1~P5、工时必须是正整数，编号缺省 `DEV-001` 递增。入口是任务单页底部「尚未拆分开发任务的需求」表格里的按钮（POST 到 `ai_assistant:generate_dev_tasks`，没有拆分权限时按钮不渲染）。
+- 任务单可以指派给产品成员（`assignee` / `assigned_by` / `assigned_at`），指派入口在任务单行的「负责人」列；负责人只能改状态，标题、工时、负责人本身由需求提出人或测试经理维护。谁能指派见「角色与权限」一节。
+- **一个需求只拆一次**：已有任务单时作业直接抛 `RuntimeError("该需求已经拆分过开发任务，请先删除现有任务单再重新拆分")`。这是沿用 `_execute_test_case_generation` 对测试用例草稿的处理方式——静默覆盖会丢掉人已经改过的状态和验收标准。要重拆就先在任务单页删掉旧任务单。
+- 规则包也支持这个新任务：`AIInstructionProfile.OPERATION_CHOICES` 增加了「拆分开发任务」。**新增 operation 时必须同时改 `services._empty_skill_snapshot()`**（它返回 `requirement_analysis` / `test_case_generation` / `dev_task_breakdown` 三个空桶），否则 `capture_instruction_snapshot` 里 `{profile.operation: []}` 会因为字典没有这个键直接 KeyError。
+
+## 角色与权限
+
+平台里有两套互相独立的东西，别混起来看：
+
+| 维度 | 承载方式 | 决定什么 | 在哪儿维护 |
+| --- | --- | --- | --- |
+| 角色 | Django 用户组（`tcms/ai_assistant/roles.py` 的 `ROLE_GROUPS`） | 能做什么动作：拆分任务单、指派、审批报告、管理成员 | 「平台管理 › 成员与角色」，或 Django admin 的用户组 |
+| 产品成员 | django-guardian 的对象权限 `management.view_product` | 能看谁的东西：同一产品的成员互相可见需求、任务单、报告、缺陷 | 同一页的「添加成员 / 移出产品」 |
+
+四个角色与能力矩阵（`roles.ROLE_PERMISSION_MATRIX` 是唯一事实来源）：
+
+| 角色 | 权限 |
+| --- | --- |
+| AI 测试经理 | `split_devtask`、`assign_devtask`、`approve_aireport`、`manage_members`、`manage_requirement` + 上游 `testcases.add_testcase` / `change_testcase` |
+| AI 测试工程师 | 上游 `testcases.add_testcase` / `change_testcase`（**刻意不给 `split_devtask`**：他拆的是自己提的需求，靠下面的「本人后路」通过） |
+| AI 开发 | 无权限。可以看所在产品的需求与任务单，更新指派给自己的任务单状态 |
+| AI 只读 | 无权限。只读，不能提交需求、不能拆分 |
+
+两条必须先理解的原则：
+
+- **本人后路**：凡是由本人创建的需求 / 任务单 / 报告，创建者永远对自己的东西有权限，与角色无关。所以就算一个账号没有任何角色，他提的需求自己也能拆、能编辑、能删——单人使用不会被这套权限体系锁在门外；而「AI 只读」是唯一一个连自己提的需求都不给写的角色（`roles.is_read_only`）。没角色的账号**不是**只读，这是有意的。
+- **个人资产不参与角色判定**：`AIModelConfig`（含 API Key）、`AIUsageLog`、`AIJob`、接口自动化的环境与凭据永远只属于创建者本人，不随角色或产品成员关系放开。发布门禁规则**曾经**在这条清单里（挂 `owner` 的账号默认规则），现已改为产品级配置，见「发布门禁」一节——那是这一节唯一的例外，也是最容易记反的一条。
+
+维护须知：
+
+- 角色组与权限**不用数据迁移**：`tcms/ai_assistant/apps.py` 把 `roles.create_role_groups` 挂在 `post_migrate` 上，每次 `migrate` 结束都会按矩阵重新对齐一遍（幂等）。想立刻对齐也可以手动跑 `python manage.py setup_ai_roles`。**矩阵是唯一事实来源：在 Django admin 里手工给角色组加的权限，下次 migrate 会被覆盖掉**，要改就改 `roles.ROLE_PERMISSION_MATRIX`。
+- 数据可见范围统一走 `roles.visible_*` 查询集（`visible_requests` / `visible_dev_tasks` / `visible_analyses` / `visible_reports` / `visible_defects` / `visible_verifications` / `visible_iterations` / `visible_reviews`），视图里不要再写 `filter(owner=request.user)`。缺陷草稿的产品路径是 `execution__run__plan__product`——`TestExecution` 指向执行任务的外键叫 `run` 而不是 `test_run`，写错会直接 FieldError。
+- 能力判定统一走 `roles.can_*` 函数；模板里用 `roles.can_*` 的结果（视图传进上下文的 `can_edit` / `can_split` / `can_assign` / `can_manage`）决定按钮是否渲染。侧边栏入口的可见性由 `ai_navigation` 的 `perm` 字段控制（`_user_has_perm`），没权限的入口直接不渲染，避免点进去只拿到 403。
+- guardian 的坑：`get_users_with_perms(obj, only_with_perms_in=...)` **只认 codename**（`view_product`），传全名 `management.view_product` 不会报错、只会静默返回空集合。所以 `roles` 里同时存了 `MEMBERSHIP_PERMISSION`（全名，给 `assign_perm` / `get_objects_for_user` 用）与 `MEMBERSHIP_CODENAME`（给 `only_with_perms_in` 用）。
+- 任务单的指派人由 `AIDevTask.assignee` / `assigned_by` / `assigned_at` 记录；候选人限定为该产品的成员（`roles.assignable_users`），非成员会被拒绝。负责人只能改状态（表单在 `can_manage=False` 时只保留 `status` 字段），全面编辑留给需求提出人与测试经理。
+
+## 共享目录
+
+「共享目录」是给人一种方式，把散在各个列表页里的资源收进自己定义的目录树。数据落在两张表里（`tcms/ai_assistant/models.py`）：`ProjectResourceFolder`（项目共享资源目录，自引用 `parent` 成树）与 `ProjectResourceAssignment`（资源归档到哪个目录，唯一键是 `(resource_type, object_id)`，所以一条资源最多在一个目录里）。资源类型由 `ProjectResourceFolder.RESOURCE_TYPES` 定义，现有 `requirement` / `case` / `plan` 三种。
+
+界面不是页面各自实现的：`tcms/templates/base.html` 调用 `{% platform_resource_browser %}`, 标签返回非空时自动把 `{% block contents %}` 包成「左侧 310px 目录栏 + 右侧正文」的两栏布局。标签本体在 `tcms/ai_assistant/templatetags/ai_navigation.py`，按 `resolver_match.url_name` 分流，**给新页面接线就是在 `platform_resource_browser` 里加一个分支**（目录树、未归档分组、管理共享目录弹窗、每条资源的「移动到目录」下拉、详情弹窗都在 `include/platform_resource_browser.html` 与 `include/platform_resource_item.html` 里共用）。
+
+目前接线的页面：
+
+| 页面 | `url_name` | 资源 | 目录栏范围 |
+| --- | --- | --- | --- |
+| AI 需求分析 | `ai_assistant:index` | 需求 | `roles.visible_requests`（本产品成员互相可见） |
+| AI 用例库 | `ai_assistant:case_library` | 用例 | 当前产品的目录，且跟随页面筛选 |
+| 搜索测试用例（上游） | `testcases-search` | 用例 | 全量用例，`?product=` 时按产品过滤 |
+| 搜索测试计划（上游） | `plans-search` | 计划 | 全量计划，`?product=` 时按产品过滤 |
+
+用例库这一条有两个专门的处理，改动时别丢掉：
+
+- **目录栏与表格共用一套范围**：两者都走 `case_library.library_cases(request, product)`，因此 `?type=manual|automated`、`?category=`、`?q=` 同时作用于表格与目录栏。如果目录栏改回「取该产品的全部用例」，被筛掉的用例会从目录里冒出来，`test_api_scheduling` 与 `test_shared_folders` 里的断言会直接失败。
+- **目录只列当前产品**：`_build_resource_browser(folder_product=...)` 会同时把目录查询限定在该产品，并把产品 id 放进返回值 `default_product_id`，供「新建目录」弹窗预选（`platform_resource_browser.js` 按产品过滤上级目录选项）。
+
+权限分两件事，别混：
+
+- **管理目录**（新建 / 重命名 / 删除）走 `views._require_folder_management_permission`：`requirement` 对所有登录用户开放——需求目录是团队共同整理的公共设施，跟角色无关；`case` / `plan` 分别需要上游 `testcases.change_testcase` / `testplans.change_testplan`。没有权限时目录栏里连「管理共享目录」按钮都不渲染（`browser.can_manage`）。
+- **把资源放进目录**走 `views._resource_for_assignment`：需求用 `roles.visible_requests`（产品成员可以互相归档对方的需求），用例 / 计划需要对应的 change 权限，并且**目录必须与资源同属一个产品、同一种资源类型**，否则 403。资源本身没有权限改动，目录只是视图层的归类。
+
+另外两条行为约束：删除目录不会删资源（里面的资源退回「未归档」），表单 POST 的 `next` 只在以单个 `/` 开头时才用于跳转。回归测试在 `tcms/ai_assistant/test_shared_folders.py`。
+
+## 发布门禁
+
+发布门禁回答一个问题：**这份测试报告能不能放行**。判定函数是 `tcms/ai_assistant/engineering.py` 的 `evaluate_release_gate(product, metrics_snapshot, test_run_ids)`，四项检查都取自报告那一刻的执行指标：不存在未关闭的阻断级缺陷、未关闭缺陷数不超过上限、成功率不低于阈值、所有用例都已执行。
+
+规则挂在**产品**上，不挂在账号上。`AIReleaseGateRule` 每个产品最多一条（`Meta.constraints` 的 `unique_ai_gate_rule` 唯一约束，保存即更新同一行），字段有 `block_priority` / `max_open_defects` / `min_success_rate` / `require_all_executed` / `is_active` / `updated_by`。没配规则的产品回落内置默认：**P1 缺陷为 0、未关闭缺陷为 0、成功率至少 95%、全部执行**（`engineering.BUILTIN_GATE`，判定结果里的 `rule` 是「内置默认门禁」、`rule_scope` 是 `builtin`，界面上会直接把这句话说出来）。
+
+历史上这套东西「有形无实」，原因有四个，改的时候别退回去：
+
+| 曾经的形态 | 现在 |
+| --- | --- |
+| 规则挂 `owner`，视图只查 `owner=request.user` | 挂 `product`，全产品统一生效 |
+| 缺陷口径按 `owner=登记人` 过滤，同事登记的 P1 不计入 → 假通过 | 只按 `execution__run_id__in` 过滤，谁登记的缺陷都算 |
+| 判定完不拦任何动作，`release_decision` 是编辑表单里的自由下拉 | 门禁未过时禁止「审批通过」，发布结论由门禁推导、不可手改 |
+| 用没用到内置默认门禁，界面上看不出来 | 报告页与设置页都标注「内置默认门禁」 |
+
+**硬门禁与风险放行**（`views.approve_report`）：每次审批都现场重算门禁，不复用可能已经过期的 `report.gate_result`。门禁未通过时，普通账号的「审批通过」会被拦下并提示去修复阻断项；只有测试经理（`roles.can_manage_release_gate`，即拥有 `ai_assistant.approve_aireport`）能填 `waive_reason` 做**风险放行**，放行人、放行时间、放行理由写进 `gate_waived_by` / `gate_waived_at` / `gate_waive_reason`，并在 `AITestReportRevision` 里留一条 `change_reason` 以「风险放行：」开头的修订记录；报告页和导出 HTML 都会带上这段留痕。未放行时会清空上一轮的放行字段，所以放行是一次性的、可以撤销。
+
+发布结论不再是人填的，而是由门禁推导（`engineering.derived_release_decision(gate_result, approval_status, waived=False)`）：
+
+| 门禁 | 审批状态 | 发布结论 |
+| --- | --- | --- |
+| 通过 | 已批准 | 可以发布 |
+| 通过 | 待审批 / 已驳回 | 有条件发布 |
+| 未通过 | 已批准且已风险放行 | 可以发布 |
+| 未通过 | 其他 | 不建议发布 |
+
+因此 `AIReportForm` 的 `Meta.fields` 里**没有** `release_decision`（谁都不能靠编辑表单改它），报告生成作业（`jobs.py`）写报告时也是用这个函数推导结论，LLM 的措辞只进 `conclusion` / `summary`。迭代报告同样按门禁推导。
+
+维护须知：
+
+- 门禁设置页 `ai_assistant:release_gate_settings` 按 `roles.can_manage_release_gate` 判断（视图直接 `PermissionDenied`），侧边栏那一条也带 `"perm": "ai_assistant.approve_aireport"`，没权限就整条不渲染，不会点进去只拿 403；
+- 这个角色判定**有意不留「本人后路」**：报告作者不能给自己的报告放行，否则硬门禁等于没有。单人部署下管理员本来就是 superuser / staff，仍然进得去；
+- 设置页列出**所有产品**（`?product=<pk>` 可预填表单），没规则的产品显示「尚未配置，正在使用内置默认门禁」并给一个配置链接；
+- 更新已有规则必须把那条记录交给表单：`AIReleaseGateRuleForm(request.POST, instance=existing)`。`AIReleaseGateRuleForm` 是 ModelForm，唯一性校验（`unique_ai_gate_rule`）会把「这个产品已经有规则」判成重复——传 `instance=None` 时第二次保存会静默变成一个表单错误，界面上只看到「已存在」，规则却怎么也改不动。`test_release_gate.py` 的 `test_saving_a_rule_twice_updates_the_same_row` 就是钉这个的；
+- 迁移 `0026_remove_aireleasegaterule_unique_ai_gate_rule_and_more.py` 把 `product` 从可空改成必填，并在最前面插了一段 `clean_gate_rules`：先删 `product` 为空的旧规则，再按 `-updated` / `-pk` 对同产品去重（不去重唯一约束建不起来）。以后再做类似的「放宽列 → 收紧列」改动，同样要先清数据再改结构；
+- 回归测试在 `tcms/ai_assistant/test_release_gate.py`（内置默认、作者被拦、经理需理由、放行留痕、门禁通过可直接批、结论不可手改、设置页权限、重复保存是更新同一行、侧边栏显隐）。
 
 ## 界面文案与术语约定
 
@@ -120,7 +267,7 @@ AI 模型配置页的名字同时出现在侧边栏、页面标题、表格表�
 
 | 位置 | 用词 |
 | --- | --- |
-| 侧边栏菜单项（`navbar.html`）、页面标题 | AI 模型配置 |
+| 侧边栏「平台管理 › AI 模型配置」、页面标题 | AI 模型配置 |
 | 表单字段标签 | 配置名称 / 服务地址（Base URL）/ API Key / 模型 ID / 请求超时（秒）/ 设为默认模型 |
 | 当前生效的那条配置 | 「默认模型」，未生效的按钮为「设为默认」 |
 

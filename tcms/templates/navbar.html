@@ -38,27 +38,12 @@
                     </a>
                 </li>
 
-                <li class="dropdown">
-                    <a class="nav-item-iconic" id="horizontalDropdownMenuLang" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
-                        <span title="{% trans 'Language' %}" class="fa fa-globe"></span>
-                        <span class="caret"></span>
-                    </a>
-                    <ul class="dropdown-menu" aria-labelledby="horizontalDropdownMenuLang">
-                        <li><a target="_parent" href="https://kiwitcms.readthedocs.io/en/latest/guide/language.html">{% trans "Change language" %}</a></li>
-                        <li><a target="_parent" href="https://crowdin.com/project/kiwitcms">{% trans "Supported languages" %}</a></li>
-                        <li><a target="_parent" href="https://github.com/kiwitcms/Kiwi/issues/new?title=Request+new+language:+...&body=Please+enable+...+language+in+Crowdin">{% trans "Request new language" %}</a></li>
-
-                        <li class="divider"></li>
-                        {% get_current_language as LANGUAGE_CODE %}
-                        <li>
-                            <a target="_parent" href="{% url 'translation-mode' %}?next={{ request.path }}{% if LANGUAGE_CODE != 'eo' %}&language=eo{% endif %}">
-                                {% trans "Translation mode" %}
-                                <span class="fa {% if LANGUAGE_CODE != 'eo' %}fa-toggle-on{% else %}fa-toggle-off{% endif %}"></span>
-                            </a>
-                        </li>
-                        <li><a target="_parent" href="https://kiwitcms.readthedocs.io/en/latest/contribution.html#translation">{% trans "Translation guide" %}</a></li>
-                    </ul>
-                </li>
+                {% comment %}
+                上游的语言下拉（地球图标）在这里去掉了：它并没有切换语言的功能，
+                五个条目分别是 Kiwi 文档、Crowdin 项目页、GitHub 新语言申请，以及
+                只对翻译贡献者有用的「翻译模式」。本平台的语言由个人资料决定，留着
+                这个下拉只是让右上角更挤。
+                {% endcomment %}
 
                 <li class="dropdown">
                     <a class="nav-item-iconic" id="horizontalDropdownMenuHelp" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
@@ -99,24 +84,36 @@
                         </li>
 
                         <li>
-                            <a href="{% url 'ai_assistant:model_settings' %}" target="_parent">
-                                <span class="fa fa-cog"></span> AI 模型配置
-                            </a>
-                        </li>
-
-                        <li>
-                            <a href="{% url 'ai_assistant:usage_logs' %}" target="_parent">
-                                <span class="fa fa-list-alt"></span> AI 调用记录
-                            </a>
-                        </li>
-
-                        <li>
                             <a href="{% url "admin:password_change" %}" target="_parent">{% trans "Change password" %}</a>
                         </li>
 
                         <li>
                             <a href="{% url "reset-user-email" user.pk %}">{% trans "Reset email address" %}</a>
                         </li>
+
+                        {% if perms.auth.view_user or perms.auth.view_group or user.is_staff %}
+                        <li class="divider"></li>
+
+                        <li class="dropdown-header">系统管理</li>
+
+                            {% if perms.auth.view_user %}
+                        <li>
+                            <a href="{% url "admin-users-router" %}" target="_parent">用户管理</a>
+                        </li>
+                            {% endif %}
+
+                            {% if perms.auth.view_group %}
+                        <li>
+                            <a href="{% url "admin-groups-router" %}" target="_parent">用户组</a>
+                        </li>
+                            {% endif %}
+
+                            {% if user.is_staff %}
+                        <li>
+                            <a href="/admin/" target="_parent">系统后台</a>
+                        </li>
+                            {% endif %}
+                        {% endif %}
 
                         <li class="divider"></li>
 

@@ -1,0 +1,140 @@
+{% extends "ai_assistant/base_ai.html" %}
+
+{% comment %}
+成员与角色：成员 = 产品上的对象权限（management.view_product），角色 = Django 用户组。
+两者都不新建表，所以这一页做的事在 Django admin 里同样看得见、改得动。
+{% endcomment %}
+
+{% block ai_contents %}
+<div class="container-fluid">
+    <div class="clearfix">
+        <h1 class="pull-left">成员与角色</h1>
+    </div>
+    <p class="text-muted">
+        角色决定「能做什么」：测试经理可以指派任务单、审批报告、管理成员；测试工程师可以提交与拆分
+        需求；开发同学更新指派给自己的任务单状态；只读角色只能看。加入产品则决定「能看什么」：
+        同一产品的成员互相可见对方的需求、任务单与报告。
+    </p>
+    <p class="text-muted">
+        <strong>两个维度互不影响</strong>：成员是按产品分的（这里是「{{ selected_product.name|default:"产品" }}」），
+        而角色是账号级的 Django 用户组，改动会影响该账号在所有产品里的权限。
+        超级管理员默认拥有全部权限，不必出现在成员列表里。
+    </p>
+
+    {% if not products %}
+        <div class="alert alert-info">
+            你还没有可管理的产品。先到「项目配置」创建产品，再回到这里添加成员。
+        </div>
+    {% else %}
+        <form method="get" class="form-inline" style="margin-bottom: 15px">
+            <div class="form-group">
+                <label for="member-product">产品</label>
+                <select id="member-product" name="product" class="form-control" onchange="this.form.submit()">
+                    {% for product in products %}
+                        <option value="{{ product.pk }}"{% if selected_product and selected_product.pk == product.pk %} selected{% endif %}>{{ product.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <noscript><button class="btn btn-default">切换</button></noscript>
+        </form>
+
+        <div class="panel panel-default">
+            <div class="panel-heading"><strong>{{ selected_product.name }}</strong> 的成员</div>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th style="width: 220px">成员</th>
+                        <th>角色</th>
+                        <th style="width: 240px">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for member in members %}
+                        <tr>
+                            <td>
+                                {{ member.username }}
+                                {% if member.get_full_name %}<div class="text-muted"><small>{{ member.get_full_name }}</small></div>{% endif %}
+                                {% if member.is_superuser %}<span class="label label-default">超级管理员</span>{% endif %}
+                            </td>
+                            <td>
+                                <form method="post" action="{% url 'ai_assistant:set_member_roles' member.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="product" value="{{ selected_product.pk }}">
+                                    {% for value, label in role_choices %}
+                                        <label class="checkbox-inline">
+                                            <input type="checkbox" name="roles" value="{{ value }}"{% if value in member.ai_roles %} checked{% endif %}> {{ label }}
+                                        </label>
+                                    {% endfor %}
+                                    <button class="btn btn-xs btn-default">保存角色</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form method="post" action="{% url 'ai_assistant:remove_product_member' member.pk %}"
+                                      onsubmit="return confirm('确定把 {{ member.username }} 移出该产品吗？');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="product" value="{{ selected_product.pk }}">
+                                    <button class="btn btn-link btn-xs" style="padding: 0">移出产品</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="3" class="text-muted">
+                                该产品还没有成员。超级管理员（superuser）默认拥有全部权限，
+                                所以不会出现在这里；要让其他账号一起协作，用下面的「添加成员」。
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel panel-default">
+            <div class="panel-heading"><strong>添加成员</strong></div>
+            <div class="panel-body">
+                {% if candidates %}
+                    <form method="post" action="{% url 'ai_assistant:add_product_member' %}" class="form-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="product" value="{{ selected_product.pk }}">
+                        <div class="form-group">
+                            <label for="member-user">账号</label>
+                            <select id="member-user" name="user" class="form-control">
+                                {% for candidate in candidates %}
+                                    <option value="{{ candidate.pk }}">{{ candidate.username }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="member-role">初始角色</label>
+                            <select id="member-role" name="role" class="form-control">
+                                {% for value, label in role_choices %}
+                                    <option value="{{ value }}"{% if value == 'AI 测试工程师' %} selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button class="btn btn-primary">加入产品</button>
+                    </form>
+                {% else %}
+                    <p class="text-muted" style="margin: 0">
+                        没有可添加的账号：这里只列出尚未加入该产品的活跃账号。需要新账号请到「系统后台 → 用户」创建。
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="panel panel-default">
+            <div class="panel-heading"><strong>角色说明</strong></div>
+            <table class="table">
+                <tbody>
+                    {% for row in role_rows %}
+                        <tr>
+                            <td style="width: 180px"><strong>{{ row.name }}</strong></td>
+                            <td>{{ row.description }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

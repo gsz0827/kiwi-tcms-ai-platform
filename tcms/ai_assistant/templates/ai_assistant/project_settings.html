@@ -14,7 +14,7 @@
         <section class="project-settings-card" aria-labelledby="settings-product-title">
             <span class="fa fa-cube project-settings-icon" aria-hidden="true"></span>
             <h2 id="settings-product-title">产品</h2>
-            <p>以产品组织需求、用例和测试运行。新建产品时可选择分类，也可按需新建分类。</p>
+            <p>以产品组织需求、用例和测试运行。新建产品只需填名称与描述。</p>
             {% if perms.management.add_product %}
             <a class="btn btn-primary" href="{% url 'ai_assistant:create_product' %}?next={{ settings_url|urlencode }}">新建产品</a>
             {% else %}
@@ -28,6 +28,6 @@
             <a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">维护 AI 规则包</a>
         </section>
     </div>
-    <p class="project-settings-hint">首次配置：新建产品 → 按需维护 AI 规则包。产品分类在新建产品时选择或创建。</p>
+    <p class="project-settings-hint">首次配置：新建产品 → 按需维护 AI 规则包。</p>
 </div>
 {% endblock %}

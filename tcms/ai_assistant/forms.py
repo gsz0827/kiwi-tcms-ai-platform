@@ -1,14 +1,17 @@
 import uuid
 
 from django import forms
+from django.contrib.auth import get_user_model
 
 from tcms.management.models import Product, Version
 from tcms.testcases.models import Category
 from tcms.testruns.models import TestRun
 
+from . import roles
 from .crypto import encrypt_api_key
 from .models import (
     AIDefectDraft,
+    AIDevTask,
     AIIterationReport,
     AIInstructionProfile,
     AIModelConfig,
@@ -126,6 +129,91 @@ class AITestCaseDraftForm(forms.ModelForm):
         if commit:
             draft.save()
         return draft
+
+
+class AIDevTaskForm(forms.ModelForm):
+    """开发任务单的编辑表单：AI 拆分出来的结果和手工补的任务用同一套字段。
+
+    ``can_manage=False`` 时只保留「状态」一个字段——被指派的开发人员能做的事就是
+    推进自己那条任务单的进度，其余内容由需求提出人或测试经理维护。裁剪发生在
+    ``__init__`` 里而不是模板里，这样 POST 上来少一堆字段也不会报必填错误。
+    """
+
+    class Meta:
+        model = AIDevTask
+        fields = (
+            "request",
+            "task_number",
+            "title",
+            "module",
+            "description",
+            "acceptance",
+            "priority",
+            "estimate_hours",
+            "assignee",
+            "status",
+        )
+        widgets = {
+            "request": forms.Select(attrs={"class": "form-control"}),
+            "task_number": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "例如：DEV-001"}
+            ),
+            "title": forms.TextInput(attrs={"class": "form-control"}),
+            "module": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "例如：用户中心 / 登录接口"}
+            ),
+            "description": forms.Textarea(attrs={"class": "form-control", "rows": 6}),
+            "acceptance": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
+            "priority": forms.Select(
+                choices=[(f"P{i}", f"P{i}") for i in range(1, 6)],
+                attrs={"class": "form-control"},
+            ),
+            "estimate_hours": forms.NumberInput(
+                attrs={"class": "form-control", "min": 1}
+            ),
+            "assignee": forms.Select(attrs={"class": "form-control"}),
+            "status": forms.Select(attrs={"class": "form-control"}),
+        }
+
+    def __init__(self, *args, user=None, can_manage=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["assignee"].required = False
+        self.fields["assignee"].empty_label = "未指派"
+        self.fields["assignee"].label = "负责人"
+        self.fields["assignee"].help_text = "只能指派给该产品的成员。"
+
+        queryset = AIRequest.objects.none()
+        candidate_queryset = get_user_model().objects.none()
+        if user is not None and user.is_authenticated:
+            queryset = roles.visible_requests(user).order_by("-created")
+            product = self._bound_product(user)
+            if product is not None:
+                candidate_queryset = roles.assignable_users(product).order_by("username")
+        self.fields["request"].queryset = queryset
+        self.fields["request"].empty_label = "请选择需求"
+        self.fields["assignee"].queryset = candidate_queryset
+
+        if not can_manage:
+            keep = ("status",)
+            for name in list(self.fields):
+                if name not in keep:
+                    self.fields.pop(name)
+
+    def _bound_product(self, user):
+        """猜这条任务单属于哪个产品，用来限定负责人候选范围。"""
+        if self.instance is not None and self.instance.pk:
+            request_obj = self.instance.request
+        else:
+            request_id = self.data.get("request") or self.initial.get("request")
+            request_obj = None
+            if request_id:
+                try:
+                    request_obj = roles.visible_requests(user).get(pk=int(request_id))
+                except (TypeError, ValueError, AIRequest.DoesNotExist):
+                    request_obj = None
+        if request_obj is None or request_obj.category_id is None:
+            return None
+        return request_obj.category.product
 
 
 class AIModelConfigForm(forms.ModelForm):
@@ -406,7 +494,7 @@ class AITestReportForm(LineListMixin, forms.ModelForm):
     class Meta:
         model = AITestReport
         fields = (
-            "title", "summary", "scope", "conclusion", "release_decision",
+            "title", "summary", "scope", "conclusion",
             "change_reason",
         )
         widgets = {
@@ -414,7 +502,6 @@ class AITestReportForm(LineListMixin, forms.ModelForm):
             "summary": forms.Textarea(attrs={"class": "form-control", "rows": 5}),
             "scope": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
             "conclusion": forms.Textarea(attrs={"class": "form-control", "rows": 5}),
-            "release_decision": forms.Select(attrs={"class": "form-control"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -460,9 +547,17 @@ class ReportApprovalForm(forms.Form):
         label="审批意见",
         widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
     )
+    waive_reason = forms.CharField(
+        required=False,
+        label="风险放行理由",
+        help_text="发布门禁未通过时，只有测试经理能填理由放行；理由会写进报告版本历史。",
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
 
 
 class AIReleaseGateRuleForm(forms.ModelForm):
+    """产品级门禁规则表单：一个产品一条，保存即更新该产品的那条。"""
+
     class Meta:
         model = AIReleaseGateRule
         fields = (
@@ -479,9 +574,8 @@ class AIReleaseGateRuleForm(forms.ModelForm):
             "max_open_defects": forms.NumberInput(attrs={"class": "form-control", "min": 0}),
         }
 
-    def __init__(self, *args, owner, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.owner = owner
         self.fields["product"].queryset = Product.objects.order_by("name")
 
     def clean_min_success_rate(self):
@@ -489,18 +583,6 @@ class AIReleaseGateRuleForm(forms.ModelForm):
         if value < 0 or value > 100:
             raise forms.ValidationError("成功率必须在 0 到 100 之间")
         return value
-
-    def clean(self):
-        cleaned = super().clean()
-        name = cleaned.get("name")
-        product = cleaned.get("product")
-        if name:
-            duplicate = AIReleaseGateRule.objects.filter(
-                owner=self.owner, name=name, product=product
-            ).exclude(pk=self.instance.pk)
-            if duplicate.exists():
-                self.add_error("name", "当前账号在该产品范围内已有同名门禁规则")
-        return cleaned
 
 
 class IterationReportForm(forms.Form):

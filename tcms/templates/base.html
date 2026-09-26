@@ -92,8 +92,6 @@
     <script src="{% static 'js/bundle.js' %}"></script>
 
     {% block external_footer_scripts %}
-    {% include 'include/ads.html' %}
-
     {% if SETTINGS.ANONYMOUS_ANALYTICS %}
     <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid={{ SETTINGS.SCARF_PIXEL_ID }}">
     {% endif %}

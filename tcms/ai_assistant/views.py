@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
@@ -10,11 +11,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from guardian.decorators import permission_required as object_permission_required
-from urllib.parse import urlencode
 
-from tcms.management.forms import ClassificationForm, ProductForm
+from tcms.management.forms import ProductForm
 from .forms import (
     AIDefectDraftForm,
+    AIDevTaskForm,
     AIReleaseGateRuleForm,
     AIInstructionProfileForm,
     AIModelConfigForm,
@@ -27,7 +28,7 @@ from .forms import (
     ReportApprovalForm,
     RequirementChangeForm,
 )
-from tcms.management.models import Product, Version
+from tcms.management.models import Classification, Product, Version
 from tcms.core.contrib.linkreference.models import LinkReference
 from tcms.testcases.models import TestCase
 from tcms.testplans.models import TestPlan
@@ -36,6 +37,7 @@ from tcms.testruns.models import TestExecution, TestRun
 from .models import (
     AIDefectDraft,
     AIDefectStatusHistory,
+    AIDevTask,
     AIIterationReport,
     AIJob,
     AIInstructionProfile,
@@ -53,10 +55,12 @@ from .models import (
     ProjectResourceAssignment,
     ProjectResourceFolder,
 )
+from . import roles
 from .engineering import (
     build_iteration_snapshot,
     canonical_hash,
     defect_fingerprint,
+    derived_release_decision,
     duplicate_candidates,
     evaluate_release_gate,
     make_chinese_pdf,
@@ -113,10 +117,10 @@ def _require_folder_management_permission(user, resource_type):
 
 def _resource_for_assignment(user, resource_type, object_id):
     if resource_type == "requirement":
+        # 与需求列表同一套可见范围：产品成员之间可以互相归档对方的需求。
         resource = get_object_or_404(
-            AIRequest.objects.select_related("category__product"),
+            roles.visible_requests(user).select_related("category__product"),
             pk=object_id,
-            created_by=user,
         )
         product = resource.category.product if resource.category_id else None
         return resource, product
@@ -438,7 +442,7 @@ def dashboard(request):
     active_config = AIModelConfig.objects.filter(
         owner=request.user, is_active=True
     ).first()
-    request_query = AIRequest.objects.filter(created_by=request.user)
+    request_query = roles.visible_requests(request.user)
     if product_id:
         request_query = request_query.filter(category__product_id=product_id)
     ai_requests = list(
@@ -477,7 +481,7 @@ def dashboard(request):
         )
 
     latest_analyses = {}
-    analysis_query = AITestRunAnalysis.objects.filter(owner=request.user)
+    analysis_query = roles.visible_analyses(request.user)
     if product_id:
         analysis_query = analysis_query.filter(test_run__plan__product_id=product_id)
     if version_id:
@@ -492,7 +496,7 @@ def dashboard(request):
         latest_analyses.setdefault(analysis.test_run_id, analysis)
 
     latest_reports = {}
-    report_query = AITestReport.objects.filter(owner=request.user)
+    report_query = roles.visible_reports(request.user)
     if product_id:
         report_query = report_query.filter(test_run__plan__product_id=product_id)
     if version_id:
@@ -508,7 +512,7 @@ def dashboard(request):
         latest_reports.setdefault(report.test_run_id, report)
 
     latest_verifications = {}
-    verification_query = AIRegressionVerification.objects.filter(owner=request.user)
+    verification_query = roles.visible_verifications(request.user)
     if product_id:
         verification_query = verification_query.filter(
             Q(source_report__test_run__plan__product_id=product_id)
@@ -523,7 +527,7 @@ def dashboard(request):
         if verification.source_report_id:
             latest_verifications.setdefault(verification.source_report_id, verification)
 
-    defect_query = AIDefectDraft.objects.filter(owner=request.user)
+    defect_query = roles.visible_defects(request.user)
     if product_id:
         defect_query = defect_query.filter(execution__run__plan__product_id=product_id)
     if version_id:
@@ -734,6 +738,303 @@ def dashboard(request):
     )
 
 
+_EMPTY_DEV_TASK_STATS = {"total": 0, "done": 0, "percent": 0}
+
+
+def _dev_task_stats_map(user, request_ids=None):
+    """一次查询算出每条需求的开发任务完成度，避免逐条需求再查库。
+
+    统计范围是「用户看得见的需求下的全部任务单」，而不是只有自己建的：需求已经按
+    产品共享，完成度也必须是团队口径，否则经理看到的进度会缺掉别人负责的那部分。
+    """
+    queryset = AIDevTask.objects.filter(request__in=roles.visible_requests(user))
+    if request_ids is not None:
+        queryset = queryset.filter(request_id__in=list(request_ids))
+    rows = queryset.values("request_id").annotate(
+        total=Count("id"), done=Count("id", filter=Q(status="done"))
+    )
+    stats = {}
+    for row in rows:
+        total, done = row["total"], row["done"]
+        stats[row["request_id"]] = {
+            "total": total,
+            "done": done,
+            "percent": round(done * 100 / total) if total else 0,
+        }
+    return stats
+
+
+def _assignee_choices_by_product(user, products):
+    """按产品列出可被指派的人，供任务单列表里的「指派」下拉使用。"""
+    choices = {}
+    for product in products:
+        if product is None:
+            continue
+        choices[product.pk] = list(
+            roles.assignable_users(product).order_by("username")
+        )
+    return choices
+
+
+@login_required
+def dev_task_list(request):
+    """任务单页：按需求分组展示开发任务单，并从这里发起拆分与指派。"""
+    status_filter = request.GET.get("status", "").strip()
+    request_filter = request.GET.get("request", "").strip()
+    scope = request.GET.get("scope", "all").strip()
+    if scope not in {"all", "mine", "dispatched"}:
+        scope = "all"
+
+    tasks = (
+        roles.visible_dev_tasks(request.user)
+        .select_related(
+            "request",
+            "request__category",
+            "request__category__product",
+            "assignee",
+            "assigned_by",
+        )
+        .order_by("request__created", "position", "id")
+    )
+    if status_filter in dict(AIDevTask.STATUS_CHOICES):
+        tasks = tasks.filter(status=status_filter)
+    if scope == "mine":
+        tasks = tasks.filter(assignee=request.user)
+    elif scope == "dispatched":
+        tasks = tasks.filter(assigned_by=request.user)
+
+    selected_request = None
+    if request_filter.isdigit():
+        selected_request = roles.visible_requests(request.user).filter(
+            pk=int(request_filter)
+        ).first()
+        if selected_request is None:
+            tasks = tasks.none()
+        else:
+            tasks = tasks.filter(request=selected_request)
+
+    grouped, order = {}, []
+    for task in tasks:
+        if task.request_id not in grouped:
+            grouped[task.request_id] = {"request": task.request, "tasks": []}
+            order.append(task.request_id)
+        grouped[task.request_id]["tasks"].append(task)
+
+    stats_map = _dev_task_stats_map(request.user)
+    groups = [grouped[key] for key in order]
+    for group in groups:
+        group["stats"] = stats_map.get(group["request"].pk, _EMPTY_DEV_TASK_STATS)
+        group["can_assign"] = roles.can_assign_dev_tasks(
+            request.user, group["request"]
+        )
+        group["can_edit"] = roles.can_edit_requirement(request.user, group["request"])
+        group["can_split"] = roles.can_split_dev_tasks(request.user, group["request"])
+    assignee_choices = _assignee_choices_by_product(
+        request.user,
+        [group["request"].category.product if group["request"].category_id else None
+         for group in groups],
+    )
+
+    unsplit_requests = []
+    if selected_request is None:
+        candidates = (
+            roles.visible_requests(request.user)
+            .exclude(dev_tasks__isnull=False)
+            .select_related("category", "category__product")
+            .order_by("-created")[:10]
+        )
+        # 只能对自己有权拆分的需求展示按钮，否则点下去只会拿到 403。
+        unsplit_requests = [
+            item
+            for item in candidates
+            if roles.can_split_dev_tasks(request.user, item)
+        ]
+
+    total_tasks = sum(item["total"] for item in stats_map.values())
+    done_tasks = sum(item["done"] for item in stats_map.values())
+    overall_stats = {
+        "total": total_tasks,
+        "done": done_tasks,
+        "percent": round(done_tasks * 100 / total_tasks) if total_tasks else 0,
+    }
+
+    return render(
+        request,
+        "ai_assistant/dev_tasks.html",
+        {
+            "groups": groups,
+            "status_choices": AIDevTask.STATUS_CHOICES,
+            "status_filter": status_filter,
+            "scope": scope,
+            "scope_choices": (
+                ("all", "全部可见"),
+                ("mine", "我负责的"),
+                ("dispatched", "我派发的"),
+            ),
+            "request_filter": request_filter,
+            "selected_request": selected_request,
+            "request_options": roles.visible_requests(request.user).order_by(
+                "-created"
+            )[:50],
+            "unsplit_requests": unsplit_requests,
+            "overall_stats": overall_stats,
+            "assignee_choices": assignee_choices,
+            "active_config": AIModelConfig.objects.filter(
+                owner=request.user, is_active=True
+            ).first(),
+            "can_split": roles.can_split_dev_tasks(request.user),
+        },
+    )
+
+
+@login_required
+@require_POST
+def generate_dev_tasks(request, pk):
+    """给一条需求提交「拆分开发任务」作业。"""
+    ai_request = get_object_or_404(roles.visible_requests(request.user), pk=pk)
+    if not roles.can_split_dev_tasks(request.user, ai_request):
+        raise PermissionDenied
+    target = f"{reverse('ai_assistant:dev_task_list')}?request={ai_request.pk}"
+    active_config = AIModelConfig.objects.filter(
+        owner=request.user, is_active=True
+    ).first()
+    if active_config is None:
+        messages.warning(request, "请先配置一个 AI 模型并设为默认，再拆分开发任务。")
+        return redirect("ai_assistant:model_settings")
+    if ai_request.dev_tasks.exists():
+        messages.warning(request, "该需求已经拆分过开发任务，请先删除现有任务单再重新拆分。")
+        return redirect(target)
+    try:
+        job, created = enqueue_ai_job(
+            request.user,
+            "dev_task_breakdown",
+            {"request_id": ai_request.pk},
+            model_config=active_config,
+            dedupe_key=f"dev-tasks:{ai_request.pk}:{ai_request.version}",
+        )
+    except (ValueError, RuntimeError) as exc:
+        messages.error(request, str(exc))
+        return redirect(target)
+    if created:
+        messages.success(request, "已提交拆分开发任务，稍后回到任务单页面查看结果。")
+    else:
+        messages.info(request, "这份需求正在拆分，已打开原任务。")
+    return redirect("ai_assistant:job_detail", pk=job.pk)
+
+
+@login_required
+def dev_task_edit(request, pk=None):
+    """新建或编辑一条开发任务单。
+
+    负责人（被指派人）只能改状态，看不到标题、工时、负责人这些字段——模板会按
+    ``can_manage`` 决定渲染哪一组字段，表单也会据此裁剪字段，所以 POST 时不会因为
+    缺失字段报错。
+    """
+    task = None
+    can_manage = True
+    if pk is not None:
+        task = get_object_or_404(roles.visible_dev_tasks(request.user), pk=pk)
+        can_manage = roles.can_edit_dev_task(request.user, task)
+        if not can_manage and not roles.can_update_dev_task_status(request.user, task):
+            raise PermissionDenied
+
+    if request.method == "POST":
+        form = AIDevTaskForm(
+            request.POST, instance=task, user=request.user, can_manage=can_manage
+        )
+        if form.is_valid():
+            saved = form.save(commit=False)
+            if task is None:
+                saved.owner = request.user
+                if not roles.can_split_dev_tasks(request.user, saved.request):
+                    raise PermissionDenied
+            if can_manage:
+                _apply_task_assignee(request, saved)
+            saved.save()
+            messages.success(request, "任务单已保存。")
+            return redirect(
+                f"{reverse('ai_assistant:dev_task_list')}?request={saved.request_id}"
+            )
+    else:
+        initial = {}
+        request_id = request.GET.get("request", "").strip()
+        if task is None and request_id.isdigit():
+            initial["request"] = int(request_id)
+        form = AIDevTaskForm(
+            instance=task, initial=initial, user=request.user, can_manage=can_manage
+        )
+
+    return render(
+        request,
+        "ai_assistant/dev_task_form.html",
+        {"form": form, "task": task, "can_manage": can_manage},
+    )
+
+
+def _apply_task_assignee(request, task):
+    """记录负责人变更，并盖上「谁派的、什么时候派的」两个戳。"""
+    old_assignee_id = None
+    if task.pk:
+        old_assignee_id = (
+            AIDevTask.objects.filter(pk=task.pk)
+            .values_list("assignee_id", flat=True)
+            .first()
+        )
+    if task.assignee_id == old_assignee_id:
+        return
+    task.assigned_by = request.user if task.assignee_id else None
+    task.assigned_at = timezone.now() if task.assignee_id else None
+
+
+@login_required
+@require_POST
+def assign_dev_task(request, pk):
+    """指派或改派一条任务单；传空的 assignee 表示收回指派。"""
+    task = get_object_or_404(roles.visible_dev_tasks(request.user), pk=pk)
+    if not roles.can_assign_dev_tasks(request.user, task.request):
+        raise PermissionDenied
+    target = f"{reverse('ai_assistant:dev_task_list')}?request={task.request_id}"
+
+    assignee_id = request.POST.get("assignee", "").strip()
+    if not assignee_id:
+        task.assignee = None
+        task.assigned_by = None
+        task.assigned_at = None
+        task.save(update_fields=["assignee", "assigned_by", "assigned_at", "updated"])
+        messages.success(request, "已收回这条任务单的指派。")
+        return redirect(target)
+
+    product = task.request.category.product if task.request.category_id else None
+    candidates = roles.assignable_users(product).filter(pk=assignee_id)
+    assignee = candidates.first()
+    if assignee is None:
+        messages.error(request, "只能指派给该产品的成员。")
+        return redirect(target)
+    if task.assignee_id == assignee.pk:
+        messages.info(request, "这条任务单的负责人没有变化。")
+        return redirect(target)
+
+    task.assignee = assignee
+    task.assigned_by = request.user
+    task.assigned_at = timezone.now()
+    task.save(update_fields=["assignee", "assigned_by", "assigned_at", "updated"])
+    messages.success(request, f"已指派给 {assignee.username}。")
+    return redirect(target)
+
+
+@login_required
+@require_POST
+def delete_dev_task(request, pk):
+    """删除一条开发任务单。"""
+    task = get_object_or_404(roles.visible_dev_tasks(request.user), pk=pk)
+    if not roles.can_delete_dev_task(request.user, task):
+        raise PermissionDenied
+    request_id = task.request_id
+    task.delete()
+    messages.success(request, "任务单已删除。")
+    return redirect(f"{reverse('ai_assistant:dev_task_list')}?request={request_id}")
+
+
 @login_required
 def index(request):
     active_config = AIModelConfig.objects.filter(
@@ -770,20 +1071,26 @@ def index(request):
         form = AIRequestForm()
 
     ai_requests = (
-        AIRequest.objects.filter(created_by=request.user)
+        roles.visible_requests(request.user)
         .select_related(
             "category",
             "category__product",
+            "created_by",
             "analysis_model_config",
             "coverage_model_config",
         )
         .prefetch_related("drafts", "drafts__imported_case")
         .order_by("-created")
     )
+    dev_task_stats = _dev_task_stats_map(request.user)
     for ai_request in ai_requests:
         ai_request.unimported_draft_count = sum(
             1 for draft in ai_request.drafts.all() if draft.imported_case_id is None
         )
+        ai_request.dev_task_stats = dev_task_stats.get(
+            ai_request.pk, _EMPTY_DEV_TASK_STATS
+        )
+        ai_request.can_edit = roles.can_edit_requirement(request.user, ai_request)
     return render(
         request,
         "ai_assistant/index.html",
@@ -791,6 +1098,7 @@ def index(request):
             "form": form,
             "ai_requests": ai_requests,
             "active_config": active_config,
+            "can_submit": roles.can_submit_requirement(request.user),
         },
     )
 
@@ -798,9 +1106,9 @@ def index(request):
 @require_POST
 @login_required
 def generate_from_analysis(request, pk):
-    ai_request = get_object_or_404(
-        AIRequest, pk=pk, created_by=request.user
-    )
+    ai_request = get_object_or_404(roles.visible_requests(request.user), pk=pk)
+    if not roles.can_generate_cases(request.user, ai_request):
+        raise PermissionDenied
     if not ai_request.analysis:
         messages.warning(request, "该请求还没有可用的需求分析结果。")
         return redirect("ai_assistant:index")
@@ -823,10 +1131,11 @@ def generate_from_analysis(request, pk):
 @login_required
 def analyze_coverage(request, pk):
     ai_request = get_object_or_404(
-        AIRequest.objects.prefetch_related("drafts"),
+        roles.visible_requests(request.user).prefetch_related("drafts"),
         pk=pk,
-        created_by=request.user,
     )
+    if not roles.can_generate_cases(request.user, ai_request):
+        raise PermissionDenied
     if not ai_request.drafts.all():
         messages.warning(request, "该请求还没有可分析的测试用例草稿。")
         return redirect("ai_assistant:index")
@@ -846,10 +1155,11 @@ def analyze_coverage(request, pk):
 @login_required
 def supplement_from_coverage(request, pk):
     ai_request = get_object_or_404(
-        AIRequest.objects.prefetch_related("drafts"),
+        roles.visible_requests(request.user).prefetch_related("drafts"),
         pk=pk,
-        created_by=request.user,
     )
+    if not roles.can_generate_cases(request.user, ai_request):
+        raise PermissionDenied
     if not ai_request.coverage_analysis:
         messages.warning(request, "该请求还没有可用的覆盖分析结果。")
         return redirect("ai_assistant:index")
@@ -911,7 +1221,9 @@ def edit_draft(request, pk):
 
 @login_required
 def edit_requirement(request, pk):
-    ai_request = get_object_or_404(AIRequest, pk=pk, created_by=request.user)
+    ai_request = get_object_or_404(roles.visible_requests(request.user), pk=pk)
+    if not roles.can_edit_requirement(request.user, ai_request):
+        raise PermissionDenied
     if request.method == "POST":
         old_title = ai_request.title
         old_requirement = ai_request.requirement
@@ -926,7 +1238,7 @@ def edit_requirement(request, pk):
             else:
                 with transaction.atomic():
                     locked = AIRequest.objects.select_for_update().get(
-                        pk=ai_request.pk, created_by=request.user
+                        pk=ai_request.pk
                     )
                     locked.title = form.cleaned_data["title"]
                     locked.requirement = form.cleaned_data["requirement"]
@@ -965,11 +1277,10 @@ def edit_requirement(request, pk):
 @login_required
 def requirement_trace(request, pk):
     ai_request = get_object_or_404(
-        AIRequest.objects.select_related("category__product").prefetch_related(
-            "drafts", "drafts__imported_case", "versions"
-        ),
+        roles.visible_requests(request.user).select_related(
+            "category__product"
+        ).prefetch_related("drafts", "drafts__imported_case", "versions"),
         pk=pk,
-        created_by=request.user,
     )
     rows = []
     for draft in ai_request.drafts.all():
@@ -987,12 +1298,20 @@ def requirement_trace(request, pk):
             ).prefetch_related("regression_verifications")
         )
         rows.append({"draft": draft, "executions": executions, "defects": defects})
+    dev_tasks = list(ai_request.dev_tasks.all())
     return render(
         request,
         "ai_assistant/requirement_trace.html",
         {
             "ai_request": ai_request,
             "rows": rows,
+            "dev_tasks": dev_tasks,
+            "can_edit": roles.can_edit_requirement(request.user, ai_request),
+            "can_split": roles.can_split_dev_tasks(request.user, ai_request),
+            "can_assign": roles.can_assign_dev_tasks(request.user, ai_request),
+            "dev_task_stats": _dev_task_stats_map(
+                request.user, request_ids=[ai_request.pk]
+            ).get(ai_request.pk, _EMPTY_DEV_TASK_STATS),
             "uncovered": not ai_request.drafts.exists(),
             "unexecuted": sum(1 for row in rows if row["draft"].imported_case_id and not row["executions"]),
             "open_defects": sum(
@@ -1030,6 +1349,136 @@ def import_request(request, pk):
         else:
             messages.info(request, "所选草稿均已导入或不属于当前请求。")
     return redirect("ai_assistant:index")
+
+
+@login_required
+def member_list(request):
+    """产品成员与角色：哪个产品有谁、各是什么角色。
+
+    成员用 guardian 的 ``management.view_product`` 对象权限表示，角色用 Django 的
+    用户组表示——两者都在 Django admin 里看得见，不额外建表。
+    """
+    if not roles.can_manage_members(request.user):
+        raise PermissionDenied
+
+    products = list(roles.member_products(request.user).order_by("name"))
+    product_filter = request.GET.get("product", "").strip()
+    selected = None
+    if product_filter.isdigit():
+        selected = next(
+            (item for item in products if item.pk == int(product_filter)), None
+        )
+    if selected is None and products:
+        selected = products[0]
+
+    members = []
+    candidates = []
+    if selected is not None:
+        members = list(roles.members_of_product(selected))
+        for member in members:
+            member.ai_roles = sorted(roles.roles_of(member))
+        member_ids = [member.pk for member in members]
+        candidates = list(
+            get_user_model()
+            .objects.filter(is_active=True)
+            .exclude(pk__in=member_ids)
+            .order_by("username")[:50]
+        )
+
+    return render(
+        request,
+        "ai_assistant/members.html",
+        {
+            "products": products,
+            "selected_product": selected,
+            "product_filter": product_filter,
+            "members": members,
+            "candidates": candidates,
+            "role_choices": roles.ROLE_CHOICES,
+            "role_rows": [
+                {"name": name, "description": roles.ROLE_DESCRIPTIONS[name]}
+                for name in roles.ROLE_GROUPS
+            ],
+        },
+    )
+
+
+@login_required
+@require_POST
+def add_product_member(request):
+    """把一个已有账号加进产品。"""
+    if not roles.can_manage_members(request.user):
+        raise PermissionDenied
+    product = get_object_or_404(
+        roles.member_products(request.user), pk=request.POST.get("product", "")
+    )
+    target = f"{reverse('ai_assistant:member_list')}?product={product.pk}"
+
+    user_id = request.POST.get("user", "").strip()
+    member = get_user_model().objects.filter(pk=user_id, is_active=True).first()
+    if member is None:
+        messages.error(request, "请选择一个有效的账号。")
+        return redirect(target)
+    if roles.is_product_member(member, product):
+        messages.info(request, f"{member.username} 已经是该产品的成员。")
+        return redirect(target)
+
+    roles.add_product_member(member, product, granted_by=request.user)
+    role_name = request.POST.get("role", "").strip()
+    if role_name in roles.ROLE_GROUPS:
+        roles.set_user_roles(
+            member, set(roles.roles_of(member)) | {role_name}
+        )
+    messages.success(request, f"已把 {member.username} 加入「{product.name}」。")
+    return redirect(target)
+
+
+@login_required
+@require_POST
+def remove_product_member(request, pk):
+    """把一个成员移出产品；顺带清掉他的角色，避免留下没有产品的空角色。"""
+    if not roles.can_manage_members(request.user):
+        raise PermissionDenied
+    product = get_object_or_404(
+        roles.member_products(request.user), pk=request.POST.get("product", "")
+    )
+    member = get_object_or_404(get_user_model(), pk=pk)
+    target = f"{reverse('ai_assistant:member_list')}?product={product.pk}"
+
+    if member == request.user:
+        messages.warning(request, "不能把自己移出产品，请让其他管理员操作。")
+        return redirect(target)
+    roles.remove_product_member(member, product)
+    if not roles.member_products(member).exists():
+        roles.set_user_roles(member, set())
+    messages.success(request, f"已把 {member.username} 移出「{product.name}」。")
+    return redirect(target)
+
+
+@login_required
+@require_POST
+def set_member_roles(request, pk):
+    """整体设置某个成员的角色（多选）。"""
+    if not roles.can_manage_members(request.user):
+        raise PermissionDenied
+    product = get_object_or_404(
+        roles.member_products(request.user), pk=request.POST.get("product", "")
+    )
+    member = get_object_or_404(get_user_model(), pk=pk)
+    target = f"{reverse('ai_assistant:member_list')}?product={product.pk}"
+
+    selected = set(request.POST.getlist("roles")) & set(roles.ROLE_GROUPS)
+    if not roles.is_product_member(member, product):
+        messages.error(request, "该账号不是这个产品的成员，请先添加成员。")
+        return redirect(target)
+    roles.set_user_roles(member, selected)
+    if selected:
+        messages.success(
+            request, f"{member.username} 的角色已更新为：{'、'.join(sorted(selected))}。"
+        )
+    else:
+        messages.info(request, f"{member.username} 现在没有任何角色，只能查看自己被指派的内容。")
+    return redirect(target)
 
 
 @login_required
@@ -1080,6 +1529,18 @@ def instruction_profiles(request):
     )
 
 
+def _default_classification():
+    """产品分类不进平台界面：新产品统一落到已有分类，一个都没有时建「默认分类」。
+
+    分类是上游 Kiwi 的模型，系统后台与 XML-RPC 的 Classification.* 仍在用它，
+    平台侧只是不为它提供界面，所以这里保证新建产品总能拿到一个分类。
+    """
+    classification = Classification.objects.order_by("pk").first()
+    if classification is None:
+        classification = Classification.objects.create(name="默认分类")
+    return classification
+
+
 @login_required
 @permission_required("management.add_product", raise_exception=True)
 def create_product(request):
@@ -1087,13 +1548,15 @@ def create_product(request):
     if not (next_url.startswith("/") and not next_url.startswith("//")):
         next_url = ""
     form = ProductForm(request.POST or None)
-    if request.method == "GET" and request.GET.get("classification", "").isdigit():
-        form.fields["classification"].initial = int(request.GET["classification"])
+    # 「产品分类」不是平台概念：字段从表单里拿掉，保存时自动归类。
+    form.fields.pop("classification", None)
     if request.method == "POST" and form.is_valid():
-        product = form.save()
+        product = form.save(commit=False)
+        product.classification = _default_classification()
+        product.save()
         messages.success(
             request,
-            f"产品“{product.name}”已创建，并已生成默认分类、版本和构建。",
+            f"产品“{product.name}”已创建，并已自动生成默认用例分类、版本和构建。",
         )
         if next_url:
             return redirect(next_url)
@@ -1103,29 +1566,6 @@ def create_product(request):
     return render(
         request,
         "ai_assistant/create_product.html",
-        {"form": form, "next_url": next_url},
-    )
-
-
-@login_required
-@permission_required("management.add_classification", raise_exception=True)
-def create_classification(request):
-    next_url = request.POST.get("next") or request.GET.get("next", "")
-    if not (next_url.startswith("/") and not next_url.startswith("//")):
-        next_url = ""
-    form = ClassificationForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        classification = form.save()
-        messages.success(request, f"分类“{classification.name}”已创建。")
-        params = {"classification": classification.pk}
-        if next_url:
-            params["next"] = next_url
-        return redirect(
-            f"{reverse('ai_assistant:create_product')}?{urlencode(params)}"
-        )
-    return render(
-        request,
-        "ai_assistant/create_classification.html",
         {"form": form, "next_url": next_url},
     )
 
@@ -1543,11 +1983,17 @@ def run_report(request, pk):
 @login_required
 def edit_report(request, pk):
     report = get_object_or_404(
-        AITestReport.objects.select_related("test_run", "model_config"),
+        roles.visible_reports(request.user).select_related(
+            "test_run", "model_config"
+        ),
         pk=pk,
-        owner=request.user,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
+    can_edit = report.owner_id == request.user.pk
+    if request.method == "POST" and not can_edit:
+        # 产品成员可以查看并审批别人的报告，但正文只能由作者本人改——改正文会清空
+        # 已有的审批签名，不能让审批人顺手把自己刚签的字抹掉。
+        raise PermissionDenied
     if request.method == "POST":
         form = AITestReportForm(request.POST, instance=report)
         if form.is_valid():
@@ -1576,8 +2022,8 @@ def edit_report(request, pk):
             return redirect("ai_assistant:edit_report", pk=report.pk)
     else:
         form = AITestReportForm(instance=report)
-    verifications = AIRegressionVerification.objects.filter(
-        owner=request.user, source_report=report
+    verifications = roles.visible_verifications(request.user).filter(
+        source_report=report
     ).select_related("regression_run")
     return render(
         request,
@@ -1590,9 +2036,12 @@ def edit_report(request, pk):
             ),
             "verifications": verifications,
             "approval_form": ReportApprovalForm(),
+            "can_edit": can_edit,
+            "can_approve": roles.can_approve_report(request.user, report),
+            "can_manage_gate": roles.can_manage_release_gate(request.user),
             "revisions": report.revisions.select_related("edited_by"),
             "version_history": AITestReport.objects.filter(
-                owner=request.user, series_uuid=report.series_uuid
+                series_uuid=report.series_uuid
             ).select_related("approved_by"),
         },
     )
@@ -1636,14 +2085,55 @@ def create_regression_verification(request, pk):
 @login_required
 def approve_report(request, pk):
     report = get_object_or_404(
-        AITestReport.objects.select_related("test_run"), pk=pk, owner=request.user
+        roles.visible_reports(request.user).select_related(
+            "test_run", "test_run__build__version__product"
+        ),
+        pk=pk,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
+    if not roles.can_approve_report(request.user, report):
+        raise PermissionDenied
     form = ReportApprovalForm(request.POST)
     if not form.is_valid():
         messages.error(request, "请填写有效的审批结论。")
         return redirect("ai_assistant:edit_report", pk=report.pk)
-    report.approval_status = form.cleaned_data["decision"]
+
+    # 审批时现场重算门禁：不复用可能过期的 gate_result，否则「先评估、后改数据」
+    # 就能绕过门禁。
+    gate_result = evaluate_release_gate(
+        report.test_run.build.version.product,
+        report.metrics_snapshot,
+        [report.test_run_id],
+    )
+    report.gate_result = gate_result
+    decision = form.cleaned_data["decision"]
+    waived = False
+    if decision == "approved" and not gate_result["passed"]:
+        if not roles.can_manage_release_gate(request.user):
+            messages.error(
+                request,
+                "发布门禁未通过，不能直接批准。请修复阻断项，或由测试经理填写理由做风险放行。",
+            )
+            report.release_decision = derived_release_decision(gate_result, "pending")
+            report.save(update_fields=("gate_result", "release_decision", "updated"))
+            return redirect("ai_assistant:edit_report", pk=report.pk)
+        reason = (form.cleaned_data.get("waive_reason") or "").strip()
+        if not reason:
+            messages.error(request, "发布门禁未通过：风险放行必须填写理由。")
+            report.release_decision = derived_release_decision(gate_result, "pending")
+            report.save(update_fields=("gate_result", "release_decision", "updated"))
+            return redirect("ai_assistant:edit_report", pk=report.pk)
+        report.gate_waived_by = request.user
+        report.gate_waived_at = timezone.now()
+        report.gate_waive_reason = reason
+        waived = True
+    if not waived:
+        # 门禁通过（或被驳回）时清掉上一次的放行记录；每次放行的留痕在修订历史里。
+        report.gate_waived_by = None
+        report.gate_waived_at = None
+        report.gate_waive_reason = ""
+
+    report.approval_status = decision
     report.approved_by = request.user
     report.approved_at = timezone.now()
     report.approval_comment = form.cleaned_data["comment"]
@@ -1653,13 +2143,33 @@ def approve_report(request, pk):
         if report.approval_status == "approved"
         else ""
     )
-    report.save(
-        update_fields=(
-            "approval_status", "approved_by", "approved_at",
-            "approval_comment", "signature", "updated",
-        )
+    report.release_decision = derived_release_decision(
+        gate_result, report.approval_status, waived=waived
     )
-    messages.success(request, f"报告已{report.get_approval_status_display()}。")
+    with transaction.atomic():
+        report.save(
+            update_fields=(
+                "approval_status", "approved_by", "approved_at",
+                "approval_comment", "signature", "release_decision",
+                "gate_result", "gate_waived_by", "gate_waived_at",
+                "gate_waive_reason", "updated",
+            )
+        )
+        # 审批结论与风险放行都进版本历史：事后能查出「谁在什么理由下放行的」。
+        AITestReportRevision.objects.create(
+            report=report,
+            revision=report.revisions.count() + 1,
+            content_snapshot=report_snapshot(report),
+            change_reason=(
+                f"风险放行：{report.gate_waive_reason}" if waived
+                else f"审批：{report.get_approval_status_display()}"
+            )[:255],
+            edited_by=request.user,
+        )
+    if waived:
+        messages.warning(request, f"已由测试经理风险放行并{report.get_approval_status_display()}。")
+    else:
+        messages.success(request, f"报告已{report.get_approval_status_display()}。")
     return redirect("ai_assistant:edit_report", pk=report.pk)
 
 
@@ -1667,32 +2177,35 @@ def approve_report(request, pk):
 @login_required
 def evaluate_report_gate(request, pk):
     report = get_object_or_404(
-        AITestReport.objects.select_related(
+        roles.visible_reports(request.user).select_related(
             "test_run", "test_run__build__version__product"
         ),
         pk=pk,
-        owner=request.user,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     report.gate_result = evaluate_release_gate(
-        request.user,
         report.test_run.build.version.product,
         report.metrics_snapshot,
         [report.test_run_id],
     )
-    if not report.gate_result["passed"]:
-        report.release_decision = "no_go"
+    # 重新评估后发布结论跟着门禁走；放行记录不在这里清，它记的是上一次审批的依据。
+    report.release_decision = derived_release_decision(
+        report.gate_result,
+        report.approval_status,
+        waived=report.gate_waived_at is not None,
+    )
     report.save(update_fields=("gate_result", "release_decision", "updated"))
-    messages.success(request, "发布门禁已按当前规则重新评估。")
+    messages.success(request, "发布门禁已按当前产品规则重新评估。")
     return redirect("ai_assistant:edit_report", pk=report.pk)
 
 
 @login_required
 def export_report_html(request, pk):
     report = get_object_or_404(
-        AITestReport.objects.select_related("test_run", "approved_by"),
+        roles.visible_reports(request.user).select_related(
+            "test_run", "approved_by", "gate_waived_by"
+        ),
         pk=pk,
-        owner=request.user,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     response = render(request, "ai_assistant/report_export.html", {"report": report})
@@ -1703,9 +2216,10 @@ def export_report_html(request, pk):
 @login_required
 def export_report_pdf(request, pk):
     report = get_object_or_404(
-        AITestReport.objects.select_related("test_run", "approved_by"),
+        roles.visible_reports(request.user).select_related(
+            "test_run", "approved_by", "gate_waived_by"
+        ),
         pk=pk,
-        owner=request.user,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     response = HttpResponse(make_chinese_pdf(render_report_lines(report)), content_type="application/pdf")
@@ -1715,18 +2229,54 @@ def export_report_pdf(request, pk):
 
 @login_required
 def release_gate_settings(request):
+    """产品级发布门禁规则：一个产品一条，只有测试经理能维护。"""
+    if not roles.can_manage_release_gate(request.user):
+        raise PermissionDenied
+    products = Product.objects.order_by("name")
     if request.method == "POST":
-        form = AIReleaseGateRuleForm(request.POST, owner=request.user)
+        # 一个产品一条规则：把已存在的那条作为 instance 交给表单。否则 ModelForm 的唯一性
+        # 校验会把「这个产品已经有规则」判成重复，第二次保存会被静默拦成表单错误。
+        posted_product = request.POST.get("product")
+        existing = None
+        if posted_product and str(posted_product).isdigit():
+            existing = AIReleaseGateRule.objects.filter(product_id=int(posted_product)).first()
+        form = AIReleaseGateRuleForm(request.POST, instance=existing)
         if form.is_valid():
             rule = form.save(commit=False)
-            rule.owner = request.user
+            rule.updated_by = request.user
             rule.save()
-            messages.success(request, "发布门禁规则已保存。")
+            messages.success(
+                request, f"“{rule.product.name}”的发布门禁规则已保存。"
+            )
             return redirect("ai_assistant:release_gate_settings")
     else:
-        form = AIReleaseGateRuleForm(owner=request.user)
-    rules = AIReleaseGateRule.objects.filter(owner=request.user).select_related("product")
-    return render(request, "ai_assistant/release_gate_settings.html", {"form": form, "rules": rules})
+        initial = {}
+        product_id = request.GET.get("product")
+        if product_id and product_id.isdigit():
+            existing = AIReleaseGateRule.objects.filter(product_id=int(product_id)).first()
+            if existing is not None:
+                initial = {
+                    "product": existing.product_id,
+                    "name": existing.name,
+                    "block_priority": existing.block_priority,
+                    "min_success_rate": existing.min_success_rate,
+                    "require_all_executed": existing.require_all_executed,
+                    "max_open_defects": existing.max_open_defects,
+                    "is_active": existing.is_active,
+                }
+        form = AIReleaseGateRuleForm(initial=initial)
+    rules = {
+        rule.product_id: rule
+        for rule in AIReleaseGateRule.objects.select_related("product", "updated_by")
+    }
+    return render(
+        request,
+        "ai_assistant/release_gate_settings.html",
+        {
+            "form": form,
+            "products": [{"product": product, "rule": rules.get(product.pk)} for product in products],
+        },
+    )
 
 
 @login_required
@@ -1750,7 +2300,7 @@ def iteration_reports(request):
                 else:
                     metrics_snapshot, run_snapshots = build_iteration_snapshot(runs)
                     gate_result = evaluate_release_gate(
-                        request.user, product, metrics_snapshot, [run.pk for run in runs]
+                        product, metrics_snapshot, [run.pk for run in runs]
                     )
                     iteration = AIIterationReport.objects.create(
                         owner=request.user,
@@ -1771,7 +2321,7 @@ def iteration_reports(request):
                     return redirect("ai_assistant:iteration_report_detail", pk=iteration.pk)
     else:
         form = IterationReportForm()
-    items = AIIterationReport.objects.filter(owner=request.user).select_related("product", "version")
+    items = roles.visible_iterations(request.user).select_related("product", "version")
     return render(request, "ai_assistant/iteration_reports.html", {"form": form, "items": items})
 
 

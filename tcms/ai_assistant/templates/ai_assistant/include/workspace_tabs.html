@@ -1,0 +1,12 @@
+{% comment %}
+需求分析与任务单共用侧边栏的「需求与任务单」一个入口，页面内用这两个标签切换。
+两个页面都要包含这个文件，active_tab 传 "requirements" 或 "dev_tasks"。
+{% endcomment %}
+<ul class="nav nav-tabs" style="margin-bottom: 15px">
+    <li role="presentation" class="{% if active_tab == 'requirements' %}active{% endif %}">
+        <a href="{% url 'ai_assistant:index' %}">需求分析</a>
+    </li>
+    <li role="presentation" class="{% if active_tab == 'dev_tasks' %}active{% endif %}">
+        <a href="{% url 'ai_assistant:dev_task_list' %}">任务单</a>
+    </li>
+</ul>

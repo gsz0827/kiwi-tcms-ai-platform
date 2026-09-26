@@ -3,6 +3,7 @@
 import os
 
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.translation import gettext_lazy as _
 
 from .product import *  # noqa: F403
 
@@ -26,6 +27,21 @@ API_AUTOMATION_ALLOWED_ORIGINS = [
     item.strip() for item in os.environ.get(
         "KIWI_API_ALLOWED_ORIGINS", "http://api-demo:8080"
     ).split(",") if item.strip()
+]
+
+
+# ---------------------------------------------------------------------------
+# 帮助菜单
+#
+# 上游的帮助下拉是社区向的六个外链：去 Kiwi 的 GitHub 提 issue、去 StackOverflow
+# 提问、给 Open Collective 捐款。这三条对本平台的使用者没有意义 —— 他们不是 Kiwi
+# 的用户，而且出问题也不该去找上游。只保留三条文档链接，其余交给本仓库自己的
+# 使用说明（docs/）。
+# ---------------------------------------------------------------------------
+HELP_MENU_ITEMS = [
+    ("http://kiwitcms.readthedocs.io/en/latest/tutorial.html", _("User Guide")),
+    ("http://kiwitcms.readthedocs.io/en/latest/admin.html", _("Administration Guide")),
+    ("http://kiwitcms.readthedocs.io/en/latest/api/index.html", _("API Help")),
 ]
 
 

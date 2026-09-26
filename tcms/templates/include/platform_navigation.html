@@ -1,111 +1,37 @@
 {% load ai_navigation %}
-{% with current=request.resolver_match.url_name path=request.path %}
+{% platform_navigation as nav %}
 <aside class="kiwi-platform-sidebar" aria-label="测试平台功能菜单">
     <div class="kiwi-platform-sidebar-title">
-        <span class="fa fa-sitemap"></span>测试管理
+        <span class="fa fa-sitemap" aria-hidden="true"></span>测试管理
     </div>
 
     <ul class="nav nav-pills nav-stacked kiwi-tree-root">
-        <li class="{% if current == 'core-views-index' %}active{% endif %}">
-            <a href="{% url 'core-views-index' %}"><span class="fa fa-dashboard"></span>工作台</a>
+        <li class="{% if nav.home_active %}active{% endif %}">
+            <a href="{% url 'core-views-index' %}"{% if nav.home_active %} aria-current="page"{% endif %}><span class="fa fa-dashboard" aria-hidden="true"></span>工作台</a>
         </li>
     </ul>
 
-    <a class="kiwi-tree-toggle {% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}is-current{% endif %}"
-       href="#kiwi-nav-design" data-toggle="collapse"
-       aria-expanded="{% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}true{% else %}false{% endif %}"
-       aria-controls="kiwi-nav-design">
-        <span class="fa fa-pencil-square-o"></span>需求与设计
-        <span class="fa fa-angle-down kiwi-tree-caret"></span>
-    </a>
-    <ul id="kiwi-nav-design" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path or '/plan/' in path or current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}in{% endif %}">
-        <li class="{% if current == 'index' or current == 'edit_requirement' or current == 'requirement_trace' or current == 'edit_draft' or current == 'review_case' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:index' %}"><span class="fa fa-lightbulb-o"></span>需求分析</a>
-        </li>
-        <li class="{% if '/case-library/' in path or '/case/' in path or '/cases/' in path and '/api-testing/' not in path %}active{% endif %}">
-            <a href="{% url 'ai_assistant:case_library' %}"><span class="fa fa-list"></span>测试用例</a>
-        </li>
-        <li class="{% if '/plan/' in path %}active{% endif %}">
-            <a href="{% url 'plans-search' %}"><span class="fa fa-map-o"></span>测试计划</a>
-        </li>
-    </ul>
-
-    <a class="kiwi-tree-toggle {% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' or '/api-testing/' in path %}is-current{% endif %}"
-       href="#kiwi-nav-execution" data-toggle="collapse"
-       aria-expanded="{% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' or '/api-testing/' in path %}true{% else %}false{% endif %}"
-       aria-controls="kiwi-nav-execution">
-        <span class="fa fa-play-circle"></span>测试执行
-        <span class="fa fa-angle-down kiwi-tree-caret"></span>
-    </a>
-    <ul id="kiwi-nav-execution" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/runs/' in path or current == 'run_analysis' or current == 'job_list' or current == 'job_detail' or '/api-testing/' in path %}in{% endif %}">
-        <li class="{% if '/runs/' in path or current == 'run_analysis' %}active{% endif %}">
-            <a href="{% url 'testruns-search' %}"><span class="fa fa-play"></span>执行任务</a>
-        </li>
-        <li class="{% if '/api-testing/' in path %}active{% endif %}">
-            <a href="{% url 'ai_assistant:api_home' %}"><span class="fa fa-exchange"></span>接口自动化</a>
-        </li>
-        <li class="{% if current == 'job_list' or current == 'job_detail' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:job_list' %}"><span class="fa fa-tasks"></span>AI 后台任务</a>
-        </li>
-    </ul>
-
-    <a class="kiwi-tree-toggle {% if '/bugs/' in path or current == 'execution_defect' or current == 'edit_defect_draft' %}is-current{% endif %}"
-       href="#kiwi-nav-defects" data-toggle="collapse"
-       aria-expanded="{% if '/bugs/' in path or current == 'execution_defect' or current == 'edit_defect_draft' %}true{% else %}false{% endif %}"
-       aria-controls="kiwi-nav-defects">
-        <span class="fa fa-bug"></span>缺陷管理
-        <span class="fa fa-angle-down kiwi-tree-caret"></span>
-    </a>
-    <ul id="kiwi-nav-defects" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if '/bugs/' in path or current == 'execution_defect' or current == 'edit_defect_draft' %}in{% endif %}">
-        <li class="{% if '/bugs/' in path %}active{% endif %}">
-            <a href="{% url 'bugs-search' %}"><span class="fa fa-bug"></span>缺陷列表</a>
-        </li>
-        <li class="{% if current == 'execution_defect' or current == 'edit_defect_draft' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:dashboard' %}#defect-management"><span class="fa fa-refresh"></span>缺陷与回归</a>
-        </li>
-    </ul>
-
-    <a class="kiwi-tree-toggle {% if current == 'dashboard' or current == 'release_gate_settings' or current == 'iteration_reports' or current == 'iteration_report_detail' or current == 'run_report' or current == 'edit_report' or current == 'report_trends' %}is-current{% endif %}"
-       href="#kiwi-nav-quality" data-toggle="collapse"
-       aria-expanded="{% if current == 'dashboard' or current == 'release_gate_settings' or current == 'iteration_reports' or current == 'iteration_report_detail' or current == 'run_report' or current == 'edit_report' or current == 'report_trends' %}true{% else %}false{% endif %}"
-       aria-controls="kiwi-nav-quality">
-        <span class="fa fa-shield"></span>质量管理
-        <span class="fa fa-angle-down kiwi-tree-caret"></span>
-    </a>
-    <ul id="kiwi-nav-quality" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if current == 'dashboard' or current == 'release_gate_settings' or current == 'iteration_reports' or current == 'iteration_report_detail' or current == 'run_report' or current == 'edit_report' or current == 'report_trends' %}in{% endif %}">
-        <li class="{% if current == 'dashboard' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:dashboard' %}"><span class="fa fa-dashboard"></span>质量看板</a>
-        </li>
-        <li class="{% if current == 'release_gate_settings' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:release_gate_settings' %}"><span class="fa fa-lock"></span>门禁设置</a>
-        </li>
-        <li class="{% if current == 'iteration_reports' or current == 'iteration_report_detail' or current == 'run_report' or current == 'edit_report' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:iteration_reports' %}"><span class="fa fa-files-o"></span>测试报告</a>
-        </li>
-        <li class="{% if current == 'report_trends' %}active{% endif %}">
-            <a href="{% url 'ai_assistant:report_trends' %}"><span class="fa fa-line-chart"></span>质量趋势</a>
-        </li>
-    </ul>
-    {% platform_extra_menu as extra_menu %}
-    {% if extra_menu.entries %}
-    <a class="kiwi-tree-toggle {% if path in extra_menu.paths %}is-current{% endif %}"
-       href="#kiwi-nav-more" data-toggle="collapse"
-       aria-expanded="{% if path in extra_menu.paths %}true{% else %}false{% endif %}"
-       aria-controls="kiwi-nav-more">
-        <span class="fa fa-ellipsis-h"></span>更多功能
-        <span class="fa fa-angle-down kiwi-tree-caret"></span>
-    </a>
-    <ul id="kiwi-nav-more" class="nav nav-pills nav-stacked kiwi-tree-children collapse {% if path in extra_menu.paths %}in{% endif %}">
-        {% include "include/platform_extra_menu.html" with menu_items=extra_menu.entries %}
-    </ul>
-    {% endif %}
-
-    <nav class="kiwi-project-settings" aria-label="项目配置">
-        <ul class="nav nav-pills nav-stacked">
-            <li class="{% if current == 'project_settings' or current == 'create_product' or current == 'create_classification' or current == 'instruction_profiles' or current == 'edit_instruction_profile' %}active{% endif %}">
-                <a href="{% url 'ai_assistant:project_settings' %}"{% if current == 'project_settings' %} aria-current="page"{% endif %}><span class="fa fa-cog" aria-hidden="true"></span>项目配置</a>
+    {# 分区结构、当前分区与当前页都由 platform_navigation 算好，这里只循环渲染 #}
+    {% for section in nav.sections %}
+    <div class="kiwi-nav-section">
+        <a class="kiwi-tree-toggle{% if section.is_current %} is-current{% endif %}"
+           href="#kiwi-nav-{{ section.key }}" data-toggle="collapse"
+           aria-expanded="{% if section.is_current %}true{% else %}false{% endif %}"
+           aria-controls="kiwi-nav-{{ section.key }}">
+            <span class="fa {{ section.icon }}" aria-hidden="true"></span>{{ section.label }}
+            <span class="fa fa-angle-down kiwi-tree-caret" aria-hidden="true"></span>
+        </a>
+        <ul id="kiwi-nav-{{ section.key }}" class="nav nav-pills nav-stacked kiwi-tree-children collapse{% if section.is_current %} in{% endif %}">
+            {% for item in section.items %}
+                {% if item.kind == 'caption' %}
+            <li class="kiwi-nav-caption">{{ item.label }}</li>
+                {% else %}
+            <li class="{% if item.is_active %}active{% endif %}">
+                <a href="{{ item.url }}"{% if item.is_active %} aria-current="page"{% endif %}><span class="fa {{ item.icon }}" aria-hidden="true"></span>{{ item.label }}</a>
             </li>
+                {% endif %}
+            {% endfor %}
         </ul>
-    </nav>
+    </div>
+    {% endfor %}
 </aside>
-{% endwith %}

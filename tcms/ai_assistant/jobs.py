@@ -12,10 +12,12 @@ from tcms.testruns.models import TestExecution, TestRun
 from .engineering import (
     canonical_hash,
     defect_fingerprint,
+    derived_release_decision,
     evaluate_release_gate,
 )
 from .models import (
     AIDefectDraft,
+    AIDevTask,
     AIJob,
     AIModelConfig,
     AIRequest,
@@ -30,6 +32,7 @@ from .services import (
     analyze_test_coverage,
     analyze_test_run,
     assign_unique_case_numbers,
+    break_down_dev_tasks,
     capture_instruction_snapshot,
     generate_coverage_gap_test_cases,
     generate_defect_draft,
@@ -246,6 +249,43 @@ def _execute_test_case_generation(job):
     )
 
 
+def _execute_dev_task_breakdown(job):
+    ai_request = AIRequest.objects.get(
+        pk=job.payload["request_id"], created_by=job.owner
+    )
+    fingerprint = _requirement_fingerprint(ai_request)
+    _set_progress(job, 25, "正在调用模型拆分开发任务")
+    dev_tasks = break_down_dev_tasks(
+        ai_request.title,
+        ai_request.requirement,
+        job.owner,
+        analysis=ai_request.analysis or None,
+        model_config=job.model_config,
+        skill_snapshot=ai_request.skill_snapshot,
+    )
+    _set_progress(job, 82, "模型已返回，正在保存开发任务单")
+    with transaction.atomic():
+        locked_request = _lock_unchanged_requirement(ai_request, fingerprint)
+        if locked_request.dev_tasks.exists():
+            raise RuntimeError("该需求已经拆分过开发任务，请先删除现有任务单再重新拆分")
+        AIDevTask.objects.bulk_create(
+            [
+                AIDevTask(
+                    request=locked_request,
+                    owner=job.owner,
+                    requirement_version=locked_request.version,
+                    **dev_task,
+                )
+                for dev_task in dev_tasks
+            ]
+        )
+    return _result(
+        f"{reverse('ai_assistant:dev_task_list')}?request={ai_request.pk}",
+        request_id=ai_request.pk,
+        generated_count=len(dev_tasks),
+    )
+
+
 def _execute_coverage_analysis(job):
     ai_request = AIRequest.objects.prefetch_related("drafts").get(
         pk=job.payload["request_id"], created_by=job.owner
@@ -426,13 +466,14 @@ def _execute_test_report(job):
             **result,
         )
         report.gate_result = evaluate_release_gate(
-            job.owner,
             test_run.build.version.product,
             snapshot,
             [test_run.pk],
         )
-        if not report.gate_result["passed"]:
-            report.release_decision = "no_go"
+        # 发布结论完全由门禁推导：LLM 的措辞只进 conclusion/summary，不再决定能不能发布。
+        report.release_decision = derived_release_decision(
+            report.gate_result, report.approval_status
+        )
         report.save(update_fields=("gate_result", "release_decision", "updated"))
     return _result(
         reverse("ai_assistant:edit_report", args=[report.pk]), report_id=report.pk
@@ -450,6 +491,7 @@ HANDLERS = {
     "api_case_generation": execute_generation,
     "requirement_analysis": _execute_requirement_analysis,
     "test_case_generation": _execute_test_case_generation,
+    "dev_task_breakdown": _execute_dev_task_breakdown,
     "coverage_analysis": _execute_coverage_analysis,
     "coverage_supplement": _execute_coverage_supplement,
     "test_case_review": _execute_test_case_review,
