@@ -78,6 +78,7 @@ npm test
 | 两个账号使用相同标识 | 分别创建各自的数据 |
 | 入队失败 | 需求和版本一同回滚 |
 | Worker 启动时其他任务正在执行 | 其他任务状态保持不变 |
+| 断电 / 强杀后重启 Worker | 心跳过期的任务变为「中断」，排队与已结束任务不变，不会自动重放 |
 | 分析按钮和生成按钮 | 分别提交分析任务和生成任务 |
 | 任务详情页 | 在内容安全策略启用时仍能轮询状态 |
 
@@ -91,20 +92,24 @@ make ai-test-full
 
 上游测试依赖 `parameterized` 与 `tcms-api`，由 `requirements/ai-test.txt` 装进测试镜像，缺失时相关模块会以 `ModuleNotFoundError` 整体报错而不是真正运行。
 
-补齐依赖后，全量套件当前会报一批 `Duplicate entry 'AnonymousUser'`（SQLite 下表现为 `UNIQUE constraint failed: auth_user.username`）。已确认这不是平台代码的问题，而是上游 RPC 用例的隔离问题：
+全量套件曾经报一批唯一键重复（`Duplicate entry 'AI 测试经理' for key 'name'`，SQLite 下是 `UNIQUE constraint failed: auth_user.username`）。根因已经定位：不是平台代码写错，而是「`TransactionTestCase` 清库会重新执行 `post_migrate`」与上游 `serialized_rollback` 快照叠加出来的。
+
+1. `TransactionTestCase` 每个用例结束都会 `flush` 清库。Django 只对带 `serialized_rollback = True` 的类抑制 `post_migrate`，普通事务型用例的 flush 会照常触发它。
+2. `post_migrate` 于是重跑 `create_contenttypes`、`create_permissions`、guardian 的 `create_anonymous_user`，以及本平台的 `ensure_role_groups()`。这些逻辑按名字查找、查不到就以**新的自增主键**重建，库里于是出现「名字相同、主键与迁移快照不同」的组、权限、内容类型与匿名用户。
+3. RPC 用例（`LiveServerTestCase` + `serialized_rollback = True`）在 `setUpClass` 里把迁移快照反序列化回库。`deserialize_db_from_string()` 逐行**先按主键 UPDATE、落空才 INSERT**，主键一变就撞自然唯一键。反序列化按 `INSTALLED_APPS` 顺序进行，`django.contrib.auth` 里 Group 排在 User 之前，所以先撞的是本平台的角色组名「AI 测试经理」；早期先撞 `auth_user.username` 的 `AnonymousUser` 是同一个原因。
+
+修复在 `tcms/rpc/tests/utils.py`：新增 `empty_database_before_snapshot_restore()`，`APITestCase` 与 `APIPermissionsTestCase` 的 `_fixture_setup()` 在恢复快照之前先 `flush(..., inhibit_post_migrate=True)` 清掉残留行。稳态下这一步几乎不做事（上一个用例的 teardown 已经把库清空），它只是让快照恢复不依赖「别的用例是否清干净」。回归用例是 `tcms/rpc/tests/test_serialized_rollback.py`，按类名首字母顺序跑三步：`ASnapshotFingerprintTests`（RPC 用例）记录快照恢复后的库指纹（匿名用户主键、内容类型数量与最大主键、权限数量）；`BPlainTransactionalTestCase`（普通事务用例）自己什么都不做，只靠 teardown 那次 flush 制造残留行；`CRestoreAfterPlainTransactionalTests` 再次恢复快照并断言指纹与 A 完全一致——修复前 C 会在 `setUpClass` 阶段直接抛 `IntegrityError`。
+
+验证结果：
 
 | 验证方式 | 结果 |
 | --- | --- |
-| `python manage.py test tcms.rpc.tests` 单独运行 | 358 个用例全部通过 |
-| `tcms.rpc.tests.test_version` 单独运行 | 通过 |
-| `kiwi_auth.tests.test_backends` + `tcms.rpc.tests.test_version` | 通过 |
-| 全量套件同进程运行 | RPC 用例在 fixture 反序列化阶段报匿名用户重复 |
+| `python manage.py test tcms.rpc.tests` 单独运行（SQLite） | 358 个用例全部通过 |
+| `make ai-test-full`（全量套件同进程，含 RPC） | 通过 |
 
-`tcms/rpc/tests/utils.py` 里的 `serialized_rollback = True`、`tcms/settings/common.py` 里的 `ANONYMOUS_USER_NAME` 以及 django-guardian 3.3.3 都是上游原样内容，本平台未改动。触发条件是 guardian 的匿名用户被写入数据库后，`serialized_rollback` 的快照又插入一次；具体是哪个用例把它写进了数据库尚未定位。因此 RPC 覆盖请改用单独命令：
+`make ai-test-full` 里显式写了 `tcms` 这个标签，这是必需的：仓库根目录的 `kiwi_lint` 是 pylint 插件包，不带标签时 unittest 会把每个包都 import 一遍去找 `load_tests`，而测试镜像里没有装 pylint/astroid，于是会多出一条与用例无关的收集错误（`ModuleNotFoundError: No module named 'astroid'`）。
 
-```bash
-make ai-test-rpc
-```
+全量套件必须在测试镜像里跑，不要用 `-v 仓库:/Kiwi` 挂载工作树图快。镜像里的 `/Kiwi/static`（`collectstatic` 产物）和 `tcms/locale/*/LC_MESSAGES/*.mo`（编译后的翻译）都是**构建期产物，仓库里没有对应文件**；挂载会把这些目录一并遮掉，凡是渲染整页的用例都会以 `RuntimeError: Static file "patternfly/dist/css/patternfly.min.css" does not exist and will cause 404 errors!`（抛自 `tcms/tests/storage.py`）报错——`tcms.ai_assistant` 的 288 个用例里会红 85 个，看起来像大面积回归，其实是环境问题。挂载只适合跑不渲染模板的小模块（`tcms.rpc.tests`、`tcms.bugs.tests`）做快速定位，验收一律 `make ai-test-full`。
 
 ## 导航：侧边栏与上游菜单的关系
 
@@ -306,25 +311,38 @@ make ai-health
 
 ## 中断任务恢复
 
-当前 Worker 不使用分布式租约，也不会自动判断另一个进程是否已经死亡。它启动时不会批量把 `running` 任务改成失败。收到正常停止信号时，会完成当前任务后退出，不再领取新任务；Compose 最多等待 11 分钟后强制停止。
+Worker 领取任务后会持续刷新任务的**心跳**（`AIJob.heartbeat`，接口自动化执行写在 `APIRun.heartbeat`），间隔 20 秒（`tcms/ai_assistant/leases.py` 的 `HEARTBEAT_INTERVAL_SECONDS`）。执行进程断电、被 `docker kill`、OOM 或宿主机重启之后心跳就停了：超过 **600 秒**（`AI_JOB_LEASE_SECONDS` / `API_RUN_LEASE_SECONDS`）没有心跳，就判定执行进程已经不在了。
 
-正常完成的任务不需要恢复。机器异常断电、进程被强制停止等情况下：
+判定由 Worker 自己完成，不需要人工介入：
 
-1. 停止连接同一数据库的**所有** Worker（包括其他机器上的实例）。本机执行 `docker compose -f docker-compose.ai.yml stop worker`。
-2. 在任务中心确认中断任务 ID，并检查它是否已保存草稿、报告等业务结果。
-3. 先预览，再按指定任务 ID 恢复。将下方 `任务UUID` 替换为实际 ID：
+- **启动时巡检一次**，之后空闲时每 60 秒（`SWEEP_INTERVAL_SECONDS`）巡检一次（`--sweep-interval 0` 可关掉周期巡检，`--lease-seconds` 可临时改判租约）。
+- 失去心跳的 AI 任务从 `running` 变为**中断**（`interrupted`），`cancel_requested` 变为已取消；接口自动化执行同样变中断，并把仍为「未执行」的结果标成「已跳过」。
+- **绝不自动重放。** 模型调用和接口请求可能已经产生副作用，所以巡检只把状态说清楚，是否重来由人在页面上决定：任务详情页对中断任务显示「重试」按钮，重试会新建一个任务（`attempts + 1`）。
+- 其他 Worker 正在处理的任务心跳是新鲜的，不会被误判；排队（`queued`）和已结束的任务永远不动。
+
+人工兜底仍然保留，用于 Worker 停着、或需要立刻处理而不想等租约超时的场合：
 
 ```bash
+# 巡检：默认只预览，不修改任何数据
 docker compose -f docker-compose.ai.yml run --rm --no-deps worker \
-  python manage.py ai_recover_jobs 任务UUID
+  python manage.py ai_recover_jobs --stale
 
+# 确认 Worker 已全部停止后落地（把过期任务标成中断）
+docker compose -f docker-compose.ai.yml run --rm --no-deps worker \
+  python manage.py ai_recover_jobs --stale --apply --workers-stopped
+
+# 按指定任务 ID 恢复（旧用法，仍然可用；这条路径标成「失败」而不是「中断」）
 docker compose -f docker-compose.ai.yml run --rm --no-deps worker \
   python manage.py ai_recover_jobs 任务UUID --apply --workers-stopped
 
-docker compose -f docker-compose.ai.yml start worker
+# 接口自动化执行
+docker compose -f docker-compose.ai.yml run --rm --no-deps worker \
+  python manage.py api_recover_runs --stale --workers-stopped
 ```
 
-恢复只把选中的执行中任务标为失败、取消中的任务标为已取消；排队和已结束任务保持原样。`--workers-stopped` 是管理员确认，不是自动检测。命令不会回滚已经保存的业务结果，也不会自动重试。确认结果后，再决定是否在页面中重试，避免重复产生报告或补充用例。
+`--workers-stopped` 是管理员确认，不是自动检测；带 `--apply` 时必须给出。所有恢复路径都不会回滚已经保存的业务结果，也不会自动重试——核对结果之后，再在页面上决定是否重试，避免重复产生报告或补充用例。
+
+正常停止（`docker compose stop worker`、SIGTERM）时 Worker 会完成当前任务再退出，不领取新任务，Compose 最多等待 11 分钟后强制停止；被强制停止的任务留下的心跳会在租约到期后由下一次巡检标成中断。
 
 ## 升级
 

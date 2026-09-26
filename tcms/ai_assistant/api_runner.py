@@ -21,6 +21,7 @@ from tcms.testruns.models import TestExecution, TestExecutionStatus, TestRun
 
 from .api_validation import SENSITIVE, expand, lookup_json, redact, validate_case, validate_destination, validate_headers, variable_names
 from .crypto import decrypt_api_key, encrypt_api_key
+from .leases import WorkerHeartbeat, heartbeat_run
 from .models import APICase, APIEnvironment, APIResult, APIRun
 
 CASE_FIELDS = ("name", "method", "path", "headers", "query", "body", "send_body",
@@ -433,6 +434,7 @@ def execute_run(run):
             except Exception:
                 result.writeback = "回写失败，接口结果已保存，请人工核对测试执行"
                 result.save()
+            heartbeat_run(run.pk)
             if snapshot.get("stop_on_failure") and result.status in ("failed", "error"):
                 run.results.filter(status="pending").update(status="skipped", error="因前序用例失败，已停止后续执行")
                 break
@@ -455,13 +457,29 @@ def execute_run(run):
             )
 
 
-def execute_next_api_run():
+def claim_next_api_run():
     with transaction.atomic():
         run = APIRun.objects.select_for_update().filter(status="queued").order_by("created").first()
         if run is None:
-            return False
+            return None
+        now = timezone.now()
         run.status = "running"
-        run.started = timezone.now()
-        run.save(update_fields=("status", "started"))
-    execute_run(run)
+        run.started = now
+        run.heartbeat = now
+        run.save(update_fields=("status", "started", "heartbeat"))
+        return run
+
+
+def execute_next_api_run(heartbeat_interval=None):
+    """领取并执行一次接口自动化任务；执行期间持续刷新心跳。
+
+    心跳停掉之后，``leases.reclaim_stale_runs()`` 会把这次执行标成中断，并把未执行的
+    用例记为已跳过——已经发出去的请求不会自动重放。
+    """
+    run = claim_next_api_run()
+    if run is None:
+        return False
+    options = {} if heartbeat_interval is None else {"interval": heartbeat_interval}
+    with WorkerHeartbeat(run=run, **options):
+        execute_run(run)
     return True

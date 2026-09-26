@@ -8,7 +8,7 @@
         <div class="btn-group pull-right" style="margin-top:20px"><a class="btn btn-default" href="{% url 'ai_assistant:job_list' %}">全部后台任务</a><a class="btn btn-default" href="{% url 'ai_assistant:index' %}">AI 测试助手</a></div>
     </div>
     <p class="text-muted">任务编号：{{ job.pk }} · 提交时间：{{ job.created }} · 第 {{ job.attempts }} 次尝试</p>
-    <div id="job-panel" data-status-url="{% url 'ai_assistant:job_status' job.pk %}" class="panel {% if job.status == 'completed' %}panel-success{% elif job.status == 'failed' %}panel-danger{% else %}panel-info{% endif %}">
+    <div id="job-panel" data-status-url="{% url 'ai_assistant:job_status' job.pk %}" class="panel {% if job.status == 'completed' %}panel-success{% elif job.status == 'failed' %}panel-danger{% elif job.status == 'interrupted' %}panel-warning{% else %}panel-info{% endif %}">
         <div class="panel-heading"><strong id="job-status-label">{{ job.get_status_display }}</strong></div>
         <div class="panel-body">
             <div class="progress">
@@ -24,7 +24,7 @@
             </div>
             <div id="job-actions">
                 {% if job.status == 'queued' or job.status == 'running' %}<form method="post" action="{% url 'ai_assistant:cancel_job' job.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-warning" type="submit">取消任务</button></form>{% endif %}
-                {% if job.status == 'failed' or job.status == 'cancelled' %}<form method="post" action="{% url 'ai_assistant:retry_job' job.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-primary" type="submit">重新尝试</button></form>{% endif %}
+                {% if job.status == 'failed' or job.status == 'cancelled' or job.status == 'interrupted' %}<form method="post" action="{% url 'ai_assistant:retry_job' job.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-primary" type="submit">重新尝试</button></form>{% endif %}
             </div>
         </div>
     </div>

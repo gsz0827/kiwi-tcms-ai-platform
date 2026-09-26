@@ -371,8 +371,8 @@ def cancel_job(request, pk):
 @login_required
 def retry_job(request, pk):
     old_job = get_object_or_404(AIJob, pk=pk, owner=request.user)
-    if old_job.status not in {"failed", "cancelled"}:
-        messages.info(request, "只有失败或已取消的任务可以重试。")
+    if old_job.status not in {"failed", "cancelled", "interrupted"}:
+        messages.info(request, "只有失败、已取消或已中断的任务可以重试。")
         return redirect("ai_assistant:job_detail", pk=old_job.pk)
     config = old_job.model_config
     if config is not None and config.owner_id != request.user.pk:

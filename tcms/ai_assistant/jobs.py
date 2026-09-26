@@ -15,6 +15,7 @@ from .engineering import (
     derived_release_decision,
     evaluate_release_gate,
 )
+from .leases import WorkerHeartbeat
 from .models import (
     AIDefectDraft,
     AIDevTask,
@@ -577,9 +578,16 @@ def execute_job(job):
             )
 
 
-def execute_next_job():
+def execute_next_job(heartbeat_interval=None):
+    """领取并执行一个排队中的任务；执行期间持续刷新心跳。
+
+    心跳让「worker 被强制结束」和「任务还在跑」可以区分：心跳停了，
+    ``leases.reclaim_stale_jobs()`` 会把这条任务标成中断，而不是永远停在执行中。
+    """
     job = claim_next_job()
     if job is None:
         return False
-    execute_job(job)
+    options = {} if heartbeat_interval is None else {"interval": heartbeat_interval}
+    with WorkerHeartbeat(job=job, **options):
+        execute_job(job)
     return True

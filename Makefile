@@ -84,16 +84,18 @@ ai-test: ai-test-image
 	$(AI_COMPOSE) --profile test-mariadb run --rm -T tests-mariadb
 
 # 全量套件。tests-mariadb 的默认命令只跑 tcms.ai_assistant，平台改动过的
-# tcms/core、tcms/testcases 等上游代码不会被覆盖到，这个目标把整个代码库跑一遍。
-# 注意：RPC 用例在这个进程里会因 guardian 匿名用户重复插入而报错，原因见
-# docs/ai-platform-operations.md；单独跑 RPC 用下面的 ai-test-rpc。
+# tcms/core、tcms/testcases 等上游代码不会被覆盖到，这个目标把整个代码库跑一遍，
+# 包括 RPC（LiveServerTestCase + serialized_rollback）——它们现在能和事务型用例
+# 同进程运行，见 docs/ai-platform-operations.md「全量套件」。
+# 显式写 tcms 这个标签是必需的：仓库根目录的 kiwi_lint 是 pylint 插件包，
+# 不带标签时 unittest 会把每个包 import 一遍找 load_tests，测试镜像里没有装
+# pylint/astroid，于是会多出一条与用例无关的收集错误。
 .PHONY: ai-test-full
 ai-test-full: ai-test-image
 	$(AI_COMPOSE) --profile test-mariadb run --rm -T tests-mariadb \
-	    python manage.py test --settings=tcms.settings.ai_test_mariadb --noinput
+	    python manage.py test tcms --settings=tcms.settings.ai_test_mariadb --noinput
 
-# RPC 用例是 LiveServerTestCase + serialized_rollback，与全量套件同进程运行会互相
-# 干扰，单独运行（SQLite）是绿的，用它拿到完整的 RPC 覆盖。
+# 只跑 RPC 用例（SQLite），用于快速定位 RPC 侧改动；全量套件已经覆盖它们。
 .PHONY: ai-test-rpc
 ai-test-rpc: ai-test-image
 	$(AI_COMPOSE) --profile test run --rm -T tests \

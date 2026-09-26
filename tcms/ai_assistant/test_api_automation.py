@@ -61,6 +61,10 @@ class APISecretRedactionTests(SimpleTestCase):
         secrets = secrets_for({}, environment)
         self.assertEqual(redact("/users/1/s%2Fecret", secrets), "/users/1/[已隐藏]")
 
+
+class WorkerQueueStopTests(TestCase):
+    """Worker 的启动巡检要读数据库，所以这条不能用 SimpleTestCase。"""
+
     def test_worker_stop_between_queues_does_not_claim_another_job(self):
         def stop():
             signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)

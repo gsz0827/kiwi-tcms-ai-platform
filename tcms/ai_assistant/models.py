@@ -71,6 +71,7 @@ class APIRun(models.Model):
     error = models.CharField(max_length=500, blank=True)
     created = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
+    heartbeat = models.DateTimeField(null=True, blank=True, verbose_name="心跳时间")
     completed = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -78,7 +79,10 @@ class APIRun(models.Model):
         constraints = [models.UniqueConstraint(
             fields=("owner", "submission_token"), name="unique_api_submission"
         )]
-        indexes = [models.Index(fields=("status", "created"), name="api_run_queue")]
+        indexes = [
+            models.Index(fields=("status", "created"), name="api_run_queue"),
+            models.Index(fields=("status", "heartbeat"), name="api_run_heartbeat"),
+        ]
 
     @property
     def is_terminal(self):
@@ -1173,6 +1177,7 @@ class AIJob(models.Model):
         ("completed", "已完成"),
         ("failed", "失败"),
         ("cancelled", "已取消"),
+        ("interrupted", "中断"),
     )
     ACTIVE_STATUSES = ("queued", "running", "cancel_requested")
 
@@ -1215,6 +1220,7 @@ class AIJob(models.Model):
         indexes = [
             models.Index(fields=("status", "created"), name="ai_job_status_created"),
             models.Index(fields=("owner", "-created"), name="ai_job_owner_created"),
+            models.Index(fields=("status", "heartbeat"), name="ai_job_heartbeat"),
         ]
         verbose_name = "AI 后台任务"
         verbose_name_plural = "AI 后台任务"
@@ -1224,7 +1230,7 @@ class AIJob(models.Model):
 
     @property
     def is_terminal(self):
-        return self.status in {"completed", "failed", "cancelled"}
+        return self.status in {"completed", "failed", "cancelled", "interrupted"}
 
 
 class AIUsageLog(models.Model):

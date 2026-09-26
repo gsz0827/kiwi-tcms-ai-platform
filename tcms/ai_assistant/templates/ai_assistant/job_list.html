@@ -15,7 +15,7 @@
                     <td>{{ job.created }}</td>
                     <td>{{ job.get_operation_display }}</td>
                     <td>{% if job.model_config %}{{ job.model_config.name }} / {{ job.model_config.model }}{% else %}配置已删除{% endif %}</td>
-                    <td>{% if job.status == 'completed' %}<span class="label label-success">已完成</span>{% elif job.status == 'failed' %}<span class="label label-danger">失败</span>{% elif job.status == 'cancelled' %}<span class="label label-default">已取消</span>{% elif job.status == 'queued' %}<span class="label label-info">排队中</span>{% else %}<span class="label label-warning">{{ job.get_status_display }}</span>{% endif %}</td>
+                    <td>{% if job.status == 'completed' %}<span class="label label-success">已完成</span>{% elif job.status == 'failed' %}<span class="label label-danger">失败</span>{% elif job.status == 'interrupted' %}<span class="label label-warning">中断</span>{% elif job.status == 'cancelled' %}<span class="label label-default">已取消</span>{% elif job.status == 'queued' %}<span class="label label-info">排队中</span>{% else %}<span class="label label-warning">{{ job.get_status_display }}</span>{% endif %}</td>
                     <td>{{ job.progress }}% · {{ job.stage }}</td>
                     <td>{{ job.attempts }}</td>
                     <td><a class="btn btn-xs btn-primary" href="{% url 'ai_assistant:job_detail' job.pk %}">查看</a></td>
