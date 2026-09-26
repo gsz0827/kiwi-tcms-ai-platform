@@ -79,8 +79,29 @@ from .services import (
 )
 
 
+def _run_product(test_run):
+    """执行任务所属的产品；拿不到就返回 None。
+
+    和 ``roles.visible_reports`` 一样先看计划的 product，再回落到构建版本上的产品。
+    """
+    if test_run is None:
+        return None
+    plan = getattr(test_run, "plan", None)
+    product = getattr(plan, "product", None)
+    if product is not None:
+        return product
+    build = getattr(test_run, "build", None)
+    version = getattr(build, "version", None)
+    return getattr(version, "product", None)
+
+
 def _has_run_permission(user, permission, test_run):
-    return user.has_perm(permission) or user.has_perm(permission, test_run)
+    if user.has_perm(permission) or user.has_perm(permission, test_run):
+        return True
+    # 平台把「同一产品的成员」当作可见范围（roles.visible_reports 用的是同一套判定）。
+    # 少了这一条，报告会出现在测试质量趋势里，点开却是 403。
+    product = _run_product(test_run)
+    return product is not None and roles.is_product_member(user, product)
 
 
 def _require_run_permission(user, permission, test_run):
@@ -1184,7 +1205,7 @@ def edit_draft(request, pk):
     draft = get_object_or_404(
         AITestCaseDraft.objects.select_related("request", "imported_case"),
         pk=pk,
-        request__created_by=request.user,
+        request__in=roles.visible_requests(request.user),
     )
     if draft.imported_case_id:
         messages.info(request, "该草稿已导入，请在 Kiwi 正式测试用例中继续编辑。")
@@ -1324,9 +1345,7 @@ def requirement_trace(request, pk):
 @require_POST
 @permission_required("testcases.add_testcase", raise_exception=True)
 def import_request(request, pk):
-    ai_request = get_object_or_404(
-        AIRequest, pk=pk, created_by=request.user
-    )
+    ai_request = get_object_or_404(roles.visible_requests(request.user), pk=pk)
     raw_ids = request.POST.getlist("draft_ids")
     if not raw_ids:
         messages.warning(request, "请至少勾选一条待导入的测试用例。")
@@ -1965,7 +1984,8 @@ def run_report(request, pk):
         )
 
     reports = (
-        AITestReport.objects.filter(owner=request.user, test_run=test_run)
+        roles.visible_reports(request.user)
+        .filter(test_run=test_run)
         .select_related("model_config", "source_analysis")
         .prefetch_related("regression_verifications", "regression_verifications__regression_run")
     )
@@ -2051,7 +2071,7 @@ def edit_report(request, pk):
 @login_required
 def create_regression_verification(request, pk):
     report = get_object_or_404(
-        AITestReport.objects.select_related("test_run"), pk=pk, owner=request.user
+        roles.visible_reports(request.user).select_related("test_run"), pk=pk
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     form = RegressionVerificationForm(request.POST)
@@ -2327,17 +2347,18 @@ def iteration_reports(request):
 
 @login_required
 def iteration_report_detail(request, pk):
+    # 与列表同口径：同一产品的成员看得到彼此的迭代报告。
     report = get_object_or_404(
-        AIIterationReport.objects.select_related("product", "version").prefetch_related("runs"),
+        roles.visible_iterations(request.user).select_related("product", "version").prefetch_related("runs"),
         pk=pk,
-        owner=request.user,
     )
     return render(request, "ai_assistant/iteration_report_detail.html", {"report": report})
 
 
 @login_required
 def report_trends(request):
-    reports = AITestReport.objects.filter(owner=request.user, is_current=True).select_related(
+    # 与看板同口径：同一产品的成员看得到彼此的报告。
+    reports = roles.visible_reports(request.user).filter(is_current=True).select_related(
         "test_run", "test_run__plan__product", "test_run__build__version"
     )[:100]
     rows = []
