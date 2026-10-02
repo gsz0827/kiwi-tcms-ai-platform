@@ -129,6 +129,10 @@ def _resource_browser_redirect(request, resource_type=None):
 
 
 def _require_folder_management_permission(user, resource_type):
+    if resource_type in {"web_case", "api_case"}:
+        if not user.is_authenticated or roles.is_read_only(user):
+            raise PermissionDenied
+        return
     if resource_type == "requirement":
         return
     permission = RESOURCE_FOLDER_PERMISSIONS.get(resource_type)
@@ -137,6 +141,13 @@ def _require_folder_management_permission(user, resource_type):
 
 
 def _resource_for_assignment(user, resource_type, object_id):
+    if resource_type in {"web_case", "api_case"}:
+        from tcms.web_testing.models import WebCase
+        from .models import APICase
+        _require_folder_management_permission(user, resource_type)
+        model = WebCase if resource_type == "web_case" else APICase
+        resource = get_object_or_404(model.objects.select_related("product"), pk=object_id, owner=user)
+        return resource, resource.product
     if resource_type == "requirement":
         # 与需求列表同一套可见范围：产品成员之间可以互相归档对方的需求。
         resource = get_object_or_404(

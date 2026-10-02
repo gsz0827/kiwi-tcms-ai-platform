@@ -9,7 +9,8 @@ from tcms.testcases.models import TestCase, Category
 from tcms.testruns.models import TestExecutionStatus, TestRun
 
 from .api_validation import validate_case, validate_destination, validate_headers
-from .crypto import encrypt_api_key
+from .crypto import encrypt_api_key, decrypt_api_key
+from .automation_data import DatasetField
 from .models import APICase, APIEnvironment, APISuite
 
 
@@ -125,6 +126,7 @@ class APICaseForm(StyledForm, forms.ModelForm):
 
 
 class APISubmitForm(StyledForm, forms.Form):
+    datasets = DatasetField()
     submission_token = forms.UUIDField(initial=uuid.uuid4, widget=forms.HiddenInput)
     environment = forms.ModelChoiceField(queryset=APIEnvironment.objects.none(), label="执行环境")
     cases = forms.ModelMultipleChoiceField(
@@ -173,12 +175,13 @@ class APISubmitForm(StyledForm, forms.Form):
 
 
 class SuiteForm(StyledForm, forms.ModelForm):
+    datasets = DatasetField()
     cases = forms.ModelMultipleChoiceField(queryset=APICase.objects.none(),
         label="自动化用例（最多 20 条）", widget=forms.CheckboxSelectMultiple)
 
     class Meta:
         model = APISuite
-        fields = ("name", "environment", "cases", "stop_on_failure", "share_cookies",
+        fields = ("name", "environment", "cases", "datasets", "stop_on_failure", "share_cookies",
                   "schedule_enabled", "interval_minutes", "next_run_at")
         labels = {"environment": "执行环境"}
         widgets = {"next_run_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")}
@@ -194,6 +197,7 @@ class SuiteForm(StyledForm, forms.ModelForm):
         self.fields["cases"].queryset = APICase.objects.filter(owner=owner, product=product).order_by("sequence", "pk")
         if self.instance.pk:
             self.initial["cases"] = self.instance.case_ids
+            self.initial["datasets"] = json.loads(decrypt_api_key(self.instance.datasets_encrypted) or "[]")
         self.style_fields()
 
     def clean(self):
@@ -203,6 +207,11 @@ class SuiteForm(StyledForm, forms.ModelForm):
         if not 5 <= (data.get("interval_minutes") or 0) <= 10080:
             self.add_error("interval_minutes", "间隔须为 5～10080 分钟。")
         return data
+
+
+    def save(self, commit=True):
+        self.instance.datasets_encrypted = encrypt_api_key(json.dumps(self.cleaned_data.get("datasets") or []))
+        return super().save(commit)
 
 
 class LibraryCaseForm(StyledForm, forms.ModelForm):

@@ -3,13 +3,14 @@ from django.urls import path
 from . import views
 from . import api_views
 from . import api_ai_views
-from . import api_suite_views, case_library
+from . import api_suite_views, case_library, automation_archive
 
 
 app_name = "ai_assistant"
 
 
 urlpatterns = [
+    path("automation/<str:kind>/<uuid:pk>/archive/", automation_archive.archive, name="automation_archive"),
     path("case-library/", case_library.library, name="case_library"),
     path("case-library/products/<int:product_id>/new/", case_library.create_case, name="library_case_new"),
     path("api-testing/products/<int:product_id>/suites/new/", api_suite_views.suite_edit, name="api_suite_new"),

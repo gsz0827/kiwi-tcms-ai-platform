@@ -8,6 +8,8 @@
             {% if browser.kind == 'requirement' %}R-{{ item.pk }} {{ item.title }}{% endif %}
             {% if browser.kind == 'case' %}TC-{{ item.pk }} {{ item.summary }}{% endif %}
             {% if browser.kind == 'plan' %}TP-{{ item.pk }} {{ item.name }}{% endif %}
+            {% if browser.kind == 'web_case' %}WEB-{{ item.pk }} {{ item.name }}{% endif %}
+            {% if browser.kind == 'api_case' %}API-{{ item.pk }} {{ item.name }}{% endif %}
         </a>
         {% if browser.can_manage and item.available_folders %}
         <form class="kiwi-resource-move-form"

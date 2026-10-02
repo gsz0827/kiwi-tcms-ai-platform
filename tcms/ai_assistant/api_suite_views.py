@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 
 from tcms.management.models import Product
 from .api_forms import SuiteForm
@@ -27,6 +28,7 @@ from .models import APIRun, APISuite
 
 
 @login_required
+@never_cache
 def suite_edit(request, product_id, pk=None):
     product = get_object_or_404(Product, pk=product_id)
     suite = get_object_or_404(APISuite, owner=request.user, product=product, pk=pk) if pk else APISuite(owner=request.user, product=product)
@@ -39,13 +41,8 @@ def suite_edit(request, product_id, pk=None):
             validate_destination(suite.environment.base_url)
             env = dict(headers=suite.environment.headers, variables=dict(suite.environment.variables),
                        secret_headers=json.loads(decrypt_api_key(suite.environment.secret_headers_encrypted) or "{}"))
-            for case in sorted(form.cleaned_data["cases"], key=lambda item: (item.sequence, item.pk)):
-                config = {key: getattr(case, key) for key in CASE_FIELDS}
-                missing = required_variables(config, env) - env["variables"].keys()
-                if missing:
-                    raise ValueError("缺少前置变量：" + ", ".join(sorted(missing)))
-                prepare_case(config, env)
-                env["variables"].update({key: "runtime-value" for key in case.extracts})
+            from .api_dataset_support import validate_dataset_cases
+            validate_dataset_cases(list(form.cleaned_data["cases"]), env, form.cleaned_data.get("datasets"))
             with transaction.atomic():
                 get_user_model().objects.select_for_update().get(pk=request.user.pk)
                 # Only form-owned fields: never overwrite a concurrent token rotation.
@@ -59,7 +56,7 @@ def suite_edit(request, product_id, pk=None):
                     suite.next_run_at = timezone.now() + timedelta(minutes=suite.interval_minutes)
                 if suite.pk:
                     suite.save(update_fields=("name", "environment", "case_ids", "stop_on_failure", "share_cookies",
-                        "schedule_enabled", "interval_minutes", "next_run_at", "updated"))
+                        "schedule_enabled", "interval_minutes", "next_run_at", "updated", "datasets_encrypted"))
                 else:
                     suite.save()
         except ValueError as exc:

@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 
 from tcms.management.models import Product
 
@@ -30,7 +31,10 @@ def home(request):
     products = Product.objects.order_by("name")
     product_id = request.GET.get("product")
     product = get_object_or_404(products, pk=product_id) if product_id and product_id.isdigit() else products.first()
-    context = {"products": products, "product": product}
+    tab = request.GET.get("tab", "environments")
+    if tab not in {"environments", "cases", "suites", "runs"}:
+        tab = "environments"
+    context = {"products": products, "product": product, "tab": tab}
     if product:
         context.update({
             "suites": APISuite.objects.filter(owner=request.user, product=product).order_by("name"),
@@ -42,6 +46,12 @@ def home(request):
                 owner=request.user, product=product
             ), 15).get_page(request.GET.get("page")),
         })
+    if product and tab == "cases":
+        from .automation_folders import automation_cases
+        context["cases"] = Paginator(automation_cases(request.user, "api_case", product, request.GET), 20).get_page(request.GET.get("case_page"))
+        query = request.GET.copy()
+        query.pop("case_page", None)
+        context["case_query"] = query.urlencode()
     return render(request, "ai_assistant/api/home.html", context)
 
 
@@ -83,14 +93,15 @@ def case_edit(request, product_id, pk=None):
                 case._history_user = request.user
                 case.save(update_fields=("is_automated",))
         messages.success(request, "接口用例已保存")
-        return redirect(home_url(product))
+        return redirect((home_url(product) + "&tab=cases"))
     return render(request, "ai_assistant/api/form.html", {
-        "form": form, "product": product, "back_url": home_url(product),
+        "form": form, "product": product, "back_url": (home_url(product) + "&tab=cases"),
         "title": "编辑接口用例" if pk else "新建接口用例",
     })
 
 
 @login_required
+@never_cache
 def submit(request, product_id=None, pk=None):
     source = None
     initial = {}
@@ -105,6 +116,7 @@ def submit(request, product_id=None, pk=None):
             "cases": original["selection"]["case_ids"],
             "stop_on_failure": original.get("stop_on_failure", False),
             "share_cookies": original.get("share_cookies", False),
+            "datasets": original.get("selection", {}).get("datasets", []),
         }
     else:
         initial["cases"] = [value for value in request.GET.getlist("case") if value.isdigit()][:20]

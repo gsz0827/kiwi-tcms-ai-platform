@@ -1,5 +1,7 @@
 """Suite submissions share the same immutable queue as browser submissions."""
 import hashlib
+import json
+from .crypto import decrypt_api_key
 import secrets
 import uuid
 from datetime import timedelta
@@ -20,7 +22,8 @@ def suite_data(suite, submission_token):
         raise ValueError("套件中的用例已删除或所属产品发生变化，请重新保存套件。")
     return dict(environment=suite.environment, cases=cases, submission_token=submission_token,
                 stop_on_failure=suite.stop_on_failure, share_cookies=suite.share_cookies,
-                test_run=None, passed_status=None, failed_status=None)
+                test_run=None, passed_status=None, failed_status=None,
+                datasets=json.loads(decrypt_api_key(suite.datasets_encrypted) or "[]"))
 
 
 def queue_suite(pk, owner_id, *, trigger="manual", key=None, now=None):

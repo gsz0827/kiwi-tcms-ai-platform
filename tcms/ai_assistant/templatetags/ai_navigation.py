@@ -99,12 +99,12 @@ def _build_resource_browser(
             unfiled_items.append(item)
 
     folder_nodes = _folder_tree(folders, folder_items)
-    can_manage = resource_type == "requirement" or request.user.has_perm(
+    can_manage = (resource_type in {"web_case", "api_case"} and not roles.is_read_only(request.user)) or resource_type == "requirement" or (resource_type not in {"web_case", "api_case"} and request.user.has_perm(
         {
             "case": "testcases.change_testcase",
             "plan": "testplans.change_testplan",
         }[resource_type]
-    )
+    ))
     return {
         "kind": resource_type,
         "title": title,
@@ -133,6 +133,16 @@ def platform_resource_browser(context):
 
     resolver_match = getattr(request, "resolver_match", None)
     current = getattr(resolver_match, "url_name", "")
+
+    app_name = getattr(resolver_match, "app_name", "")
+    is_web_cases = app_name == "web_testing" and current == "cases"
+    is_api_cases = app_name == "ai_assistant" and current == "api_home" and request.GET.get("tab") == "cases"
+    if is_web_cases or is_api_cases:
+        from tcms.ai_assistant.automation_folders import automation_browser
+        _products, product = case_library.selected_product(request)
+        if product is not None:
+            return automation_browser(request, "web_case" if is_web_cases else "api_case", product)
+        return None
 
     if current == "index" and getattr(resolver_match, "app_name", "") == "ai_assistant":
         # 与需求列表一致：本产品成员互相可见，不再只看自己提的需求。
@@ -264,91 +274,9 @@ def ai_project_switcher(context):
 # 「/cases/ 属于用例库，但 /ai/api-testing/.../cases/new/ 不算」。
 # ---------------------------------------------------------------------------
 
-NAV_SECTIONS = (
-    {
-        "key": "design",
-        "label": "需求与设计",
-        "icon": "fa-pencil-square-o",
-        "items": (
-            {
-                "label": "需求与任务单",
-                "icon": "fa-lightbulb-o",
-                "url": "ai_assistant:index",
-                "names": (
-                    "ai_assistant:index",
-                    "ai_assistant:edit_requirement",
-                    "ai_assistant:requirement_trace",
-                    "ai_assistant:edit_draft",
-                    "ai_assistant:review_case",
-                    "ai_assistant:apply_review",
-                    "ai_assistant:generate_from_analysis",
-                    "ai_assistant:analyze_coverage",
-                    "ai_assistant:supplement_from_coverage",
-                    "ai_assistant:import",
-                    "ai_assistant:dev_task_list",
-                    "ai_assistant:dev_task_create",
-                    "ai_assistant:edit_dev_task",
-                    "ai_assistant:delete_dev_task",
-                    "ai_assistant:generate_dev_tasks",
-                ),
-            },
-            {
-                "label": "用例库",
-                "icon": "fa-list",
-                "url": "ai_assistant:case_library",
-                "names": (
-                    "ai_assistant:case_library",
-                    "ai_assistant:library_case_new",
-                ),
-                "fragments": (
-                    ("/case-library/", None),
-                    ("/case/", None),
-                    ("/cases/", "/api-testing/"),
-                ),
-            },
-        ),
-    },
-    {
-        "key": "execution",
-        "label": "测试执行",
-        "icon": "fa-play-circle",
-        "items": (
-            {
-                # 上游的「计划 → 执行」是一对：执行任务（TestRun）必须属于某个
-                # 测试计划。这两项原先被拆在「需求与设计」和「测试执行」两个分组
-                # 里，看着互不相干，所以计划放回执行组、排在执行任务前面。
-                "label": "测试计划",
-                "icon": "fa-map-o",
-                "url": "plans-search",
-                "fragments": (("/plan/", None),),
-            },
-            {
-                "label": "执行任务",
-                "icon": "fa-play",
-                "url": "testruns-search",
-                "names": ("ai_assistant:run_analysis",),
-                "fragments": (("/runs/", None),),
-            },
-            {
-                "label": "接口自动化",
-                "icon": "fa-exchange",
-                "url": "ai_assistant:api_home",
-                "fragments": (("/api-testing/", None),),
-            },
-            {
-                "label": "后台任务",
-                "icon": "fa-tasks",
-                "url": "ai_assistant:job_list",
-                "names": (
-                    "ai_assistant:job_list",
-                    "ai_assistant:job_detail",
-                    "ai_assistant:job_status",
-                    "ai_assistant:cancel_job",
-                    "ai_assistant:retry_job",
-                ),
-            },
-        ),
-    },
+from tcms.web_testing.navigation import TEST_NAV_SECTIONS
+
+NAV_SECTIONS = TEST_NAV_SECTIONS + (
     {
         "key": "quality",
         "label": "质量与缺陷",
@@ -547,6 +475,15 @@ def platform_navigation(context):
                 # 没这个能力的人不该看见入口：点进去只会拿到 403。
                 continue
             is_active = _item_is_active(item, current, path)
+            if any(current in candidate.get("names", ()) for group in NAV_SECTIONS for candidate in group["items"]):
+                is_active = current in item.get("names", ())
+            if app_name == "web_testing" and section["key"] != "web":
+                is_active = False
+            if section["key"] == "api" and current == "ai_assistant:api_home":
+                is_active = item.get("query") == "tab=" + request.GET.get("tab", "environments")
+            query = item.get("query")
+            if query:
+                url += "?" + query
             section_active = section_active or is_active
             anchor = item.get("anchor")
             items.append(

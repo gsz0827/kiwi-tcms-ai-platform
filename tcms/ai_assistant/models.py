@@ -116,6 +116,7 @@ class APIResult(models.Model):
 
 
 class APISuite(models.Model):
+    datasets_encrypted = models.TextField(blank=True)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
     name = models.CharField("套件名称", max_length=100)
@@ -136,6 +137,19 @@ class APISuite(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AutomationArchive(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    kind = models.CharField(max_length=8, choices=[("web","Web"),("api","接口")])
+    source_id = models.UUIDField()
+    test_run = models.OneToOneField("testruns.TestRun", on_delete=models.PROTECT)
+    report = models.OneToOneField("AITestReport", on_delete=models.PROTECT)
+    results = models.JSONField(default=list)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("kind","source_id"), name="unique_automation_archive")]
 
 
 class APIAIRequest(models.Model):
@@ -1302,6 +1316,8 @@ class ProjectResourceFolder(models.Model):
         ("requirement", "需求"),
         ("case", "测试用例"),
         ("plan", "测试计划"),
+        ("web_case", "Web 自动化用例"),
+        ("api_case", "接口自动化用例"),
     )
 
     product = models.ForeignKey(

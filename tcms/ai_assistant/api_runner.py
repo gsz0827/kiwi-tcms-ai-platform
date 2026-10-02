@@ -63,6 +63,8 @@ def required_variables(case, environment):
 
 
 def submit_run(owner, product, data, source_run=None, suite=None, trigger="manual"):
+    from .automation_data import datasets
+    rows = datasets(data.get("datasets"))
     with transaction.atomic():
         get_user_model().objects.select_for_update().get(pk=owner.pk)
         existing = APIRun.objects.filter(owner=owner, submission_token=data["submission_token"]).first()
@@ -78,12 +80,14 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                 "source_run_id": str(source_run.pk) if source_run else None,
                 "share_cookies": bool(data.get("share_cookies")),
                 "suite_id": suite.pk if suite else None,
+                "datasets": rows,
             }
             original_selection = dict(original["selection"])
             original_selection.setdefault("stop_on_failure", False)
             original_selection.setdefault("source_run_id", None)
             original_selection.setdefault("share_cookies", False)
             original_selection.setdefault("suite_id", None)
+            original_selection.setdefault("datasets", [])
             if original_selection != selected:
                 raise ValueError("这份表单已提交过其他选择，请重新打开执行页面。")
             return existing
@@ -123,29 +127,40 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
         if source_run and (source_run.owner_id != owner.pk or source_run.product_id != product.pk
                            or not source_run.is_terminal):
             raise ValueError("只能重新执行自己已结束的同产品任务。")
-        for case in cases:
-            if case.test_case_id and case.test_case.category.product_id != product.pk:
-                raise ValueError("用例的业务分类已移到其他产品，请重新配置自动化套件。")
-            snapshot = {key: getattr(case, key) for key in CASE_FIELDS}
-            if case.test_case_id:
-                snapshot["name"] = case.test_case.summary
-            snapshot["case_id"] = case.pk
-            missing = required_variables(snapshot, validation_env) - validation_env["variables"].keys()
-            if missing:
-                raise ValueError(f"“{case.name}”缺少变量：{', '.join(sorted(missing))}。请在环境中配置，或选择排在前面的提取用例。")
-            prepare_case(snapshot, validation_env)
-            for name in case.extracts:
-                validation_env["variables"][name] = "runtime-value"
-            if target:
-                executions = list(target.executions.filter(case_id=case.test_case_id))
-                if (len(executions) != 1 or case.test_case.category.product_id != product.pk
-                        or executions[0].pk in linked_ids):
-                    raise ValueError(f"“{case.name}”需要关联该运行中唯一且未重复选择的一条测试用例。")
-                execution = executions[0]
-                linked_ids.add(execution.pk)
-                snapshot["execution_id"] = execution.pk
-                snapshot["history_id"] = execution.history.latest().history_id
-            snapshots.append(snapshot)
+        from .api_dataset_support import validate_dataset_cases
+        validate_dataset_cases(cases, env, rows)
+        if target and len(rows) > 1:
+            raise ValueError("多组数据不能覆盖同一测试执行，请取消回写选择；结束后可归档独立报告。")
+        for dataset_index, row in enumerate(rows or [{}]):
+            validation_env = copy.deepcopy(env)
+            validation_env["variables"].update(row)
+            for case in cases:
+                if case.test_case_id and case.test_case.category.product_id != product.pk:
+                    raise ValueError("用例的业务分类已移到其他产品，请重新配置自动化套件。")
+                snapshot = {key: getattr(case, key) for key in CASE_FIELDS}
+                if case.test_case_id:
+                    snapshot["name"] = case.test_case.summary
+                snapshot["case_id"] = case.pk
+                missing = required_variables(snapshot, validation_env) - validation_env["variables"].keys()
+                if missing:
+                    raise ValueError(f"“{case.name}”缺少变量：{', '.join(sorted(missing))}。请在环境中配置，或选择排在前面的提取用例。")
+                prepare_case(snapshot, validation_env)
+                for name in case.extracts:
+                    validation_env["variables"][name] = "runtime-value"
+                if target:
+                    executions = list(target.executions.filter(case_id=case.test_case_id))
+                    if (len(executions) != 1 or case.test_case.category.product_id != product.pk
+                            or executions[0].pk in linked_ids):
+                        raise ValueError(f"“{case.name}”需要关联该运行中唯一且未重复选择的一条测试用例。")
+                    execution = executions[0]
+                    linked_ids.add(execution.pk)
+                    snapshot["execution_id"] = execution.pk
+                    snapshot["history_id"] = execution.history.latest().history_id
+                snapshot["dataset"] = dataset_index
+                snapshot["dataset_values"] = row
+                if len(rows)>1:
+                    snapshot["name"] = snapshot["name"][:180] + f" · 数据组 {dataset_index+1}"
+                snapshots.append(snapshot)
         snapshot = {"environment": env, "cases": snapshots,
                     "stop_on_failure": bool(data.get("stop_on_failure")),
                     "share_cookies": bool(data.get("share_cookies")),
@@ -159,6 +174,7 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                         "source_run_id": str(source_run.pk) if source_run else None,
                         "share_cookies": bool(data.get("share_cookies")),
                         "suite_id": suite.pk if suite else None,
+                        "datasets": rows,
                     },
                     "passed_status": data["passed_status"].pk if target else None,
                     "failed_status": data["failed_status"].pk if target else None}
@@ -360,7 +376,17 @@ def execute_run(run):
             env["_cookies"] = http.cookiejar.CookieJar(policy=http.cookiejar.DefaultCookiePolicy(
                 strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrict))
         runtime_secrets = []
+        base_environment = copy.deepcopy({key:value for key,value in snapshot["environment"].items() if not key.startswith("_")})
+        current_dataset = None
         for index, case in enumerate(snapshot["cases"]):
+            if case.get("dataset", 0) != current_dataset:
+                current_dataset = case.get("dataset", 0)
+                env = copy.deepcopy(base_environment)
+                env["variables"].update(case.get("dataset_values", {}))
+                env["_cookie_secrets"] = []
+                runtime_secrets = []
+                if snapshot.get("share_cookies"):
+                    env["_cookies"] = http.cookiejar.CookieJar(policy=http.cookiejar.DefaultCookiePolicy(strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrict))
             run.refresh_from_db(fields=("status",))
             if run.status != "running":
                 break

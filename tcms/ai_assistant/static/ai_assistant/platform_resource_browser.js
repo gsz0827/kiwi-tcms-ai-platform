@@ -47,7 +47,7 @@
                 });
             });
 
-            browser.querySelectorAll(".kiwi-folder-delete-form").forEach(function (form) {
+            document.querySelectorAll("#kiwi-folder-manager-" + kind + " .kiwi-folder-delete-form").forEach(function (form) {
                 form.addEventListener("submit", function (event) {
                     if (!window.confirm(form.getAttribute("data-confirm"))) {
                         event.preventDefault();

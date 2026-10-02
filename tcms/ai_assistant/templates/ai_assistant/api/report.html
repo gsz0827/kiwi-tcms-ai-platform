@@ -5,7 +5,7 @@
 <div id="api-run-status" data-url="{% url 'ai_assistant:api_status' run.pk %}" data-status="{{ run.status }}" data-finished="{{ finished }}" data-terminal="{{ run.is_terminal|yesno:'true,false' }}">
 {% if not run.is_terminal %}<p>结果会自动更新。{% if run.status == 'queued' %}等待后台 Worker 领取。{% endif %}<span id="api-poll-error" hidden>暂时无法更新，请刷新页面查看。</span></p><form action="{% url 'ai_assistant:api_cancel' run.pk %}" method="post">{% csrf_token %}<button class="btn btn-default" type="submit">停止后续用例</button></form>{% endif %}</div>
 {% if run.error %}<p class="alert alert-danger">{{ run.error }}</p>{% endif %}
-{% if run.is_terminal %}<div class="api-report-actions"><a class="btn btn-primary" href="{% url 'ai_assistant:api_rerun' run.pk %}">重新执行…</a><a class="btn btn-default" href="{% url 'ai_assistant:api_export' run.pk %}">导出 JSON 报告</a></div>{% endif %}
+{% if run.is_terminal %}<div class="api-report-actions"><a class="btn btn-default" href="{% url 'ai_assistant:automation_archive' 'api' run.pk %}">归档报告 / 创建缺陷草稿</a><a class="btn btn-primary" href="{% url 'ai_assistant:api_rerun' run.pk %}">重新执行…</a><a class="btn btn-default" href="{% url 'ai_assistant:api_export' run.pk %}">导出 JSON 报告</a></div>{% endif %}
 {% if run.source_run_id %}<p>本次由<a href="{% url 'ai_assistant:api_report' run.source_run_id %}">此前的执行报告</a>重新提交。</p>{% endif %}
 <p>触发来源：{{ run.get_trigger_display }}{% if run.suite_id %} · <a href="{% url 'ai_assistant:api_suite' run.suite_id %}">{{ run.suite.name }}</a>{% endif %}</p>
 {% if reruns %}<p>后续执行：{% for item in reruns %}<a href="{% url 'ai_assistant:api_report' item.pk %}">{{ item.created|date:"m-d H:i:s" }}（{{ item.get_status_display }}）</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}

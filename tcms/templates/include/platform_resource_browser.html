@@ -19,6 +19,7 @@
            placeholder="输入编号或名称筛选"
            autocomplete="off">
 
+    {% if browser.all_url %}<p class="kiwi-automation-folder-shortcuts"><a href="{{ browser.all_url }}">全部用例</a> · <a href="{{ browser.unfiled_url }}">未归档</a></p>{% endif %}
     <ul class="kiwi-resource-groups">
         {% for folder in browser.folder_nodes %}
         <li class="kiwi-resource-group">
@@ -32,6 +33,7 @@
                 <span class="badge">{{ folder.resource_items|length }}</span>
                 <span class="fa fa-angle-down kiwi-tree-caret"></span>
             </a>
+            {% if folder.filter_url %}<a class="kiwi-automation-folder-filter" href="{{ folder.filter_url }}" aria-label="查看目录 {{ folder.name }}"{% if browser.selected_folder == folder.pk|stringformat:'s' %} aria-current="page"{% endif %}>查看此目录用例</a>{% endif %}
             <ul id="kiwi-resource-folder-{{ browser.kind }}-{{ folder.pk }}"
                 class="kiwi-resource-items collapse in"
                 style="margin-left: {{ folder.resource_indent|add:13 }}px">
@@ -182,9 +184,16 @@
                         {% if browser.kind == 'requirement' %}R-{{ item.pk }} {{ item.title }}{% endif %}
                         {% if browser.kind == 'case' %}TC-{{ item.pk }} {{ item.summary }}{% endif %}
                         {% if browser.kind == 'plan' %}TP-{{ item.pk }} {{ item.name }}{% endif %}
+                        {% if browser.kind == 'web_case' %}WEB-{{ item.pk }} {{ item.name }}{% endif %}
+                        {% if browser.kind == 'api_case' %}API-{{ item.pk }} {{ item.name }}{% endif %}
                     </h4>
                 </div>
                 <div class="modal-body">
+                    {% if browser.kind == 'web_case' or browser.kind == 'api_case' %}
+                    <div class="kiwi-resource-detail-grid"><div><span class="kiwi-resource-detail-label">所属产品</span>{{ item.product.name }}</div><div><span class="kiwi-resource-detail-label">负责人</span>{{ item.owner.username }}</div></div>
+                    {% if browser.kind == 'web_case' %}<h4>前置条件与说明</h4><div class="kiwi-resource-detail-text">{{ item.description|default:'暂无说明'|linebreaksbr }}</div>{% else %}<h4>接口请求</h4><p>{{ item.method }} {{ item.path }}</p>{% endif %}
+                    <p class="help-block">操作步骤、请求参数与断言请进入完整配置查看；敏感配置仅当前账号可见。</p>
+                    {% endif %}
                     {% if browser.kind == 'requirement' %}
                     <div class="kiwi-resource-detail-grid">
                         <div><span class="kiwi-resource-detail-label">需求版本</span>V{{ item.version }}</div>
@@ -242,6 +251,8 @@
                     <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
                     {% if browser.kind == 'requirement' %}
                         <a class="btn btn-primary" href="{% url 'ai_assistant:requirement_trace' item.pk %}">进入完整追踪页面</a>
+                    {% elif browser.kind == 'web_case' or browser.kind == 'api_case' %}
+                        <a class="btn btn-primary" href="{{ item.resource_edit_url }}">编辑用例配置</a>
                     {% elif browser.kind == 'case' %}
                         <a class="btn btn-primary" href="{{ item.get_absolute_url }}">进入完整用例页面</a>
                     {% else %}
