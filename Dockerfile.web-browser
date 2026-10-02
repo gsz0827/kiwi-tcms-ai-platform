@@ -1,0 +1,11 @@
+FROM node:24-bookworm-slim
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ARG DEBIAN_MIRROR=http://deb.debian.org
+RUN npm install --global playwright@1.63.0
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && playwright install --with-deps --only-shell chromium \
+    && chmod -R a+rX /ms-playwright
+USER node
+WORKDIR /home/node
+EXPOSE 3000
+CMD ["playwright", "run-server", "--port", "3000", "--host", "0.0.0.0"]

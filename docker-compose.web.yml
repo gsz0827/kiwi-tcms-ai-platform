@@ -1,0 +1,44 @@
+# Use with: docker compose -f docker-compose.ai.yml -f docker-compose.web.yml up -d --build
+services:
+  web:
+    environment:
+      WEB_TEST_ALLOWED_ORIGINS: ${WEB_TEST_ALLOWED_ORIGINS:-https://web:8443}
+      WEB_TEST_BASE_URL: https://web:8443
+  web-browser:
+    image: kiwi-web-browser:local
+    build:
+      context: .
+      dockerfile: Dockerfile.web-browser
+      args:
+        DEBIAN_MIRROR: ${WEB_DEBIAN_MIRROR:-http://deb.debian.org}
+    init: true
+    shm_size: 1gb
+    user: node
+    working_dir: /home/node
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('net').connect(3000,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+  web-worker:
+    extends:
+      file: docker-compose.ai.yml
+      service: worker
+    image: kiwi-web-worker:local
+    build:
+      context: .
+      dockerfile: Dockerfile.web-worker
+      args:
+        KIWI_BASE: kiwi-tcms-ai:local
+    command: ["/venv/bin/python", "/Kiwi/manage.py", "web_worker"]
+    environment:
+      WEB_TEST_BROWSER_WS: ws://web-browser:3000/
+      WEB_TEST_ALLOWED_ORIGINS: ${WEB_TEST_ALLOWED_ORIGINS:-https://web:8443}
+    depends_on:
+      web-browser:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 6m

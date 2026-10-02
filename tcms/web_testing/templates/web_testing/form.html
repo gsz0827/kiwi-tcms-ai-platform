@@ -1,0 +1,7 @@
+{% extends "web_testing/base.html" %}{% load static %}
+{% block workspace %}<section class="api-card web-form"><form method="post" id="web-edit-form">{% csrf_token %}{{ form.non_field_errors }}
+{% for field in form %}<div class="form-group"{% if field.name == 'steps' %} id="web-steps-field"{% endif %}>{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}</div>{% endfor %}
+{% if case_editor %}<div id="web-step-editor" hidden><h3>操作步骤</h3><p class="help-block">先打开页面，再添加操作和断言。输入值加密保存，不会出现在执行日志中。</p><div id="web-step-rows"></div><button class="btn btn-default" type="button" id="web-add-step">添加步骤</button></div>{% endif %}
+<div class="web-form-actions"><button class="btn btn-primary" type="submit">保存</button> <a class="btn btn-default" href="{% if case_editor %}{% url 'web_testing:cases' %}{% elif environment_editor %}{% url 'web_testing:environments' %}{% else %}{% url 'web_testing:suites' %}{% endif %}">返回列表</a></div></form>
+{% if delete_url %}<details class="web-form-actions"><summary>删除此{% if case_editor %}用例{% else %}套件{% endif %}</summary><p>删除后不能直接恢复，历史执行记录仍然保留。</p><form method="post" action="{{ delete_url }}">{% csrf_token %}<button class="btn btn-danger">确认删除</button></form></details>{% endif %}
+</section>{% if case_editor %}<script src="{% static 'web_testing/editor.js' %}"></script>{% endif %}{% endblock %}

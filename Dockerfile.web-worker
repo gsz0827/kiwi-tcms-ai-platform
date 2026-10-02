@@ -1,0 +1,8 @@
+ARG KIWI_BASE=kiwitcms/kiwi:latest
+FROM ${KIWI_BASE}
+USER root
+COPY requirements/web.txt /tmp/kiwi-web-requirements.txt
+RUN /venv/bin/python -m pip install --no-cache-dir -r /tmp/kiwi-web-requirements.txt
+USER 1001
+WORKDIR /Kiwi
+CMD ["/venv/bin/python", "/Kiwi/manage.py", "web_worker"]

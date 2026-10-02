@@ -1,0 +1,2 @@
+{% extends "web_testing/base.html" %}
+{% block workspace %}<section class="api-card web-form"><h2>{{ suite.name }}</h2><p>测试站点：{{ suite.base_url }}</p><p>{{ suite.case_ids|length }} 条用例 · Chromium · {% if suite.stop_on_failure %}失败后停止{% else %}失败后继续其他用例{% endif %}</p><p>将使用当前用例内容生成独立快照。任务在后台执行，每条用例使用独立浏览器会话。</p><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><button class="btn btn-primary">确认执行</button> <a class="btn btn-default" href="{% url 'web_testing:suites' %}">返回</a></form></section>{% endblock %}

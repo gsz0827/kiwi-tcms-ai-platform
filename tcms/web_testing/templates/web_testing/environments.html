@@ -1,0 +1,6 @@
+{% extends 'web_testing/base.html' %}
+{% block workspace %}
+<p><a class="btn btn-primary" href="{% url 'web_testing:environment_new' %}">新建环境</a> <a class="btn btn-default" href="{% url 'web_testing:suites' %}">返回测试套件</a></p>
+<p>环境变量和登录配置仅本人可见。每组测试数据重新登录一次，该组用例复用登录态；不会跨任务保留。</p>
+<section class="api-card"><table class="table"><thead><tr><th>环境</th><th>产品</th><th>站点</th><th>公共登录/前置用例</th></tr></thead><tbody>{% for env in environments %}<tr><td><a href="{% url 'web_testing:environment_edit' env.pk %}">{{ env.name }}</a></td><td>{{ env.product.name }}</td><td>{{ env.base_url }}</td><td>{{ env.setup_case.name|default:'不使用' }}</td></tr>{% empty %}<tr><td colspan="4">暂无环境。新建后可在多个套件中复用。</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

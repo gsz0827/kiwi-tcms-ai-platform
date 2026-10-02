@@ -24,6 +24,7 @@ from tcms.testruns import urls as testruns_urls
 urlpatterns = [
     re_path(r"^$", core_views.DashboardView.as_view(), name="core-views-index"),
     re_path(r"^ai/", include("tcms.ai_assistant.urls")),
+    re_path(r"^web-testing/", include("tcms.web_testing.urls")),
     # 存活/就绪探针，供容器健康检查与编排使用，不经过登录与限流。
     # 带与不带结尾斜杠都接受，正规化形式（reverse 结果）带斜杠。
     re_path(r"^health/$", ai_health.health, name="health"),

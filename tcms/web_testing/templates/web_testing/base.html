@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ title }} · Web 自动化测试{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'ai_assistant/api_testing.css' %}"><link rel="stylesheet" href="{% static 'web_testing/workspace.css' %}">{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
+{% block external_head_scripts %}{% endblock %}
+{% block external_footer_scripts %}{% endblock %}
+{% block contents %}<div class="api-workspace web-workspace"><header class="api-header"><div><p class="text-muted">Web 自动化测试 / {{ title }}</p><h1>{{ title }}</h1></div><span class="label label-info">Chromium · Playwright</span></header><p><a href="{% url 'web_testing:environments' %}">测试环境与公共登录配置</a></p>{% block workspace %}{% endblock %}</div>{% endblock %}

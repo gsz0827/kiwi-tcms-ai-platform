@@ -353,6 +353,7 @@ TENANT_APPS = [
     "tcms.testplans.apps.AppConfig",
     "tcms.testruns.apps.AppConfig",
     "tcms.ai_assistant.apps.AiAssistantConfig",
+    "tcms.web_testing.apps.WebTestingConfig",
 ]
 
 # if you wish to disable Kiwi TCMS bug tracker
