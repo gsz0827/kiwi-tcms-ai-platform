@@ -1,0 +1,11 @@
+{% extends 'web_testing/base.html' %}
+{% block workspace %}
+<section class="api-card api-edit-form automation-edit-form"><h2>{{ suite.name }}</h2>
+{% if new_token %}<div class="alert alert-warning"><label for="ci-token">请立即复制，离开后不再显示</label><input id="ci-token" class="form-control" readonly value="{{ new_token }}" autocomplete="off"></div>{% endif %}
+<p>{% if suite.ci_token_hash %}令牌到期时间：{{ suite.ci_token_expires|date:'Y-m-d H:i:s' }}{% else %}尚未生成令牌{% endif %}</p>
+{% if automation_access.can_write %}<div class="automation-form-actions"><form method="post" action="{% url 'web_testing:ci_token_action' suite.pk 'rotate-token' %}">{% csrf_token %}<button class="btn btn-default">{% if suite.ci_token_hash %}轮换 CI 令牌{% else %}生成 CI 令牌{% endif %}</button></form>{% if suite.ci_token_hash %}<form method="post" action="{% url 'web_testing:ci_token_action' suite.pk 'revoke-token' %}">{% csrf_token %}<button class="btn btn-default">撤销 CI 令牌</button></form>{% endif %}</div>{% endif %}
+<p>令牌仅授权本套件的 CI 执行和结果读取，有效期 90 天；轮换后旧令牌立即失效。请保存在 Jenkins 的 Secret text 凭据中。</p>
+<pre>python3 deployment/kiwi_ci.py --type web --suite {{ suite.pk }} --output web-report.json</pre>
+<p>默认调试执行，不进入正式报告。正式执行须额外指定 --mode formal --plan 计划编号 --build 构建编号，并满足平台的业务用例与权限校验。执行结果不会自动审批或关闭缺陷。</p>
+</section>
+{% endblock %}

@@ -118,4 +118,9 @@ class SuiteForm(StyledForm):
         self.instance.ignore_https_errors = self.cleaned_data["environment"].ignore_https_errors
         self.instance.case_ids = list(self.cleaned_data["cases"].order_by("pk").values_list("pk", flat=True))
         self.instance.datasets_encrypted = encrypt_api_key(json.dumps(self.cleaned_data.get("datasets") or []))
+        if commit and self.instance.pk:
+            # Do not overwrite a CI token rotated since this form was loaded.
+            self.instance.save(update_fields=('product', 'name', 'environment', 'base_url',
+                'ignore_https_errors', 'case_ids', 'datasets_encrypted', 'stop_on_failure', 'updated'))
+            return self.instance
         return super().save(commit)

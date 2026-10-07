@@ -1,6 +1,8 @@
 """Trigger a Kiwi automation suite, await completion and emit CI artifacts (stdlib only)."""
 import argparse
 import json
+import socket
+from http.client import HTTPSConnection
 import os
 import re
 import ssl
@@ -19,18 +21,34 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+class MappedHTTPSHandler(HTTPSHandler):
+    """Route Docker traffic internally while preserving certificate/SNI validation."""
+    def __init__(self, *, context, connect_host):
+        super().__init__(context=context)
+        self.connect_host = connect_host
+
+    def https_open(self, req):
+        def connection(host, **kwargs):
+            conn = HTTPSConnection(host, **kwargs)
+            conn._create_connection = lambda address, *args, **options: socket.create_connection(
+                (self.connect_host, address[1]), *args, **options)
+            return conn
+        return self.do_open(connection, req, context=self._context)
+
+
 def xml_text(value):
     return re.sub(r"[^\x09\x0a\x0d\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]", "\ufffd", value)
 
 
-def write_reports(payload, output):
+def write_reports(payload, output, kind='api'):
     Path(output).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     results = list(payload.get("results", []))
-    if payload.get("status") != "completed" or not results:
+    complete_states = {'passed', 'failed'} if kind == 'web' else {'completed'}
+    if payload.get('status') not in complete_states or not results:
         # JUnit consumers must not turn a cancelled/empty run into a green build.
         results.append(dict(name="平台执行完整性", status="error", elapsed_ms=0,
                             error=payload.get("error") or "任务未完整执行", checks=[]))
-    suite = ET.Element("testsuite", name="Kiwi API automation", tests=str(len(results)),
+    suite = ET.Element("testsuite", name='Kiwi ' + kind.upper() + ' automation', tests=str(len(results)),
         failures=str(sum(r["status"] == "failed" for r in results)),
         errors=str(sum(r["status"] == "error" for r in results)),
         skipped=str(sum(r["status"] in ("pending", "skipped") for r in results)))
@@ -41,7 +59,7 @@ def write_reports(payload, output):
         if status != "passed":
             node = ET.SubElement(case, {"failed": "failure", "error": "error"}.get(status, "skipped"),
                                  message=result.get("error") or status)
-            node.text = json.dumps(result.get("checks", []), ensure_ascii=False)
+            node.text = json.dumps(result.get("checks", result.get('steps', [])), ensure_ascii=False)
     # XML 1.0 forbids control characters which are valid inside JSON strings.
     for element in suite.iter():
         element.attrib = {key: xml_text(value) for key, value in element.attrib.items()}
@@ -52,6 +70,11 @@ def write_reports(payload, output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--type', choices=('api', 'web'), default='api')
+    parser.add_argument('--mode', choices=('debug', 'formal'), default='debug')
+    parser.add_argument('--plan', type=int)
+    parser.add_argument('--build', type=int)
+    parser.add_argument('--environment', type=int)
     parser.add_argument("--suite", type=int, required=True)
     parser.add_argument("--output", default="api-report.json")
     parser.add_argument("--timeout", type=int, default=900)
@@ -68,16 +91,34 @@ def main(argv=None):
         key = str(uuid.UUID(args.key)) if args.key else str(uuid.uuid4())
         print(f"本次提交标识：{key}（网络中断后可用 --key 重试）", flush=True)
         context = ssl.create_default_context(cafile=os.environ.get("KIWI_CA_BUNDLE") or None)
-        opener = build_opener(ProxyHandler({}), HTTPSHandler(context=context), NoRedirect())
-        endpoint = f"{base}/ai/api-testing/ci/suites/{args.suite}/runs/"
+        connect_host = os.environ.get('KIWI_CONNECT_HOST', '')
+        if connect_host and not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', connect_host):
+            raise ValueError('无效的内部连接主机')
+        handler = MappedHTTPSHandler(context=context, connect_host=connect_host) if connect_host else HTTPSHandler(context=context)
+        opener = build_opener(ProxyHandler({}), handler, NoRedirect())
+        route = '/web-testing' if args.type == 'web' else '/ai/api-testing'
+        endpoint = f'{base}{route}/ci/suites/{args.suite}/runs/'
+        submission = {}
+        if args.type == 'web':
+            submission['execution_mode'] = args.mode
+            for field in ('plan', 'build', 'environment'):
+                value = getattr(args, field)
+                if value is not None:
+                    if value < 1:
+                        raise ValueError('执行配置编号须为正整数')
+                    submission[field] = value
+            if args.mode == 'formal' and not (args.plan and args.build):
+                raise ValueError('正式执行必须指定计划和构建')
         deadline = time.monotonic() + args.timeout
 
         def request(address, method):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError
-            req = Request(address, method=method, headers={"Authorization": f"Bearer {token}",
-                "Idempotency-Key": key, "Accept": "application/json"})
+            req = Request(address, method=method,
+                data=json.dumps(submission).encode() if method == 'POST' and args.type == 'web' else None,
+                headers={"Authorization": f"Bearer {token}", "Idempotency-Key": key,
+                         "Accept": "application/json", 'Content-Type': 'application/json'})
             with opener.open(req, timeout=min(30, remaining)) as response:
                 data = response.read(4 * 1024 * 1024 + 1)
                 if len(data) > 4 * 1024 * 1024:
@@ -91,13 +132,17 @@ def main(argv=None):
                 raise TimeoutError
             time.sleep(min(3, max(0, deadline - time.monotonic())))
             payload = request(endpoint + run_id + "/", "GET")
-        write_reports(payload, args.output)
+        write_reports(payload, args.output, args.type)
         print(f"执行状态：{payload['status']}；报告已保存至 {args.output}")
         return 0 if payload["passed"] else 1
     except HTTPError as exc:
         print(f"CI 请求被拒绝（HTTP {exc.code}），请检查令牌、套件及平台状态。", file=sys.stderr)
     except (ValueError, KeyError, OSError, URLError, TimeoutError):
         print("CI 请求或报告处理失败，请检查地址、证书、网络与超时。已提交的任务不会自动取消。", file=sys.stderr)
+    try:
+        write_reports(dict(status='error', error='CI 客户端未取得完整结果，请检查配置、认证、证书或超时。', results=[]), args.output, args.type)
+    except OSError:
+        pass
     return 2
 
 

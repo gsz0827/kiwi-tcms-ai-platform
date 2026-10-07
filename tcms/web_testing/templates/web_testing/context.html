@@ -1,5 +1,5 @@
 <div class="web-run-context">
-<span class="web-state">{{ run.get_execution_mode_display }}</span>
+<span class="web-state">{{ run.get_execution_mode_display }}</span><span>{{ run.get_trigger_display }}</span>
 {% if frozen_context.plan_name %}<span>计划：{{ frozen_context.plan_name }}</span><span>版本 / 构建：{{ frozen_context.version_name }} / {{ frozen_context.build_name }}</span>{% endif %}
 {% if frozen_context.environment_name %}<span>环境：{{ frozen_context.environment_name }}</span>{% endif %}
 {% if frozen_base_url %}<span>执行站点：{{ frozen_base_url }}</span>{% endif %}

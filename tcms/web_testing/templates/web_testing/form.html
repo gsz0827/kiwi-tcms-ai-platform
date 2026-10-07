@@ -4,6 +4,7 @@
 {% if form.environment %}{% url 'web_testing:environment_new' as environment_create_base %}{% with form.product.value|default:''|stringformat:'s' as environment_product_id %}{% include 'ai_assistant/automation/form_sections.html' with environment_create_url=environment_create_base|add:'?product='|add:environment_product_id %}{% endwith %}{% else %}{% include 'ai_assistant/automation/form_sections.html' %}{% endif %}
 {% if case_editor %}{% include 'web_testing/step_editor.html' %}{% endif %}
 {% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit">保存</button><a class="btn btn-default" href="{{ back_url }}">取消</a>{% if debug_url %}<a class="btn btn-default" href="{{ debug_url }}">调试已保存脚本</a>{% endif %}</div>{% endif %}</fieldset></form>
+{% if environment_summary and delete_url %}<div class="automation-form-actions"><a class="btn btn-default" href="{% url 'web_testing:ci_settings' form.instance.pk %}">Jenkins / CI 接入</a></div>{% endif %}
 {% if delete_url and automation_access.can_write %}<details class="automation-advanced"><summary>删除此{% if case_editor %}脚本{% else %}套件{% endif %}</summary><p>删除后不能直接恢复，历史执行记录仍然保留。</p><form method="post" action="{{ delete_url }}">{% csrf_token %}<button class="btn btn-danger">确认删除</button></form></details>{% endif %}
 {% if not automation_access.can_write %}<a class="btn btn-default" href="{{ back_url }}">返回列表</a>{% endif %}
 {% if environment_summary %}{{ environment_previews|json_script:'automation-environment-previews' }}{% endif %}

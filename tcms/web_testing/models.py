@@ -37,6 +37,8 @@ class WebEnvironment(models.Model):
 
 
 class WebSuite(models.Model):
+    ci_token_hash = models.CharField(max_length=64, blank=True, editable=False)
+    ci_token_expires = models.DateTimeField(null=True, blank=True, editable=False)
     environment = models.ForeignKey(WebEnvironment, blank=True, null=True, on_delete=models.PROTECT, verbose_name="执行环境")
     datasets_encrypted = models.TextField(blank=True)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -53,6 +55,7 @@ class WebSuite(models.Model):
 
 
 class WebRun(models.Model):
+    trigger = models.CharField(max_length=16, default='manual', choices=[('manual', '手动执行'), ('ci', 'CI 执行')])
     STATES = [(key, label) for key, label in (
         ("queued", "排队中"), ("running", "执行中"), ("passed", "通过"),
         ("failed", "失败"), ("error", "执行异常"), ("cancelled", "已取消"),

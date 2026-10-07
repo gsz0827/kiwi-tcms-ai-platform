@@ -116,3 +116,7 @@ Web/API 执行结束后自动生成独立的 Allure 报告，在任务详情查�
 服务地址及认证由执行环境维护；Postman JavaScript 不执行、不自动转换，暂不包含 Newman 执行或云端同步。完整范围和限制见 [Postman 导入指南](docs/postman-import.md)。
 
 界面统一使用「项目」「前置执行脚本」。质量看板的「阶段记录完整度」只反映阶段记录是否齐全，不代表测试进度、需求覆盖率或发布质量。
+
+## Jenkins 集成
+
+提供 Web/API 套件 CI 接口、专用令牌及 Jenkins 流水线，支持等待结果、JUnit 发布和 JSON/XML 构建附件。Web 正式执行继续校验计划、构建和业务用例；CI 不自动审批报告或关闭缺陷。本机 Jenkins 仅监听 `localhost:9081`。部署与使用步骤见 [Jenkins 集成指南](docs/jenkins-integration.md)。

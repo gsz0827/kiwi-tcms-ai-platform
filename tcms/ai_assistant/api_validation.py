@@ -1,6 +1,7 @@
 """Declarative HTTP cases: no Python, shell, or user-provided expressions."""
 
 import json
+import os
 import re
 from urllib.parse import urlsplit
 
@@ -50,7 +51,9 @@ def origin_for(url):
 
 def validate_destination(url):
     origin = origin_for(url)
-    allowed = getattr(settings, "API_AUTOMATION_ALLOWED_ORIGINS", [])
+    allowed = getattr(settings, "API_AUTOMATION_ALLOWED_ORIGINS", None)
+    if allowed is None:
+        allowed = [value.strip() for value in os.environ.get('KIWI_API_ALLOWED_ORIGINS', '').split(',') if value.strip()]
     if origin not in [origin_for(item) for item in allowed]:
         raise ValueError("该服务地址尚未开放。请在部署配置 KIWI_API_ALLOWED_ORIGINS 中添加协议、主机和端口。")
     return origin
