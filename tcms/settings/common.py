@@ -200,6 +200,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "tcms.kiwi_auth.middleware.UserDisplayPreferenceMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "simple_history.middleware.HistoryRequestMiddleware",
@@ -324,6 +325,7 @@ TEMPLATES = [
                 "tcms.core.context_processors.request_contents_processor",
                 "tcms.core.context_processors.settings_processor",
                 "tcms.core.context_processors.server_time_processor",
+                "tcms.kiwi_auth.context_processors.ui_preferences",
             ],
             "loaders": [
                 "django.template.loaders.filesystem.Loader",
@@ -354,6 +356,7 @@ TENANT_APPS = [
     "tcms.testruns.apps.AppConfig",
     "tcms.ai_assistant.apps.AiAssistantConfig",
     "tcms.web_testing.apps.WebTestingConfig",
+    "tcms.allure_reporting.apps.AllureReportingConfig",
 ]
 
 # if you wish to disable Kiwi TCMS bug tracker
@@ -473,7 +476,11 @@ HELP_MENU_ITEMS = [
 
 SESSION_SERIALIZER = "django.contrib.sessions.serializers.JSONSerializer"
 
-SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+# The default cache is process-local. Caching sessions there makes project
+# selection and logout stale across uWSGI processes. Database sessions reuse the
+# existing session table and preserve current logins without a Redis dependency.
+# Deployments with a shared session cache may explicitly override this setting.
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 # WARNING: do not edit. The stock JSONRPC handler does not HTML escape !!!
 # Stock handlers don't serialize timedelta into a meaningfull value

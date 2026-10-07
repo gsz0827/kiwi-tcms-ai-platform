@@ -18,6 +18,7 @@ from tcms.management.models import Product
 from tcms.testcases.models import Category, TestCase
 from .api_ai import check_access, draft_errors, import_drafts, inputs, submit_generation, validate_configuration
 from .api_forms import StyledForm
+from .automation_ui import write_guard
 from .models import APIAIRequest, APIAIDraft, AIJob, AIModelConfig
 
 
@@ -26,13 +27,13 @@ class GenerationForm(StyledForm, forms.Form):
     title = forms.CharField(label="本次生成主题", max_length=200)
     category = forms.ModelChoiceField(label="用例业务分类", queryset=Category.objects.none())
     target_case = forms.ModelChoiceField(label="关联已有测试用例（可选）", required=False, queryset=TestCase.objects.none(),
-        help_text="选择后保存为该用例的新增接口配置；原步骤和已有配置不会被覆盖。留空则创建新测试用例。")
+        help_text="选择后保存为该用例的新增接口脚本；原步骤和已有脚本不会被覆盖。留空则创建新测试用例。")
     model_config = forms.ModelChoiceField(label="生成模型", queryset=AIModelConfig.objects.none())
     documentation = forms.CharField(label="接口文档", max_length=30000, widget=forms.Textarea,
         help_text="粘贴接口方法、路径、参数、认证方式、响应示例或 OpenAPI/cURL 片段。请用变量占位符替换真实凭据。")
     requirements = forms.CharField(label="业务要求与测试重点", max_length=12000, required=False, widget=forms.Textarea,
         help_text="例如必填字段、边界范围、异常状态码；未明确的信息将列为待确认问题。")
-    environment_variables = forms.CharField(label="可用环境变量名", max_length=2000, required=False,
+    environment_variables = forms.CharField(label="可用环境参数名", max_length=2000, required=False,
         help_text="只填名称，以英文逗号分隔，例如 test_username,test_password,user_id；实际值在执行环境中配置。")
     count = forms.IntegerField(label="最多生成条数", min_value=1, max_value=10, initial=3)
 
@@ -102,6 +103,7 @@ def private(response):
 
 @login_required
 @permission_required("testcases.add_testcase", raise_exception=True)
+@write_guard
 def generate(request, product_id):
     product = get_object_or_404(Product, pk=product_id)
     initial = {}
@@ -109,7 +111,7 @@ def generate(request, product_id):
     if target.isdigit():
         case = get_object_or_404(get_objects_for_user(request.user, "testcases.change_testcase", klass=TestCase),
                                 pk=target, category__product=product)
-        initial = dict(target_case=case.pk, title=case.summary[:200], category=case.category_id)
+        initial = dict(target_case=case.pk, title=case.summary[:200], category=case.category_id, requirements=(case.text or "")[:12000])
     form = GenerationForm(request.POST if request.method == "POST" else None, owner=request.user, product=product, initial=initial)
     if request.method == "POST" and form.is_valid():
         try:
@@ -137,7 +139,7 @@ def generate(request, product_id):
         render(
             request,
             "ai_assistant/api/ai_generate.html",
-            dict(form=form, product=product, batches=batches),
+            dict(form=form, product=product, batches=batches, has_models=form.fields['model_config'].queryset.exists()),
         )
     )
 
@@ -160,6 +162,7 @@ def detail(request, pk):
 
 @login_required
 @permission_required("testcases.add_testcase", raise_exception=True)
+@write_guard
 def review(request, pk):
     draft = get_object_or_404(APIAIDraft.objects.select_related("request"), pk=pk, request__owner=request.user)
     if draft.imported_at:
@@ -188,6 +191,7 @@ def review(request, pk):
 @login_required
 @permission_required("testcases.add_testcase", raise_exception=True)
 @require_POST
+@write_guard
 def import_selected(request, pk):
     get_object_or_404(APIAIRequest, pk=pk, owner=request.user)
     try:

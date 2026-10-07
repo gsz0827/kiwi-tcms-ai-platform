@@ -1,0 +1,48 @@
+{% load static %}
+<section class="kiwi-resource-browser" data-resource-browser="case_hub">
+  <div class="kiwi-resource-browser-header"><span class="fa fa-folder-open-o"></span>用例目录</div>
+  {% if browser.can_manage %}<button type="button" class="btn btn-default btn-xs kiwi-resource-manage-button" data-toggle="modal" data-target="#hub-directory-manager">管理共享目录</button>{% endif %}
+  {% if not browser.product %}<p class="help-block">当前查看全部项目。选择一个项目后可新建共享业务目录。</p>{% endif %}
+  <div class="directory-root-tools">{% if browser.can_quick_create %}<button type="button" class="btn btn-default btn-xs" data-directory-create data-tree-kind="{{ browser.quick_kind }}" data-tree-product="{{ browser.default_product_id|default:'' }}" data-tree-create-url="{% url 'ai_assistant:create_resource_folder' %}"><span class="fa fa-folder-o"></span> 新建文件夹</button>{% endif %}</div>
+  <p><a href="{{ browser.all_url }}"{% if not browser.selected_folder %} aria-current="page"{% endif %}>全部用例</a> · <a href="{{ browser.unfiled_url }}"{% if browser.selected_folder == 'unfiled' %} aria-current="page"{% endif %}>未归档</a></p>
+  {% include 'ai_assistant/directory_drop_roots.html' %}
+  <ul class="kiwi-resource-groups">
+    {% for folder in browser.folders %}
+    <li class="kiwi-resource-group" data-hub-folder="{{ folder.pk }}" data-hub-ancestors="{{ folder.ancestor_ids }}">
+      <div class="hub-tree-row" style="padding-left:{{ folder.resource_indent }}px">
+      {% if folder.has_children %}<button type="button" class="hub-tree-toggle" data-hub-toggle="{{ folder.pk }}" aria-expanded="true" aria-label="展开或折叠 {{ folder.name }}"><span class="fa fa-angle-down"></span></button>{% else %}<span class="hub-tree-toggle"></span>{% endif %}
+      <a class="kiwi-resource-folder{% if folder.active %} hub-folder-active{% endif %}" href="{{ folder.filter_url }}" {% include 'ai_assistant/directory_drop_folder.html' %}{% if folder.can_quick_manage %} data-directory-node="{{ folder.pk }}" data-tree-name="{{ folder.name }}" data-tree-kind="{{ folder.resource_type }}" data-tree-product="{{ folder.product_id }}" data-tree-create-url="{% url 'ai_assistant:create_resource_folder' %}" data-tree-rename-url="{% url 'ai_assistant:rename_resource_folder' folder.pk %}" data-tree-delete-url="{% url 'ai_assistant:delete_resource_folder' folder.pk %}"{% endif %}{% if folder.active %} aria-current="page"{% endif %}>
+        <span class="fa fa-folder-open-o"></span><span class="hub-folder-name">{{ folder.name }}</span><span class="badge">{{ folder.case_count }}</span>
+      </a>
+      </div>
+      <small class="text-muted" style="padding-left:{{ folder.resource_indent|add:24 }}px">{% if not browser.product %}{{ folder.product.name }} · {% endif %}{% if folder.resource_type == 'case_group' %}共享业务目录{% else %}原有{{ folder.get_resource_type_display }}目录{% endif %}</small>
+    </li>
+    {% empty %}<li class="kiwi-resource-browser-empty">暂无目录，可新建业务目录后归档用例。</li>{% endfor %}
+  </ul>
+  <hr>
+  <p class="text-muted">当前列表中的用例</p>
+  <ul class="kiwi-resource-items">{% for row in browser.items %}<li class="kiwi-resource-item"><a class="kiwi-resource-item-link" href="#{{ row.modal_id }}" data-toggle="modal"{% if row.can_move %} draggable="true" data-tree-drag="case" data-drag-id="{{ row.pk }}" data-drag-kind="{{ row.resource_type }}" data-drag-product="{{ row.product.pk }}" data-case-node="{{ row.kind }}:{{ row.pk }}" data-tree-name="{{ row.name }}" data-tree-name-max="{% if row.kind == 'manual' %}255{% else %}200{% endif %}" data-tree-rename-url="{% url 'ai_assistant:case_tree_rename' row.kind row.pk %}"{% endif %}>{{ row.number }} · {{ row.name }}</a></li>{% empty %}<li class="kiwi-resource-browser-empty">没有匹配的用例。</li>{% endfor %}</ul>
+</section>
+{% if browser.can_manage %}
+<div class="modal fade kiwi-resource-modal" id="hub-directory-manager" tabindex="-1" role="dialog" aria-labelledby="hub-directory-title"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">
+  <div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-label="关闭"><span aria-hidden="true">&times;</span></button><h4 class="modal-title" id="hub-directory-title">管理共享用例目录</h4></div>
+  <div class="modal-body">
+    {% if browser.can_create %}
+    <h4>新建业务目录 · {{ browser.product.name }}</h4>
+    <form class="form-inline" method="post" action="{% url 'ai_assistant:create_resource_folder' %}">{% csrf_token %}<input type="hidden" name="resource_type" value="case_group"><input type="hidden" name="product" value="{{ browser.product.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label class="sr-only" for="hub-new-parent">上级目录</label><select class="form-control" id="hub-new-parent" name="parent"><option value="">作为根目录</option>{% for parent in browser.common_parents %}<option value="{{ parent.pk }}">{{ parent.option_prefix }}{{ parent.name }}</option>{% endfor %}</select>
+      <label class="sr-only" for="hub-new-name">目录名称</label><input class="form-control" id="hub-new-name" name="name" maxlength="120" placeholder="例如：用户中心" required><button class="btn btn-primary" type="submit">新建目录</button>
+    </form>
+    <p class="help-block">新建目录可用于手工、Web、接口三类用例；目录共享，用例可见范围仍遵循原权限。</p><hr>
+    {% else %}<p class="help-block">选择有管理权限的项目后可新建业务目录。</p>{% endif %}
+    {% for folder in browser.folders %}{% if folder.can_manage %}
+    <section style="padding:12px 0;border-bottom:1px solid #eee"><strong>{{ folder.product.name }} / {{ folder.option_prefix }}{{ folder.name }}</strong>
+      <form class="form-inline" style="margin-top:8px" method="post" action="{% url 'ai_assistant:rename_resource_folder' folder.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><label class="sr-only" for="hub-rename-{{ folder.pk }}">目录名称</label><input id="hub-rename-{{ folder.pk }}" class="form-control" name="name" value="{{ folder.name }}" maxlength="120" required><button class="btn btn-default" type="submit">重命名</button></form>
+      <form class="form-inline" style="margin-top:8px" method="post" action="{% url 'ai_assistant:move_resource_folder' folder.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><label for="hub-parent-{{ folder.pk }}">移动到</label><select id="hub-parent-{{ folder.pk }}" class="form-control" name="parent"><option value="">根目录</option>{% for parent in folder.compatible_parents %}<option value="{{ parent.pk }}"{% if parent.pk == folder.parent_id %} selected{% endif %}>{{ parent.option_prefix }}{{ parent.name }}</option>{% endfor %}</select><button class="btn btn-default" type="submit">移动目录</button></form>
+      <form class="kiwi-folder-delete-form" style="margin-top:8px" method="post" action="{% url 'ai_assistant:delete_resource_folder' folder.pk %}" data-confirm="删除目录及其子目录？其中用例会回到未归档，用例本身不会删除。">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-danger btn-sm" type="submit">删除目录</button></form>
+    </section>{% endif %}{% endfor %}
+  </div><div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">关闭</button></div>
+</div></div></div>
+{% endif %}
+<style>.hub-folder-active {background:#e7f4fb;border-left:3px solid #0088ce}.hub-tree-row{display:flex;align-items:center}.hub-tree-row .kiwi-resource-folder{display:flex;align-items:center;gap:4px;flex:1;min-width:0}.hub-folder-name{flex:1;min-width:0;overflow-wrap:anywhere}.hub-tree-row .kiwi-resource-folder .badge{float:none;margin:0;flex:0 0 auto}.hub-tree-toggle{flex:0 0 22px;border:0;background:none;padding:0}.kiwi-resource-pane .kiwi-resource-item-link{white-space:normal}.hub-case-move-select{max-width:180px}</style>
+<script src="{% static 'ai_assistant/platform_resource_browser.js' %}"></script>

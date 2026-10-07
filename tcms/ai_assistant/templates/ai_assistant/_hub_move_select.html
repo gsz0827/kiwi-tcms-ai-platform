@@ -1,0 +1,5 @@
+{% if row.can_move %}<form method="post" action="{% url 'ai_assistant:assign_resource_folder' %}">{% csrf_token %}
+<input type="hidden" name="resource_type" value="{{ row.resource_type }}"><input type="hidden" name="object_id" value="{{ row.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+<label class="sr-only" for="hub-move-{{ row.kind }}-{{ row.pk }}">移动 {{ row.number }} 到目录</label>
+<select id="hub-move-{{ row.kind }}-{{ row.pk }}" name="folder" class="form-control input-sm hub-case-move-select"><option value="">未归档</option>{% for folder in row.available_folders %}<option value="{{ folder.pk }}"{% if row.folder_id == folder.pk %} selected{% endif %}>{{ folder.option_prefix }}{{ folder.name }}</option>{% endfor %}</select></form>
+{% else %}{{ row.folder_name }}{% endif %}

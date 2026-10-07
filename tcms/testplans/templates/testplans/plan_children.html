@@ -1,0 +1,6 @@
+<section id="plan-panel-hierarchy" class="plan-panel" data-plan-panel="hierarchy" role="tabpanel" aria-labelledby="plan-tab-hierarchy" tabindex="0" hidden>
+  <div class="plan-table-scroll"><table class="table plan-table"><thead><tr><th>下级计划</th><th>版本</th><th>状态</th><th>本计划用例</th><th>本计划执行任务</th></tr></thead><tbody>
+    {% for row in plan_descendants %}<tr><td><a style="margin-left:{{ row.indent }}px" href="{{ row.plan.get_absolute_url }}">TP-{{ row.plan.pk }} · {{ row.plan.name }}</a></td><td>{{ row.plan.product_version.value }}</td><td>{% if row.plan.is_active %}启用{% else %}停用{% endif %}</td><td>{{ row.cases }}</td><td>{{ row.runs }} <span class="plan-secondary">未结束 {{ row.opened }}</span></td></tr>
+    {% empty %}<tr><td colspan="5" class="plan-empty">暂无可查看的下级计划{% if perms.testplans.add_testplan %}，<a href="{{ plan_child_url }}">新建子计划</a>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>

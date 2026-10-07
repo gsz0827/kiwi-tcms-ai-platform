@@ -1,10 +1,13 @@
-{% load static extra_filters %}
+{% load static extra_filters tz %}
+{% if browser.kind == 'requirement' %}
+{% include 'ai_assistant/_requirement_directories.html' %}
+{% else %}
 <section class="kiwi-resource-browser" data-resource-browser="{{ browser.kind }}">
     <div class="kiwi-resource-browser-header">
         <span class="fa {{ browser.icon }}"></span>{{ browser.title }}
         <span class="kiwi-resource-browser-count">{{ browser.total }} 条</span>
     </div>
-    {% if browser.can_manage %}
+    {% if browser.can_manage and browser.kind != 'plan' %}
     <button type="button"
             class="btn btn-default btn-xs kiwi-resource-manage-button"
             data-toggle="modal"
@@ -12,6 +15,7 @@
         <span class="fa fa-folder-open"></span>管理共享目录
     </button>
     {% endif %}
+    <div class="directory-root-tools">{% if browser.can_quick_create %}<button type="button" class="btn btn-default btn-xs" data-directory-create data-tree-kind="{{ browser.quick_kind }}" data-tree-product="{{ browser.default_product_id|default:'' }}" data-tree-create-url="{% url 'ai_assistant:create_resource_folder' %}"><span class="fa fa-folder-o"></span> 新建文件夹</button>{% endif %}</div>
     <label class="sr-only" for="kiwi-resource-filter-{{ browser.kind }}">筛选{{ browser.title }}</label>
     <input id="kiwi-resource-filter-{{ browser.kind }}"
            class="form-control kiwi-resource-filter"
@@ -20,6 +24,7 @@
            autocomplete="off">
 
     {% if browser.all_url %}<p class="kiwi-automation-folder-shortcuts"><a href="{{ browser.all_url }}">全部用例</a> · <a href="{{ browser.unfiled_url }}">未归档</a></p>{% endif %}
+    {% include 'ai_assistant/directory_drop_roots.html' %}
     <ul class="kiwi-resource-groups">
         {% for folder in browser.folder_nodes %}
         <li class="kiwi-resource-group">
@@ -27,13 +32,15 @@
                href="#kiwi-resource-folder-{{ browser.kind }}-{{ folder.pk }}"
                data-toggle="collapse"
                aria-expanded="true"
+               {% include 'ai_assistant/directory_drop_folder.html' %}
+              {% if folder.can_quick_manage %} data-directory-node="{{ folder.pk }}" data-tree-name="{{ folder.name }}" data-tree-kind="{{ folder.resource_type }}" data-tree-product="{{ folder.product_id }}" data-tree-create-url="{% url 'ai_assistant:create_resource_folder' %}" data-tree-rename-url="{% url 'ai_assistant:rename_resource_folder' folder.pk %}" data-tree-delete-url="{% url 'ai_assistant:delete_resource_folder' folder.pk %}"{% endif %}
                style="padding-left: {{ folder.resource_indent|add:5 }}px">
                 <span class="fa fa-folder-open-o"></span>{{ folder.name }}
                 <span class="kiwi-resource-folder-project">{{ folder.product.name }}</span>
                 <span class="badge">{{ folder.resource_items|length }}</span>
                 <span class="fa fa-angle-down kiwi-tree-caret"></span>
             </a>
-            {% if folder.filter_url %}<a class="kiwi-automation-folder-filter" href="{{ folder.filter_url }}" aria-label="查看目录 {{ folder.name }}"{% if browser.selected_folder == folder.pk|stringformat:'s' %} aria-current="page"{% endif %}>查看此目录用例</a>{% endif %}
+            {% if folder.filter_url %}<a class="kiwi-automation-folder-filter" href="{{ folder.filter_url }}" aria-label="查看目录 {{ folder.name }}"{% if browser.selected_folder == folder.pk|stringformat:'s' %} aria-current="page"{% endif %}>{% if browser.kind == 'plan' %}查看此目录计划{% else %}查看此目录用例{% endif %}</a>{% endif %}
             <ul id="kiwi-resource-folder-{{ browser.kind }}-{{ folder.pk }}"
                 class="kiwi-resource-items collapse in"
                 style="margin-left: {{ folder.resource_indent|add:13 }}px">
@@ -53,8 +60,8 @@
                href="#kiwi-resource-unfiled-{{ browser.kind }}-{{ forloop.counter }}"
                data-toggle="collapse"
                aria-expanded="true">
-                <span class="fa fa-inbox"></span>未归档
-                <span class="kiwi-resource-folder-project">{{ group.grouper }}</span>
+                {% if browser.kind == 'plan' %}<span class="fa fa-folder-open-o"></span>{{ group.grouper }}{% else %}<span class="fa fa-inbox"></span>未归档
+                <span class="kiwi-resource-folder-project">{{ group.grouper }}</span>{% endif %}
                 <span class="badge">{{ group.list|length }}</span>
                 <span class="fa fa-angle-down kiwi-tree-caret"></span>
             </a>
@@ -73,11 +80,12 @@
     </ul>
     <p class="kiwi-resource-browser-empty kiwi-resource-no-match" hidden>没有匹配的记录</p>
     {% if browser.has_more %}
-        <p class="kiwi-resource-browser-more">当前显示最近 20 条，可使用页面筛选查看更多。</p>
+        <p class="kiwi-resource-browser-more">当前显示最近 {{ browser.display_limit|default:20 }} 条，可使用页面筛选查看更多。</p>
     {% endif %}
 </section>
+{% endif %}
 
-{% if browser.can_manage %}
+{% if browser.can_manage and browser.kind != 'requirement' %}
 <div class="modal fade kiwi-resource-modal"
      id="kiwi-folder-manager-{{ browser.kind }}"
      tabindex="-1" role="dialog"
@@ -108,7 +116,7 @@
                     <div class="form-group">
                         <label class="sr-only" for="folder-parent-{{ browser.kind }}">上级目录</label>
                         <select id="folder-parent-{{ browser.kind }}" class="form-control kiwi-folder-parent" name="parent">
-                            <option value="">作为根目录</option>
+                            <option value="">{% if browser.kind == 'requirement' %}项目根目录{% else %}作为根目录{% endif %}</option>
                             {% for folder in browser.folder_nodes %}
                             <option value="{{ folder.pk }}" data-product="{{ folder.product_id }}">
                                 {{ folder.option_prefix }}{{ folder.name }}
@@ -129,7 +137,7 @@
                     <table class="table table-striped table-condensed kiwi-folder-management-table">
                         <thead><tr><th>项目</th><th>目录名称</th><th>创建人</th><th>操作</th></tr></thead>
                         <tbody>
-                        {% for folder in browser.folder_nodes %}
+                        {% for folder in browser.managed_folder_nodes %}
                             <tr>
                                 <td>{{ folder.product.name }}</td>
                                 <td style="padding-left: {{ folder.resource_indent|add:8 }}px">{{ folder.option_prefix }}{{ folder.name }}</td>
@@ -146,7 +154,7 @@
                                     <form class="kiwi-folder-inline-form kiwi-folder-delete-form"
                                           method="post"
                                           action="{% url 'ai_assistant:delete_resource_folder' folder.pk %}"
-                                          data-confirm="删除该目录及其子目录？资源会回到未归档，不会被删除。">
+                                          data-confirm="{% if browser.kind == 'requirement' %}删除该目录及其子目录？需求会回到所属项目根目录，不会被删除。{% else %}删除该目录及其子目录？资源会回到未归档，不会被删除。{% endif %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <button class="btn btn-danger btn-sm" type="submit">删除</button>
@@ -190,21 +198,37 @@
                 </div>
                 <div class="modal-body">
                     {% if browser.kind == 'web_case' or browser.kind == 'api_case' %}
-                    <div class="kiwi-resource-detail-grid"><div><span class="kiwi-resource-detail-label">所属产品</span>{{ item.product.name }}</div><div><span class="kiwi-resource-detail-label">负责人</span>{{ item.owner.username }}</div></div>
+                    <div class="kiwi-resource-detail-grid"><div><span class="kiwi-resource-detail-label">所属项目</span>{{ item.product.name }}</div><div><span class="kiwi-resource-detail-label">负责人</span>{{ item.owner.username }}</div></div>
                     {% if browser.kind == 'web_case' %}<h4>前置条件与说明</h4><div class="kiwi-resource-detail-text">{{ item.description|default:'暂无说明'|linebreaksbr }}</div>{% else %}<h4>接口请求</h4><p>{{ item.method }} {{ item.path }}</p>{% endif %}
                     <p class="help-block">操作步骤、请求参数与断言请进入完整配置查看；敏感配置仅当前账号可见。</p>
                     {% endif %}
                     {% if browser.kind == 'requirement' %}
                     <div class="kiwi-resource-detail-grid">
-                        <div><span class="kiwi-resource-detail-label">需求版本</span>V{{ item.version }}</div>
-                        <div><span class="kiwi-resource-detail-label">创建时间</span>{{ item.created|date:"Y-m-d H:i" }}</div>
-                        <div><span class="kiwi-resource-detail-label">产品与分类</span>{{ item.resource_group }}</div>
+                        <div><span class="kiwi-resource-detail-label">需求修订</span>V{{ item.version }}</div>
+                        <div><span class="kiwi-resource-detail-label">创建时间</span>{% with display_time_zone=UI_PREFERENCES.time_zone|default:'Asia/Shanghai' %}{{ item.created|timezone:display_time_zone|date:"Y-m-d H:i" }}{% endwith %}</div>
+                        <div><span class="kiwi-resource-detail-label">项目与分类</span>{{ item.resource_group }}</div>
                         <div><span class="kiwi-resource-detail-label">分析状态</span>{% if item.analysis %}已完成{% else %}待分析{% endif %}{% if item.needs_case_review %} · 用例待更新{% endif %}</div>
                     </div>
+                    {% if browser.can_manage and item.available_folders %}
+                    <form method="post" action="{% url 'ai_assistant:assign_resource_folder' %}" class="form-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="resource_type" value="requirement">
+                        <input type="hidden" name="object_id" value="{{ item.pk }}">
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <label for="requirement-folder-{{ item.pk }}">所属目录</label>
+                        <select id="requirement-folder-{{ item.pk }}" name="folder" class="form-control input-sm">
+                            <option value="">项目根目录</option>
+                            {% for folder in item.available_folders %}<option value="{{ folder.pk }}"{% if item.resource_folder_id == folder.pk %} selected{% endif %}>{{ folder.option_prefix }}{{ folder.name }}</option>{% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-default btn-sm">移动</button>
+                    </form>
+                    {% endif %}
                     <h4>需求描述</h4>
-                    <div class="kiwi-resource-detail-text">{{ item.requirement|linebreaksbr }}</div>
+                    {% include 'ai_assistant/_document_sections.html' with document=item %}
+                    <h4>关联开发任务</h4>
+                    {% include 'ai_assistant/_linked_dev_tasks.html' with linked_tasks=item.dev_tasks.all %}
                     {% if item.analysis %}
-                    <h4>AI 分析摘要</h4>
+                    <details class="document-preview-analysis"><summary>AI 分析摘要</summary>
                     <div class="kiwi-resource-detail-text">
                         <p>{{ item.analysis.summary|default:"暂无摘要" }}</p>
                         <p><strong>风险等级：</strong>{{ item.analysis.risk_level|default:"未标注" }}</p>
@@ -212,7 +236,7 @@
                         <strong>功能点：</strong>
                         <ul>{% for value in item.analysis.functional_points %}<li>{{ value }}</li>{% endfor %}</ul>
                         {% endif %}
-                    </div>
+                    </div></details>
                     {% endif %}
                     {% endif %}
 
@@ -220,7 +244,7 @@
                     <div class="kiwi-resource-detail-grid">
                         <div><span class="kiwi-resource-detail-label">状态</span>{{ item.case_status }}</div>
                         <div><span class="kiwi-resource-detail-label">优先级</span>{{ item.priority }}</div>
-                        <div><span class="kiwi-resource-detail-label">产品与分类</span>{{ item.resource_group }}</div>
+                        <div><span class="kiwi-resource-detail-label">项目与分类</span>{{ item.resource_group }}</div>
                         <div><span class="kiwi-resource-detail-label">创建人</span>{{ item.author.username }}</div>
                         <div><span class="kiwi-resource-detail-label">默认测试人</span>{{ item.default_tester.username|default:"未指定" }}</div>
                         <div><span class="kiwi-resource-detail-label">自动化</span>{% if item.is_automated %}是{% else %}否{% endif %}</div>
@@ -236,12 +260,12 @@
 
                     {% if browser.kind == 'plan' %}
                     <div class="kiwi-resource-detail-grid">
-                        <div><span class="kiwi-resource-detail-label">产品</span>{{ item.product }}</div>
+                        <div><span class="kiwi-resource-detail-label">项目</span>{{ item.product }}</div>
                         <div><span class="kiwi-resource-detail-label">版本</span>{{ item.product_version.value }}</div>
                         <div><span class="kiwi-resource-detail-label">计划类型</span>{{ item.type }}</div>
-                        <div><span class="kiwi-resource-detail-label">负责人</span>{{ item.author.username }}</div>
+                        <div><span class="kiwi-resource-detail-label">创建人</span>{{ item.author.username }}</div>
                         <div><span class="kiwi-resource-detail-label">状态</span>{% if item.is_active %}启用{% else %}停用{% endif %}</div>
-                        <div><span class="kiwi-resource-detail-label">测试用例</span>{{ item.cases.all|length }} 条</div>
+                        <div><span class="kiwi-resource-detail-label">测试用例</span>{{ item.case_total }} 条</div>
                     </div>
                     <h4>计划说明</h4>
                     <div class="kiwi-resource-detail-text markdown-text">{{ item.text|markdown2html }}</div>
@@ -250,7 +274,7 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
                     {% if browser.kind == 'requirement' %}
-                        <a class="btn btn-primary" href="{% url 'ai_assistant:requirement_trace' item.pk %}">进入完整追踪页面</a>
+                        <a class="btn btn-primary" href="{% url 'ai_assistant:requirement_trace' item.pk %}">查看需求详情</a>
                     {% elif browser.kind == 'web_case' or browser.kind == 'api_case' %}
                         <a class="btn btn-primary" href="{{ item.resource_edit_url }}">编辑用例配置</a>
                     {% elif browser.kind == 'case' %}

@@ -1,0 +1,11 @@
+<section class="plan-rollup" aria-label="含下级计划汇总">
+  <div class="plan-rollup-title"><h2>含下级计划汇总</h2><a href="#hierarchy" data-plan-summary-link>下级计划 {{ plan_rollup.subplans }}</a></div>
+  <div class="plan-rollup-metrics">
+    <div><span>用例数</span><strong>{{ plan_rollup.cases }}</strong><small>按用例编号去重</small></div>
+    <div><span>执行任务</span><strong>{{ plan_rollup.runs }}</strong><small>未结束 {{ plan_rollup.open_runs }}</small></div>
+    <div><span>执行完成率</span><strong>{% if plan_rollup.completion_rate != None %}{{ plan_rollup.completion_rate }}%{% else %}—{% endif %}</strong><small>{{ plan_rollup.completed }} / {{ plan_rollup.total }} 条执行记录</small></div>
+    <div><span>已执行通过率</span><strong>{% if plan_rollup.pass_rate != None %}{{ plan_rollup.pass_rate }}%{% else %}—{% endif %}</strong><small>通过 {{ plan_rollup.passed }} · 未通过 {{ plan_rollup.unsuccessful }} · 待执行 {{ plan_rollup.pending }}</small></div>
+  </div>
+  {% if plan_rollup.total %}<div class="plan-rollup-progress" role="progressbar" aria-label="执行完成率" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ plan_rollup.completion_rate|stringformat:'.1f' }}"><span style="width:{{ plan_rollup.completion_rate|stringformat:'.1f' }}%"></span></div>{% endif %}
+  <details class="plan-rollup-definition"><summary>统计口径</summary><p>包含本计划及有权查看的所有下级计划（含停用计划及不同版本）。用例按编号去重；历史执行与回归分别计数，不覆盖原结果。完成率按 Kiwi 执行状态权重计算；通过率为通过记录数 ÷ 已完成记录数，不代表最新一轮发布结论。</p></details>
+</section>

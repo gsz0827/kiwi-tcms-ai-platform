@@ -1,2 +1,16 @@
-{% extends "web_testing/base.html" %}
-{% block workspace %}<section class="api-card web-form"><h2>{{ suite.name }}</h2><p>测试站点：{{ suite.base_url }}</p><p>{{ suite.case_ids|length }} 条用例 · Chromium · {% if suite.stop_on_failure %}失败后停止{% else %}失败后继续其他用例{% endif %}</p><p>将使用当前用例内容生成独立快照。任务在后台执行，每条用例使用独立浏览器会话。</p><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><button class="btn btn-primary">确认执行</button> <a class="btn btn-default" href="{% url 'web_testing:suites' %}">返回</a></form></section>{% endblock %}
+{% extends "web_testing/base.html" %}{% load ui_labels %}{% load static %}
+{% block workspace %}
+<section class="automation-edit-form">
+<h2>{{ suite.name }}</h2>
+{% if unlinked %}<div class="alert alert-warning" role="alert">以下配置尚未关联业务用例，当前只能调试：{% for config in unlinked %}<a href="{% url 'web_testing:case_edit' config.pk %}">WEB-{{ config.pk }} · {{ config.name }}</a>{% if not forloop.last %}、{% endif %}{% endfor %}</div>{% endif %}
+<form method="post" id="web-submit-form"><fieldset{% if not automation_access.can_write %} disabled{% endif %}>{% csrf_token %}{{ form.token }}{{ form.non_field_errors }}
+<div class="web-submit-grid">{% for field in form %}{% if not field.is_hidden %}<div class="form-group" data-submit-field="{{ field.name }}">{{ field.label_tag|ui_term }}{% if field.name == 'environment' %}{% url 'web_testing:environment_new' as environment_create_base %}{% with suite.product_id|stringformat:'s' as environment_product_id %}{% include 'ai_assistant/automation/environment_control.html' with environment_create_url=environment_create_base|add:'?product='|add:environment_product_id %}{% endwith %}{% else %}{{ field }}{% endif %}{{ field.errors }}</div>{% endif %}{% endfor %}</div>
+<section class="automation-preflight"><h2>执行预览</h2><dl class="web-execution-preview"><dt>执行站点</dt><dd id="web-effective-url">{{ preview.base_url }}</dd><dt>证书策略</dt><dd id="web-effective-https">{% if preview.ignore_https_errors %}允许自签名证书{% else %}校验证书{% endif %}</dd><dt>执行范围</dt><dd>{{ suite.case_ids|length }} 条脚本{% if suite.stop_on_failure %} · 失败后停止{% endif %}</dd></dl></section>
+<p class="help-block" id="web-formal-hint">正式执行会创建所选计划下的执行任务，冻结构建、环境和业务用例版本；结果确认后回写。</p>
+<p class="help-block" id="web-debug-hint" hidden>调试不会创建正式执行任务，也不进入报告或发布门禁。浏览器操作可能提交表单，请使用测试环境。</p>
+{% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit">确认执行</button> <a class="btn btn-default" href="{{ back_url }}">取消</a></div>{% endif %}</fieldset>
+</form>
+</section>
+{{ plan_versions|json_script:"web-plan-versions" }}{{ build_versions|json_script:"web-build-versions" }}{{ environment_previews|json_script:"web-environment-previews" }}
+<script src="{% static 'web_testing/submit.js' %}?v=environment-inline-1"></script>
+{% endblock %}

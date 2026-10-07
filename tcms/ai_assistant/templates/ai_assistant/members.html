@@ -1,7 +1,7 @@
 {% extends "ai_assistant/base_ai.html" %}
 
 {% comment %}
-成员与角色：成员 = 产品上的对象权限（management.view_product），角色 = Django 用户组。
+成员与角色：成员 = 项目上的对象权限（management.view_product），角色 = Django 用户组。
 两者都不新建表，所以这一页做的事在 Django admin 里同样看得见、改得动。
 {% endcomment %}
 
@@ -11,24 +11,24 @@
         <h1 class="pull-left">成员与角色</h1>
     </div>
     <p class="text-muted">
-        角色决定「能做什么」：测试经理可以指派任务单、审批报告、管理成员；测试工程师可以提交与拆分
-        需求；开发同学更新指派给自己的任务单状态；只读角色只能看。加入产品则决定「能看什么」：
-        同一产品的成员互相可见对方的需求、任务单与报告。
+        角色决定「能做什么」：测试经理可以指派开发任务、审批报告、管理成员；测试工程师可以提交与拆分
+        需求；开发同学更新指派给自己的开发任务状态；只读角色只能看。加入项目则决定「能看什么」：
+        同一项目的成员互相可见对方的需求、开发任务与报告。
     </p>
     <p class="text-muted">
-        <strong>两个维度互不影响</strong>：成员是按产品分的（这里是「{{ selected_product.name|default:"产品" }}」），
-        而角色是账号级的 Django 用户组，改动会影响该账号在所有产品里的权限。
+        <strong>两个维度互不影响</strong>：成员是按项目分的（这里是「{{ selected_product.name|default:"项目" }}」），
+        而角色是账号级的 Django 用户组，改动会影响该账号在所有项目里的权限。
         超级管理员默认拥有全部权限，不必出现在成员列表里。
     </p>
 
     {% if not products %}
         <div class="alert alert-info">
-            你还没有可管理的产品。先到「项目配置」创建产品，再回到这里添加成员。
+            你还没有可管理的项目。先到「项目配置」创建项目，再回到这里添加成员。
         </div>
     {% else %}
         <form method="get" class="form-inline" style="margin-bottom: 15px">
             <div class="form-group">
-                <label for="member-product">产品</label>
+                <label for="member-product">项目</label>
                 <select id="member-product" name="product" class="form-control" onchange="this.form.submit()">
                     {% for product in products %}
                         <option value="{{ product.pk }}"{% if selected_product and selected_product.pk == product.pk %} selected{% endif %}>{{ product.name }}</option>
@@ -70,17 +70,17 @@
                             </td>
                             <td>
                                 <form method="post" action="{% url 'ai_assistant:remove_product_member' member.pk %}"
-                                      onsubmit="return confirm('确定把 {{ member.username }} 移出该产品吗？');">
+                                      onsubmit="return confirm('确定把 {{ member.username }} 移出该项目吗？');">
                                     {% csrf_token %}
                                     <input type="hidden" name="product" value="{{ selected_product.pk }}">
-                                    <button class="btn btn-link btn-xs" style="padding: 0">移出产品</button>
+                                    <button class="btn btn-link btn-xs" style="padding: 0">移出项目</button>
                                 </form>
                             </td>
                         </tr>
                     {% empty %}
                         <tr>
                             <td colspan="3" class="text-muted">
-                                该产品还没有成员。超级管理员（superuser）默认拥有全部权限，
+                                该项目还没有成员。超级管理员（superuser）默认拥有全部权限，
                                 所以不会出现在这里；要让其他账号一起协作，用下面的「添加成员」。
                             </td>
                         </tr>
@@ -112,11 +112,11 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <button class="btn btn-primary">加入产品</button>
+                        <button class="btn btn-primary">加入项目</button>
                     </form>
                 {% else %}
                     <p class="text-muted" style="margin: 0">
-                        没有可添加的账号：这里只列出尚未加入该产品的活跃账号。需要新账号请到「系统后台 → 用户」创建。
+                        没有可添加的账号：这里只列出尚未加入该项目的活跃账号。需要新账号请到「系统后台 → 用户」创建。
                     </p>
                 {% endif %}
             </div>

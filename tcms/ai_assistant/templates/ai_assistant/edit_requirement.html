@@ -1,1 +1,28 @@
-{% extends "ai_assistant/base_ai.html" %}{% block ai_contents %}<div class="container-fluid"><div class="clearfix"><h1 class="pull-left">编辑需求 #{{ ai_request.pk }} · V{{ ai_request.version }}</h1><a class="btn btn-default pull-right" style="margin-top:20px" href="{% url 'ai_assistant:requirement_trace' ai_request.pk %}">返回追踪页</a></div><div class="row"><div class="col-md-7"><form method="post" class="form-horizontal">{% csrf_token %}{% for field in form %}<div class="form-group{% if field.errors %} has-error{% endif %}"><label class="col-sm-3 control-label">{{ field.label }}</label><div class="col-sm-9">{{ field }}{{ field.errors }}</div></div>{% endfor %}<div class="form-group"><div class="col-sm-offset-3 col-sm-9"><button class="btn btn-primary" type="submit">保存为新需求版本</button></div></div></form></div><div class="col-md-5"><h3>版本记录</h3><table class="table table-condensed"><thead><tr><th>版本</th><th>变更说明</th><th>修改人</th><th>时间</th></tr></thead><tbody>{% for item in versions %}<tr><td>V{{ item.version }}</td><td>{{ item.change_summary }}</td><td>{{ item.changed_by|default:"-" }}</td><td>{{ item.created }}</td></tr>{% empty %}<tr><td colspan="4">暂无版本记录</td></tr>{% endfor %}</tbody></table></div></div></div>{% endblock %}
+{% extends 'ai_assistant/base_ai.html' %}
+{% load static tz %}
+{% block title %}编辑需求 · {{ ai_request.title }}{% endblock %}
+{% block ai_contents %}
+<link rel="stylesheet" href="{% static 'ai_assistant/document_ui.css' %}">
+<div class="document-workspace" data-requirement-editor>
+    <header class="document-heading"><div><p class="document-kicker">R-{{ ai_request.pk }} · 需求修订 V{{ ai_request.version }}</p><h1>编辑需求</h1></div><a class="btn btn-default" href="{% url 'ai_assistant:requirement_trace' ai_request.pk %}">返回需求详情</a></header>
+    <form method="post" class="document-structured-form" data-document-form data-document-unsaved="{% if form.is_bound and form.errors %}true{% else %}false{% endif %}">
+        {% csrf_token %}<input type="hidden" name="edit_token" value="{{ request.document_edit_token }}">
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="document-grid">
+            <section class="document-paper document-form-main">
+                {% include 'ai_assistant/_document_form_sections.html' %}
+                {% include 'ai_assistant/_document_field.html' with field=form.change_summary %}
+                <p class="document-save-note">业务内容或目标版本变更会新增需求修订，并将关联开发任务、用例标记为待复核。</p>
+                <div class="document-actions"><button class="btn btn-primary" type="submit" data-document-save>保存修改</button><a class="btn btn-default" href="{% url 'ai_assistant:requirement_trace' ai_request.pk %}">取消</a></div>
+            </section>
+            <aside class="document-properties document-form-properties" aria-label="需求属性"><h2>需求属性</h2><dl><div><dt>项目</dt><dd>{{ ai_request.category.product.name|default:'未指定项目' }}</dd></div><div><dt>模块</dt><dd>{{ ai_request.category.name|default:'—' }}</dd></div><div><dt>当前需求修订</dt><dd>V{{ ai_request.version }}</dd></div></dl>{% for field in form.document_attribute_fields %}{% include 'ai_assistant/_document_field.html' %}{% endfor %}</aside>
+        </div>
+    </form>
+    <details class="document-form-history"><summary>需求修订记录（{{ versions|length }}）</summary>
+        <div class="table-responsive"><table class="table document-table"><thead><tr><th>需求修订</th><th>变更说明</th><th>修改人</th><th>时间</th></tr></thead><tbody>
+        {% with display_time_zone=UI_PREFERENCES.time_zone|default:'Asia/Shanghai' %}{% for item in versions %}<tr><td>V{{ item.version }}</td><td>{{ item.change_summary }}<details class="document-history-snapshot"><summary>内容快照</summary>{% include 'ai_assistant/_document_sections.html' with document=item %}</details></td><td>{{ item.changed_by|default:'—' }}</td><td>{{ item.created|timezone:display_time_zone|date:'Y-m-d H:i' }}</td></tr>{% empty %}<tr><td colspan="4" class="document-empty">暂无修订记录</td></tr>{% endfor %}{% endwith %}
+        </tbody></table></div>
+    </details>
+</div>
+<script src="{% static 'ai_assistant/document_editor.js' %}" defer></script>
+{% endblock %}

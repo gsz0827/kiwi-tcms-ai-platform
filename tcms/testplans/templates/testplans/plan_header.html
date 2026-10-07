@@ -1,0 +1,21 @@
+<div class="plan-header-actions">
+    <a class="btn btn-default" href="{% url 'plans-search' %}?product={{ object.product_id }}&amp;product_version={{ object.product_version_id }}&amp;status=all">返回计划列表</a>
+    {% if can_edit_plan %}<a class="btn btn-default" href="{% url 'plan-edit' object.pk %}">编辑计划</a>{% endif %}
+    {% if perms.testplans.add_testplan %}<a class="btn btn-default" href="{{ plan_child_url }}">新建子计划</a><a class="btn btn-default" href="{% url 'plans-clone' object.pk %}">复用计划</a>{% endif %}
+    {% if perms.testruns.add_testrun and object.is_active %}{% if plan_confirmed_count %}<a class="btn btn-primary" href="{% url 'testruns-from-plan' object.pk %}">创建执行任务</a>{% else %}<button class="btn btn-primary" type="button" disabled title="请先关联已确认的测试用例">创建执行任务</button>{% endif %}{% endif %}
+</div>
+<div class="plan-summary" aria-label="计划概览">
+    <div><span>项目 / 版本</span><strong>{{ object.product.name }} / {{ object.product_version.value }}</strong></div>
+    <div><span>计划状态</span><strong>{% if object.is_active %}启用{% else %}停用{% endif %}</strong></div>
+    <div><span>本计划用例</span><strong>{{ plan_case_count }} <small>已确认 {{ plan_confirmed_count }}</small></strong></div>
+    <div><span>本计划执行任务</span><strong>{{ plan_run_count }} <small>未结束 {{ plan_open_run_count }}</small></strong></div>
+</div>
+{% if plan_parent %}<p class="plan-parent-link">上级计划：<a href="{{ plan_parent.get_absolute_url }}">TP-{{ plan_parent.pk }} · {{ plan_parent.name }}</a></p>{% endif %}
+{% include 'testplans/plan_hierarchy.html' %}
+<nav class="plan-tabs" aria-label="计划详情" role="tablist">
+    <button type="button" id="plan-tab-cases" role="tab" aria-controls="plan-panel-cases" aria-selected="true" data-plan-tab="cases">关联用例</button>
+    <button type="button" id="plan-tab-runs" role="tab" aria-controls="plan-panel-runs" aria-selected="false" tabindex="-1" data-plan-tab="runs">执行任务</button>
+    <button type="button" id="plan-tab-hierarchy" role="tab" aria-controls="plan-panel-hierarchy" aria-selected="false" tabindex="-1" data-plan-tab="hierarchy">下级计划</button>
+    <button type="button" id="plan-tab-description" role="tab" aria-controls="plan-panel-description" aria-selected="false" tabindex="-1" data-plan-tab="description">计划说明</button>
+    <button type="button" id="plan-tab-more" role="tab" aria-controls="plan-panel-more" aria-selected="false" tabindex="-1" data-plan-tab="more">标签与附件</button>
+</nav>

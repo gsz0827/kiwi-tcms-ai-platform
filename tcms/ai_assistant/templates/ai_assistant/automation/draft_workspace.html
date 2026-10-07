@@ -1,0 +1,22 @@
+{% load ui_labels %}{% load static automation_ui %}
+<header class="api-header automation-page-header"><div><h1>{{ batch.title }}</h1><p class="text-muted">{{ product.name }} · AI 草稿</p></div><div class="automation-header-actions"><a class="btn btn-default" href="{{ configs_url }}">返回脚本列表</a>{% if automation_access.can_write %}<a class="btn btn-default" href="{{ generate_url }}">重新生成</a>{% endif %}</div></header>
+<p class="automation-draft-notice">人工复核后保存为自动化脚本；保存不会自动执行或覆盖已有脚本。</p>
+{% if job %}<section class="api-card" id="api-ai-job" data-status-url="{% url 'ai_assistant:job_status' job.pk %}"><header><h2>生成任务</h2><a href="{% url 'ai_assistant:job_detail' job.pk %}">任务详情</a></header>
+<p class="api-result-body">状态：<strong id="api-ai-job-status">{{ job.get_status_display|ui_term }}</strong> · 进度 <span id="api-ai-job-progress">{{ job.progress }}%</span><span id="api-ai-job-stage">{% if job.stage %} · {{ job.stage }}{% endif %}</span><br><span id="api-ai-job-error" class="text-danger"{% if not job.error_message %} style="display:none"{% endif %}>{{ job.error_message }}</span></p>
+{% if not job.is_terminal %}<div class="progress automation-job-progress"><div id="api-ai-job-bar" class="progress-bar progress-bar-info progress-bar-striped active" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ job.progress }}" style="width:{{ job.progress }}%"></div></div>{% endif %}</section>{% endif %}
+<form method="post" action="{{ import_url }}" id="automation-draft-form">{% csrf_token %}
+{% if drafts and automation_access.can_write %}<div class="automation-draft-toolbar"><label><input type="checkbox" id="automation-draft-all"> 全选可保存草稿</label><span id="automation-draft-selection" aria-live="polite">已选 0 条</span></div>{% endif %}
+{% for draft in drafts %}<section class="api-card automation-draft"><header><h2>{{ forloop.counter }}. {{ draft.name }}</h2>
+{% if draft.imported_at %}<span class="label label-success">已保存</span>{% elif draft.validation_errors %}<span class="label label-danger">待修正</span>{% elif draft.reviewed_at %}<span class="label label-info">已复核</span>{% else %}<span class="label label-warning">待复核</span>{% endif %}</header>
+<div class="automation-draft-content">
+{% if not draft.imported_at and automation_access.can_write %}<div class="automation-draft-actions"><label><input type="checkbox" name="draft_ids" value="{{ draft.pk }}"{% if not draft.reviewed_at or draft.validation_errors %} disabled{% endif %}> 选择保存</label><a href="{% if kind == 'web' %}{% url 'web_testing:ai_review' draft.pk %}{% else %}{% url 'ai_assistant:api_ai_review' draft.pk %}{% endif %}">编辑与复核</a></div>{% endif %}
+<h3>测试说明</h3><p>{{ draft.description|default:'未填写'|linebreaksbr }}</p>
+{% automation_draft_preview draft kind %}
+<details class="automation-source"><summary>原文依据{% if draft.questions %}与待确认问题{% endif %}</summary><p>{{ draft.evidence|default:'未提供'|linebreaksbr }}</p>{% if draft.questions %}<strong>待确认问题</strong><ul>{% for question in draft.questions %}<li>{{ question }}</li>{% endfor %}</ul>{% endif %}</details>
+{% for error in draft.validation_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+{% if kind == 'web' and draft.web_case_id %}<p><a href="{% url 'web_testing:case_edit' draft.web_case_id %}">查看已保存脚本</a></p>{% elif kind == 'api' and draft.api_case_id %}<p><a href="{% url 'ai_assistant:api_case_edit' product.pk draft.api_case_id %}">查看已保存脚本</a></p>{% elif draft.imported_at %}<p class="text-muted">原脚本已删除，历史草稿仍保留。</p>{% endif %}
+</div></section>{% empty %}<section class="api-card"><p class="api-empty">尚未生成草稿。任务运行期间会自动更新进度，完成后显示草稿。</p></section>{% endfor %}
+{% if drafts and automation_access.can_write %}<div class="automation-form-actions"><button id="automation-draft-save" class="btn btn-primary" type="submit" disabled>保存选中脚本</button><a class="btn btn-default" href="{{ suites_url }}">管理测试套件</a>{% if imported_ids %}<a class="btn btn-default" href="{{ execute_url }}">执行已保存脚本</a>{% endif %}</div>{% endif %}</form>
+<details class="automation-source automation-source-material"><summary>本次生成资料</summary><h3>文档资料</h3><pre>{{ source.documentation }}</pre><h3>测试要求</h3><pre>{{ source.requirements }}</pre>{% if rules %}<h3>项目规则包</h3>{% for rule in rules %}<p>{{ rule.name }}：{{ rule.instructions|truncatechars:300 }}</p>{% endfor %}{% endif %}</details>
+<script src="{% static 'ai_assistant/automation_drafts.js' %}" defer></script>
+{% if job and not job.is_terminal %}<script src="{% static 'ai_assistant/api_ai_drafts.js' %}" defer></script>{% endif %}

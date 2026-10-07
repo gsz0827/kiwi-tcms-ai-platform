@@ -1,0 +1,4 @@
+{% load automation_ui %}{% automation_scope as scope %}
+<header class="api-header automation-page-header"><h1>{{ title }}</h1><div class="automation-header-actions">
+{% if automation_access.can_write %}{% if import_url %}<a class="btn btn-default" href="{{ import_url }}">导入 Postman</a>{% endif %}{% if ai_url %}<a class="btn btn-default" href="{{ ai_url }}">{{ ai_label }}</a>{% endif %}{% if create_url %}<a class="btn btn-primary" href="{{ create_url }}{% if '?' in create_url %}&amp;{% else %}?{% endif %}return_to={{ scope.return_to|urlencode }}">{{ create_label }}</a>{% endif %}{% endif %}
+</div></header>

@@ -1,9 +1,9 @@
 {% extends "ai_assistant/api/base.html" %}
 {% block title %}测试用例库{% endblock %}
 {% block api_content %}
-<header class="api-header"><div><p>需求与设计 / 用例库</p><h1>测试用例</h1><p>统一管理测试场景，按业务分类和执行方式筛选。接口请求与断言保存在自动化配置中。</p></div>{% if product %}<a class="btn btn-primary" href="{% url 'ai_assistant:library_case_new' product.pk %}">新建测试用例</a>{% endif %}</header>
+<header class="api-header"><div><p>需求与设计 / 用例库</p><h1>测试用例</h1><p>统一管理测试场景，按业务分类和执行方式筛选。接口请求与断言保存在自动化脚本中。</p></div>{% if product %}<a class="btn btn-primary" href="{% url 'ai_assistant:library_case_new' product.pk %}">新建测试用例</a>{% endif %}</header>
 <form method="get" class="api-product-picker">
-<label for="library-product">产品</label><select id="library-product" name="product" class="form-control">{% for p in products %}<option value="{{ p.pk }}"{% if p.pk == product.pk %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+<label for="library-product">项目</label><select id="library-product" name="product" class="form-control">{% for p in products %}<option value="{{ p.pk }}"{% if p.pk == product.pk %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
 <label for="library-type">执行方式</label><select id="library-type" name="type" class="form-control"><option value="">全部</option><option value="manual"{% if mode == 'manual' %} selected{% endif %}>手工用例</option><option value="automated"{% if mode == 'automated' %} selected{% endif %}>自动化用例</option></select>
 <label for="library-category">业务分类</label><select id="library-category" name="category" class="form-control"><option value="">全部</option>{% for c in categories %}<option value="{{ c.pk }}"{% if request.GET.category == c.pk|stringformat:'s' %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
 <label class="sr-only" for="library-q">搜索标题</label><input id="library-q" class="form-control" name="q" value="{{ request.GET.q }}" placeholder="搜索标题"><button class="btn btn-default">筛选</button>
@@ -12,8 +12,8 @@
 <section class="api-card"><header><h2>用例库 <small>{{ cases.paginator.count }} 条</small></h2></header><div class="api-table-scroll"><table class="table"><thead><tr><th>用例</th><th>执行方式</th><th>操作</th></tr></thead><tbody>
 {% for case in cases %}<tr><td><a href="{% url 'testcases-get' case.pk %}">TC-{{ case.pk }} · {{ case.summary }}</a></td><td>{% if case.has_api %}<span class="label label-info">自动化 · 接口</span>{% elif case.is_automated %}<span class="label label-info">自动化</span>{% else %}<span class="label label-default">手工</span>{% endif %}</td><td>
 <a href="{% url 'testcases-get' case.pk %}">查看步骤</a>
-{% for config in case.api_configs %}<br><a href="{% url 'ai_assistant:api_case_edit' product.pk config.pk %}">接口配置{% if case.api_configs|length > 1 %} #{{ config.pk }}{% endif %}</a> · <a href="{% url 'ai_assistant:api_submit' product.pk %}?case={{ config.pk }}">自动化执行</a>
-{% empty %}{% if case.has_api %}<br><small>执行配置由其所属账号管理</small>{% else %}<br><a href="{% url 'ai_assistant:api_case_new' product.pk %}?test_case={{ case.pk }}">配置接口自动化</a>{% endif %}{% endfor %}
+{% for config in case.api_configs %}<br><a href="{% url 'ai_assistant:api_case_edit' product.pk config.pk %}">接口脚本{% if case.api_configs|length > 1 %} #{{ config.pk }}{% endif %}</a> · <a href="{% url 'ai_assistant:api_submit' product.pk %}?case={{ config.pk }}">自动化执行</a>
+{% empty %}{% if case.has_api %}<br><small>执行脚本由其所属账号管理</small>{% else %}<br><a href="{% url 'ai_assistant:api_case_new' product.pk %}?test_case={{ case.pk }}">添加接口脚本</a>{% endif %}{% endfor %}
 </td></tr>{% empty %}<tr><td colspan="3" class="api-empty">没有符合条件的用例。可新建测试用例，或从需求分析导入。</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% if cases.has_other_pages %}<p class="api-pagination">{% if cases.has_previous %}<a href="?{{ query }}&page={{ cases.previous_page_number }}">上一页</a>{% endif %} {{ cases.number }} / {{ cases.paginator.num_pages }} {% if cases.has_next %}<a href="?{{ query }}&page={{ cases.next_page_number }}">下一页</a>{% endif %}</p>{% endif %}

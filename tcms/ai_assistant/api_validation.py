@@ -109,14 +109,14 @@ def validate_case(data):
 def expand(value, variables):
     def replace(match):
         if match[1] not in variables:
-            raise ValueError(f"缺少环境变量：{match[1]}")
+            raise ValueError(f"缺少环境参数：{match[1]}")
         return str(variables[match[1]])
 
     if isinstance(value, str):
         match = VARIABLE.fullmatch(value)
         if match:
             if match[1] not in variables:
-                raise ValueError(f"缺少环境变量：{match[1]}")
+                raise ValueError(f"缺少环境参数：{match[1]}")
             return variables[match[1]]
         return VARIABLE.sub(replace, value)
     if isinstance(value, dict):

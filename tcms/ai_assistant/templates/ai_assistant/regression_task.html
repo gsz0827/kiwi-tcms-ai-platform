@@ -1,0 +1,13 @@
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
+{% block title %}新建复测任务{% endblock %}
+{% block ai_contents %}
+<div class="container-fluid">
+  <h2>新建复测任务</h2>
+  <p>来源：<a href="{{ back_url }}">{{ source.title }}</a> · 原执行任务 TR-{{ origin.pk }}</p>
+  <form method="post" class="form-horizontal">{% csrf_token %}
+    {{ form.non_field_errors }}{% for hidden in form.hidden_fields %}{{ hidden }}{{ hidden.errors }}{% endfor %}
+    {% for field in form.visible_fields %}<div class="form-group"><label class="col-sm-2 control-label" for="{{ field.id_for_label }}">{{ field.label|ui_term }}</label><div class="col-sm-6">{{ field }}{{ field.errors }}</div></div>{% endfor %}
+    <div class="form-group"><div class="col-sm-offset-2 col-sm-6"><button class="btn btn-primary" type="submit">创建复测任务</button> <a class="btn btn-default" href="{{ back_url }}">返回</a></div></div>
+  </form>
+</div>
+{% endblock %}

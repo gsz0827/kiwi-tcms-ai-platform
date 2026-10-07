@@ -1,0 +1,14 @@
+{% extends "web_testing/base.html" %}{% load ui_labels %}{% load static %}
+{% block workspace %}
+<form method="post" id="web-debug-form" class="automation-edit-form">{% csrf_token %}{{ form.token }}{{ form.non_field_errors }}
+<section class="automation-form-section"><h2>执行环境</h2><div class="form-group">{{ form.environment.label_tag|ui_term }}{% include 'ai_assistant/automation/environment_control.html' with field=form.environment environment_create_url=environment_url %}{{ form.environment.errors }}</div></section>
+<section class="automation-preflight"><h2>执行预览</h2><dl>
+<dt>调试脚本</dt><dd>WEB-{{ config.pk }} · {{ config.name }}</dd>
+<dt>执行站点</dt><dd id="web-debug-url">—</dd><dt>证书策略</dt><dd id="web-debug-https">—</dd>
+<dt>结果回写</dt><dd>不回写正式执行任务，不进入正式报告</dd>
+</dl></section>
+<section class="automation-form-section"><h2>调试确认</h2><p>执行已保存的脚本和环境前置步骤。浏览器操作可能提交表单，请使用测试环境。</p><div class="form-group">{{ form.confirm }} {{ form.confirm.label_tag|ui_term }}{{ form.confirm.errors }}</div></section>
+<div class="automation-form-actions"><button class="btn btn-primary" type="submit">确认调试</button><a class="btn btn-default" href="{% url 'web_testing:case_edit' config.pk %}">取消</a></div>
+</form>
+{{ environment_previews|json_script:"web-debug-environments" }}
+<script src="{% static 'web_testing/debug.js' %}?v=environment-inline-1"></script>{% endblock %}

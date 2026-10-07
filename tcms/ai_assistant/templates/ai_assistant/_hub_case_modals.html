@@ -1,0 +1,7 @@
+{% for row in directory_rows %}
+<div class="modal fade kiwi-resource-modal" id="{{ row.modal_id }}" tabindex="-1" role="dialog" aria-labelledby="{{ row.modal_id }}-title"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">
+<div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-label="关闭"><span aria-hidden="true">&times;</span></button><h4 class="modal-title" id="{{ row.modal_id }}-title">{{ row.number }} · {{ row.name }}</h4></div>
+<div class="modal-body"><p><strong>项目：</strong>{{ row.product.name }} · <strong>目录：</strong>{{ row.folder_name }}</p><p>{{ row.detail }}</p><h4>用例说明</h4><div class="kiwi-resource-detail-text">{{ row.text|default:'暂无说明'|linebreaksbr }}</div></div>
+<div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">关闭</button><a class="btn btn-primary" href="{{ row.url }}">{% if row.can_move %}查看 / 编辑完整用例{% else %}查看完整用例{% endif %}</a></div>
+</div></div></div>
+{% endfor %}

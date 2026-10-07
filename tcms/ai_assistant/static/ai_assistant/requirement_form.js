@@ -3,6 +3,7 @@
     var generateButton = document.getElementById("generate-button");
 
     function showProgress(event, action) {
+        if (event.defaultPrevented) { return; }
         var submittedForm = event.currentTarget;
         if (submittedForm.dataset.submitting === "true") {
             event.preventDefault();

@@ -1,0 +1,6 @@
+{% extends 'ai_assistant/api/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block api_content %}
+<header class="api-header automation-page-header"><h1>{{ title }}</h1><a href="{{ back_url }}">返回脚本列表</a></header>
+<section class="api-card"><h2>{{ batch.title }}</h2><p>本集合已导入，不会重复创建。请逐条复核请求、状态码与断言，再加入套件执行。</p><table class="table automation-table"><thead><tr><th>脚本</th><th>请求</th><th>复核状态</th><th>操作</th></tr></thead><tbody>{% for script in scripts %}<tr><td>API-{{ script.pk }} · {{ script.name }}</td><td>{{ script.method }} {{ script.path }}</td><td>{% if script.import_review_required %}待复核{% else %}已复核{% endif %}</td><td><a href="{% url 'ai_assistant:api_case_edit' product.pk script.pk %}">复核 / 编辑</a></td></tr>{% empty %}<tr><td colspan="4">导入的脚本已删除或不在当前范围内。</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

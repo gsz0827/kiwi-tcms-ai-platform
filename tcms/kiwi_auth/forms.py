@@ -13,10 +13,38 @@ from django.utils.translation import override
 
 from tcms.core.utils import request_host_link
 from tcms.core.utils.mailto import custom_email_validators, mailto
-from tcms.kiwi_auth.models import UserActivationKey
+from tcms.kiwi_auth.models import UserActivationKey, UserPreference
 from tcms.utils.permissions import initiate_user_with_default_setups
 
 User = get_user_model()  # pylint: disable=invalid-name
+
+
+class ProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ("first_name", "last_name")
+        labels = {"first_name": "名字", "last_name": "姓氏"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-control"
+
+
+class DisplaySettingsForm(forms.ModelForm):
+    class Meta:
+        model = UserPreference
+        fields = ("language", "time_zone")
+        labels = {"language": "界面语言", "time_zone": "显示时区"}
+        help_texts = {
+            "language": "保存后刷新页面生效。",
+            "time_zone": "只影响界面时钟等显示，不修改历史测试数据。",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-control"
 
 
 class CustomCaptchaTextInput(fields.CaptchaTextInput):

@@ -59,6 +59,11 @@ def perform(page, steps, snapshot, deadline, checkpoint, logs):
         elif action == 'check': locator.check()
         elif action == 'assert_visible': expect(locator).to_be_visible(timeout=timeout)
         elif action == 'assert_text': expect(locator).to_contain_text(value,timeout=timeout)
+        elif action == 'assert_hidden': expect(locator).to_be_hidden(timeout=timeout)
+        elif action == 'assert_enabled': expect(locator).to_be_enabled(timeout=timeout)
+        elif action == 'assert_text_exact': expect(locator).to_have_text(value,timeout=timeout)
+        elif action == 'assert_value': expect(locator).to_have_value(value,timeout=timeout)
+        elif action == 'assert_count': expect(locator).to_have_count(int(value),timeout=timeout)
         elif action == 'assert_url': expect(page).to_have_url(re.compile(re.escape(value)),timeout=timeout)
         elif action == 'assert_title': expect(page).to_have_title(re.compile(re.escape(value)),timeout=timeout)
         entry['status']='passed'
@@ -105,7 +110,7 @@ def execute(run_id):
                                 storage = login_context.storage_state()
                             except Cancelled: raise
                             except Exception as exc:
-                                setup_error = f'公共登录/前置步骤失败（{type(exc).__name__}），未执行业务步骤。'
+                                setup_error = f'前置执行脚本失败（{type(exc).__name__}），未执行业务步骤。'
                                 setup_shot = capture(page)
                             finally: login_context.close()
                     logs, error, screenshot, status = [], setup_error, setup_shot, 'failed' if setup_error else 'passed'

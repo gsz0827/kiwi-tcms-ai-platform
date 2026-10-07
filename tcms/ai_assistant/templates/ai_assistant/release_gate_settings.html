@@ -1,24 +1,24 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
 
 {% block ai_contents %}
 <div class="container-fluid">
     <h1>发布门禁规则</h1>
-    <p class="text-muted">门禁规则挂在<strong>产品</strong>上：同一产品下所有报告（不论是谁生成的）都按同一条规则判定，只有测试经理能维护。没有自定义规则的产品使用<strong>内置默认门禁</strong>：P1 缺陷为 0、未关闭缺陷为 0、成功率至少 95%、全部执行。</p>
+    <p class="text-muted">门禁规则挂在<strong>项目</strong>上：同一项目下所有报告（不论是谁生成的）都按同一条规则判定，只有测试经理能维护。没有自定义规则的项目使用<strong>内置默认门禁</strong>：P1 缺陷为 0、未关闭缺陷为 0、成功率至少 95%、全部执行。</p>
     <div class="row">
         <div class="col-md-5">
             <div class="panel panel-default">
                 <div class="panel-heading"><strong>新增 / 更新规则</strong></div>
                 <div class="panel-body">
-                    <p class="text-muted">选择产品后保存即为该产品生效：一个产品只有一条规则，重复保存会覆盖。</p>
-                    <form method="post" class="form-horizontal">{% csrf_token %}{% for field in form %}<div class="form-group{% if field.errors %} has-error{% endif %}"><label class="col-sm-4 control-label">{{ field.label }}</label><div class="col-sm-8">{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div></div>{% endfor %}<div class="form-group"><div class="col-sm-offset-4 col-sm-8"><button class="btn btn-primary" type="submit">保存规则</button></div></div></form>
+                    <p class="text-muted">选择项目后保存即为该项目生效：一个项目只有一条规则，重复保存会覆盖。</p>
+                    <form method="post" class="form-horizontal">{% csrf_token %}{% for field in form %}<div class="form-group{% if field.errors %} has-error{% endif %}"><label class="col-sm-4 control-label">{{ field.label|ui_term }}</label><div class="col-sm-8">{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div></div>{% endfor %}<div class="form-group"><div class="col-sm-offset-4 col-sm-8"><button class="btn btn-primary" type="submit">保存规则</button></div></div></form>
                 </div>
             </div>
         </div>
         <div class="col-md-7">
             <div class="panel panel-default">
-                <div class="panel-heading"><strong>各产品当前生效的规则</strong></div>
+                <div class="panel-heading"><strong>各项目当前生效的规则</strong></div>
                 <table class="table table-condensed">
-                    <thead><tr><th>产品</th><th>规则</th><th>阻断优先级</th><th>最低成功率</th><th>未关闭上限</th><th>状态</th><th>最后修改</th></tr></thead>
+                    <thead><tr><th>项目</th><th>规则</th><th>阻断优先级</th><th>最低成功率</th><th>未关闭上限</th><th>状态</th><th>最后修改</th></tr></thead>
                     <tbody>
                     {% for item in products %}
                         <tr>
@@ -37,7 +37,7 @@
                             {% endif %}
                         </tr>
                     {% empty %}
-                        <tr><td colspan="7" class="text-muted">还没有产品。</td></tr>
+                        <tr><td colspan="7" class="text-muted">还没有项目。</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>

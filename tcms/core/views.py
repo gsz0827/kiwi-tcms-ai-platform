@@ -95,12 +95,21 @@ class DashboardView(TemplateView):  # pylint: disable=missing-permission-require
             )
 
         # List all recent TestPlans and TestRuns
+        from tcms.ai_assistant.workbench_scope import project_scope, automation_drafts
+        product, version, invalid_scope = project_scope(self.request)
+
         test_plans = (
             TestPlan.objects.filter(author=self.request.user)
             .order_by("-pk")
             .select_related("product", "type")
             .annotate(num_runs=Count("run", distinct=True))
         )
+        if invalid_scope:
+            test_plans = test_plans.none()
+        elif product:
+            test_plans = test_plans.filter(product=product)
+        if version:
+            test_plans = test_plans.filter(product_version=version)
         test_plans_disable_count = test_plans.filter(is_active=False).count()
 
         # pylint: disable=unsupported-binary-operation
@@ -116,13 +125,20 @@ class DashboardView(TemplateView):  # pylint: disable=missing-permission-require
         )
 
         requirements = AIRequest.objects.filter(created_by=self.request.user)
+        if invalid_scope:
+            test_runs, requirements = test_runs.none(), requirements.none()
+        elif product:
+            test_runs = test_runs.filter(plan__product=product)
+            requirements = requirements.filter(category__product=product)
+        if version:
+            test_runs = test_runs.filter(build__version=version)
         jobs = AIJob.objects.filter(owner=self.request.user)
         job_counts = jobs.aggregate(
             active=Count("pk", filter=Q(status__in=AIJob.ACTIVE_STATUSES)),
             failed=Count("pk", filter=Q(status="failed")),
         )
         draft_count = AITestCaseDraft.objects.filter(
-            request__created_by=self.request.user, imported_case__isnull=True
+            request__in=requirements, imported_case__isnull=True
         ).count()
         recent_requirements = (
             requirements.select_related("category__product")
@@ -154,6 +170,10 @@ class DashboardView(TemplateView):  # pylint: disable=missing-permission-require
             )
 
         return {
+            "workbench_product": product,
+            "workbench_version": version,
+            "workbench_invalid_scope": invalid_scope,
+            **automation_drafts(self.request.user, product, invalid_scope),
             "requirement_count": requirements.count(),
             "pending_draft_count": draft_count,
             "active_job_count": job_counts["active"],

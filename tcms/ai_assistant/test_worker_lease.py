@@ -32,7 +32,7 @@ class LeaseFixtures:
         )
 
     def job(self, status="running", age_seconds=7200, **extra):
-        """造一个 status 为 status、心跳在 age_seconds 之前的任务单。"""
+        """造一个 status 为 status、心跳在 age_seconds 之前的开发任务。"""
         return AIJob.objects.create(
             owner=self.owner, model_config=self.config, operation="connection_test",
             status=status, heartbeat=timezone.now() - timedelta(seconds=age_seconds),

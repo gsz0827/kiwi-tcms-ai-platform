@@ -1,0 +1,14 @@
+{% load ui_labels %}{% if kind == 'web' %}
+<h3>操作与断言</h3>
+<div class="automation-table-scroll"><table class="table automation-table automation-draft-table"><thead><tr><th>序号</th><th>操作</th><th>定位器</th><th>输入值 / 预期值</th></tr></thead><tbody>
+{% for step in steps %}<tr><td>{{ forloop.counter }}</td><td>{{ step.action }}</td><td><code>{{ step.selector|default:'—' }}</code></td><td>{{ step.value|default:'—'|linebreaksbr }}</td></tr>{% empty %}<tr><td colspan="4" class="api-empty">暂无有效步骤，请进入复核补充。</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}
+<h3>请求配置</h3>
+<dl class="automation-request-preview">{% for row in request_rows %}<dt>{{ row.label|ui_term }}</dt><dd><code>{{ row.value|default:'—' }}</code></dd>{% empty %}<dt>配置</dt><dd>尚未提供有效配置，请进入复核补充。</dd>{% endfor %}</dl>
+<h3>响应断言</h3>
+<div class="automation-table-scroll"><table class="table automation-table automation-draft-table"><thead><tr><th>字段路径</th><th>比较方式</th><th>预期值</th></tr></thead><tbody>
+{% for item in assertions %}<tr><td><code>{{ item.path }}</code></td><td>{{ item.operator }}</td><td>{{ item.expected|linebreaksbr }}</td></tr>{% empty %}<tr><td colspan="3" class="api-empty">未配置字段断言，请核对预期状态码及响应要求。</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+<details class="automation-source"><summary>查看脚本 JSON</summary><pre>{{ raw }}</pre></details>

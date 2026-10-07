@@ -1,0 +1,17 @@
+{% load ui_labels %}{% if field.is_hidden %}{{ field }}{% else %}
+<div class="form-group{% if field.errors %} has-error{% endif %}">
+    <label for="{{ field.id_for_label }}">{{ field.label|ui_term }}{% if field.field.required %}<span class="document-required" aria-hidden="true"> *</span>{% endif %}</label>
+    {% if field.field.widget.input_type != 'select' and field.field.widget.attrs.rows %}
+    <div class="document-editor" data-document-editor{% if field.name == 'business_rules' or field.name == 'exceptions' or field.name == 'acceptance_criteria' or field.name == 'acceptance' %} data-document-items{% endif %}>
+        <div class="document-editor-toolbar" role="group" aria-label="{{ field.label|ui_term }}编辑方式">
+            <button type="button" class="document-editor-mode" data-editor-write aria-pressed="true" aria-controls="{{ field.id_for_label }}-input">编辑</button>
+            <button type="button" class="document-editor-mode" data-editor-preview-button aria-pressed="false" aria-controls="{{ field.id_for_label }}-preview">预览</button>
+        </div>
+        <div data-editor-input id="{{ field.id_for_label }}-input">{{ field }}</div>
+        <article class="document-prose document-editor-preview" data-editor-preview id="{{ field.id_for_label }}-preview" aria-label="{{ field.label|ui_term }}预览" aria-live="polite" hidden></article>
+    </div>
+    {% else %}{{ field }}{% endif %}
+    {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
+    {% for error in field.errors %}<p class="help-block document-field-error" role="alert">{{ error }}</p>{% endfor %}
+</div>
+{% endif %}

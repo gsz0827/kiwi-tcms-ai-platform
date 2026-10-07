@@ -1,0 +1,6 @@
+{% extends "web_testing/base.html" %}{% load static tz %}
+{% block workspace %}
+{% if not has_models %}<div class="alert alert-warning automation-model-alert">当前账号尚未配置 AI 模型，请先<a href="{% url 'ai_assistant:model_settings' %}">配置自己的模型</a>。不会使用服务器默认模型。</div>{% endif %}
+<form method="post" class="automation-edit-form">{% csrf_token %}<fieldset{% if not automation_access.can_write %} disabled{% endif %}>{% include 'ai_assistant/automation/form_sections.html' %}{% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit"{% if not has_models %} disabled{% endif %}>生成测试用例</button><a class="btn btn-default" href="{% url 'web_testing:cases' %}?product={{ product.pk }}">返回列表</a></div>{% endif %}</fieldset></form>
+<section class="api-card"><header><h2>最近生成记录</h2></header><div class="api-table-scroll"><table class="table automation-table"><thead><tr><th>主题</th><th>状态</th><th>提交时间</th></tr></thead><tbody>{% for batch in batches %}<tr><td><a href="{% url 'web_testing:ai_detail' batch.pk %}">{{ batch.title }}</a></td><td>{{ batch.status_label }}</td><td>{{ batch.created|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i' }}</td></tr>{% empty %}<tr><td colspan="3" class="automation-empty">暂无生成记录</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

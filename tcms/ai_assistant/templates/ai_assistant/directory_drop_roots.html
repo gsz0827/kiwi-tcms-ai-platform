@@ -1,0 +1,6 @@
+{% if browser.kind == 'case' or browser.kind == 'web_case' or browser.kind == 'api_case' or browser.quick_kind == 'case_group' %}
+<div class="directory-drop-roots">
+  <span data-tree-drop="root" data-drop-product="{{ browser.product.pk|default:'' }}" title="将文件夹拖到这里，改为所属项目的根目录"><span class="fa fa-folder-o"></span> 项目根目录</span>
+  <span data-tree-drop="unfiled" data-drop-product="{{ browser.product.pk|default:'' }}" title="将用例拖到这里，移除目录归属"><span class="fa fa-inbox"></span> 未归档</span>
+</div>
+{% endif %}

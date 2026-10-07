@@ -1,0 +1,4 @@
+.source-recheck .document-paper { min-width:0; margin-bottom:20px; overflow-wrap:anywhere; }
+.source-recheck .api-table-scroll { max-width:100%; overflow-x:auto; }
+.source-recheck .document-section-title { overflow-wrap:anywhere; }
+.source-recheck form.document-paper { min-height:0; }

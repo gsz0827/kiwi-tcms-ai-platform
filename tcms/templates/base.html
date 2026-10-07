@@ -58,8 +58,11 @@
             {% platform_resource_browser as resource_browser %}
             {% if resource_browser %}
                 <div class="kiwi-resource-workspace">
-                    <aside class="kiwi-resource-pane" aria-label="{{ resource_browser.title }}">
-                        {% include 'include/platform_resource_browser.html' with browser=resource_browser %}
+                    <aside class="kiwi-resource-pane" data-account="{{ user.pk }}" aria-label="{{ resource_browser.title }}">
+                        {% include resource_browser.template|default:'include/platform_resource_browser.html' with browser=resource_browser %}
+                        {% include 'ai_assistant/directory_quick_dialog.html' with browser=resource_browser %}
+                        <link rel="stylesheet" href="{% static 'ai_assistant/directory_tree.css' %}">
+                        <script src="{% static 'ai_assistant/directory_tree.js' %}"></script>
                     </aside>
                     <section class="kiwi-resource-content">
             {% endif %}
@@ -78,6 +81,7 @@
 
     <script src="{% static 'moment/min/moment-with-locales.min.js' %}"></script>
     <script src="{% static 'moment-timezone/builds/moment-timezone-with-data.min.js' %}"></script>
+    <script src="{% static 'js/platform_clock.js' %}"></script>
     <script src="{% static 'eonasdan-bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js' %}"></script>
 
     <script src="{% static 'simplemde/dist/simplemde.min.js' %}"></script>

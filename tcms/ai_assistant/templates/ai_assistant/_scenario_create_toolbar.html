@@ -1,0 +1,12 @@
+<header class="scenario-library-header">
+  <h1>用例库</h1>
+  {% if can_create %}
+  {% if product %}<a class="btn btn-primary" id="scenario-create-button" href="{{ create_url }}">新建用例</a>{% else %}<button class="btn btn-primary" type="button" id="scenario-create-button" data-toggle="modal" data-target="#scenario-create-product">新建用例</button>{% endif %}
+  {% endif %}
+</header>
+{% if can_create and not product %}
+<div class="modal fade" id="scenario-create-product" tabindex="-1" role="dialog" aria-labelledby="scenario-create-product-title"><div class="modal-dialog" role="document"><div class="modal-content">
+  <div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-label="关闭">&times;</button><h4 class="modal-title" id="scenario-create-product-title">新建用例</h4></div>
+  <form method="get" action="{% url 'ai_assistant:scenario_new_choose' %}"><div class="modal-body"><label for="scenario-create-product-id">所属项目</label><select class="form-control" id="scenario-create-product-id" name="product" required><option value="">请选择项目</option>{% for p in products %}<option value="{{ p.pk }}">{{ p.name }}</option>{% endfor %}</select></div><div class="modal-footer"><button class="btn btn-default" type="button" data-dismiss="modal">取消</button><button class="btn btn-primary" type="submit"{% if not products %} disabled{% endif %}>继续编写</button></div></form>
+</div></div></div>
+{% endif %}

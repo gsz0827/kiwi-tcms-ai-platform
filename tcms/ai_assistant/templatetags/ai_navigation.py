@@ -57,20 +57,22 @@ def _folder_tree(folders, folder_items):
 
 
 def _build_resource_browser(
-    request, resource_type, title, icon, queryset, group_label, folder_product=None
+    request, resource_type, title, icon, queryset, group_label, folder_product=None,
+    limit=RESOURCE_BROWSER_LIMIT,
 ):
     """右侧页面的共享目录面板。
 
-    folder_product 给定时只列该产品的目录（AI 用例库是单产品视图，310px
-    的窄栏里混进别的产品的目录只会更乱），并在返回值里给出 default_product_id
+    folder_product 给定时只列该项目的目录（AI 用例库是单项目视图，310px
+    的窄栏里混进别的项目的目录只会更乱），并在返回值里给出 default_product_id
     供「新建目录」弹窗预选。
     """
     total = queryset.count()
-    items = list(queryset[:RESOURCE_BROWSER_LIMIT])
+    items = list(queryset[:limit])
     items = _with_resource_groups(items, group_label)
     item_ids = [item.pk for item in items]
 
-    folder_query = ProjectResourceFolder.objects.filter(resource_type=resource_type)
+    from tcms.ai_assistant.case_directories import folder_types, visible_folders
+    folder_query = visible_folders(request.user).filter(resource_type__in=folder_types(resource_type))
     if folder_product is not None:
         folder_query = folder_query.filter(product=folder_product)
     folders = list(
@@ -99,25 +101,56 @@ def _build_resource_browser(
             unfiled_items.append(item)
 
     folder_nodes = _folder_tree(folders, folder_items)
+    if resource_type in {"case", "web_case", "api_case"}:
+        from tcms.ai_assistant.case_directories import can_manage_folder
+        managed_folder_nodes = [node for node in folder_nodes if can_manage_folder(request.user, node)]
+    else:
+        managed_folder_nodes = folder_nodes
     can_manage = (resource_type in {"web_case", "api_case"} and not roles.is_read_only(request.user)) or resource_type == "requirement" or (resource_type not in {"web_case", "api_case"} and request.user.has_perm(
         {
             "case": "testcases.change_testcase",
             "plan": "testplans.change_testplan",
         }[resource_type]
     ))
+    quick_manage = request.user.is_active and not roles.is_read_only(request.user)
+    case_kinds = {"case", "web_case", "api_case"}
+    from tcms.ai_assistant.case_directories import can_manage_common
+    quick_create = quick_manage and (
+        can_manage_common(request.user, folder_product)
+        if resource_type in case_kinds and folder_product is not None else can_manage
+    )
+    managed_ids = {node.pk for node in managed_folder_nodes}
+    for node in folder_nodes:
+        node.can_quick_manage = quick_manage and node.pk in managed_ids and (
+            resource_type in case_kinds or can_manage
+        )
+    for item in items:
+        item.tree_kind = {"case": "manual", "web_case": "web", "api_case": "api"}.get(resource_type, "")
+        item.tree_product_id = _resource_product_id(item, resource_type)
+        item.tree_name = item.summary if resource_type == "case" else getattr(item, "name", "")
+        item.can_tree_rename = bool(item.tree_kind) and request.user.is_active and not roles.is_read_only(request.user)
+        if resource_type == "case":
+            item.can_tree_rename = item.can_tree_rename and (
+                request.user.has_perm("testcases.view_testcase") or request.user.has_perm("testcases.view_testcase", item)
+            ) and (
+                request.user.has_perm("testcases.change_testcase") or request.user.has_perm("testcases.change_testcase", item)
+            )
     return {
         "kind": resource_type,
+        "can_quick_create": quick_create,
+        "quick_kind": "case_group" if resource_type in {"case", "web_case", "api_case"} else resource_type,
         "title": title,
         "icon": icon,
         "items": items,
         "unfiled_items": unfiled_items,
         "folder_nodes": folder_nodes,
+        "managed_folder_nodes": managed_folder_nodes,
         "folders": folders,
         "products": Product.objects.order_by("name"),
         "can_manage": can_manage,
         "default_product_id": folder_product.pk if folder_product is not None else None,
         "total": total,
-        "has_more": total > RESOURCE_BROWSER_LIMIT,
+        "has_more": total > limit,
     }
 
 
@@ -135,35 +168,30 @@ def platform_resource_browser(context):
     current = getattr(resolver_match, "url_name", "")
 
     app_name = getattr(resolver_match, "app_name", "")
+    if app_name == "ai_assistant" and current in {"case_hub", "scenario_library"}:
+        return getattr(request, "case_hub_browser", None)
     is_web_cases = app_name == "web_testing" and current == "cases"
     is_api_cases = app_name == "ai_assistant" and current == "api_home" and request.GET.get("tab") == "cases"
     if is_web_cases or is_api_cases:
         from tcms.ai_assistant.automation_folders import automation_browser
         _products, product = case_library.selected_product(request)
         if product is not None:
-            return automation_browser(request, "web_case" if is_web_cases else "api_case", product)
+            return automation_browser(request, "web_case" if is_web_cases else "api_case", product, context.get("cases"))
         return None
 
     if current == "index" and getattr(resolver_match, "app_name", "") == "ai_assistant":
-        # 与需求列表一致：本产品成员互相可见，不再只看自己提的需求。
+        # 与需求列表一致：本项目成员互相可见，不再只看自己提的需求。
         queryset = roles.visible_requests(request.user).select_related(
             "category", "category__product"
         ).order_by("-created")
-        return _build_resource_browser(
-            request,
-            "requirement",
-            "需求目录",
-            "fa-lightbulb-o",
-            queryset,
-            lambda item: (
-                f"{item.category.product.name} / {item.category.name}"
-                if item.category_id
-                else "未分类需求"
-            ),
-        )
+        product_id = str(request.GET.get("product", request.session.get("ai_product_id", "")))
+        if product_id.isdigit():
+            queryset = queryset.filter(category__product_id=product_id)
+        from tcms.ai_assistant.requirement_directory import requirement_browser
+        return requirement_browser(request, queryset, product_id)
 
     if current == "case_library" and getattr(resolver_match, "app_name", "") == "ai_assistant":
-        # 用例库是单产品视图：目录栏跟随页面筛选，产品目录只列当前产品。
+        # 用例库是单项目视图：目录栏跟随页面筛选，项目目录只列当前项目。
         _products, product = case_library.selected_product(request)
         queryset = case_library.library_cases(request, product).select_related(
             "case_status",
@@ -204,10 +232,17 @@ def platform_resource_browser(context):
             lambda item: f"{item.category.product.name} / {item.category.name}",
         )
 
+    if current == "testruns-search" and hasattr(request, "run_browser"):
+        return request.run_browser
+
     if current == "plans-search":
+        if hasattr(request, "plan_browser"):
+            return request.plan_browser
         queryset = TestPlan.objects.select_related(
             "product", "product_version", "type", "author"
-        ).prefetch_related("cases")
+        )
+        from django.db.models import Count
+        queryset = queryset.annotate(case_total=Count("cases", distinct=True))
         product_id = request.GET.get("product")
         if product_id and product_id.isdigit():
             queryset = queryset.filter(product_id=product_id)
@@ -239,12 +274,13 @@ def ai_project_switcher(context):
         or user is None
         or not user.is_authenticated
         or session is None
-        or getattr(resolver_match, "app_name", "") != "ai_assistant"
     ):
         return {"show_switcher": False}
 
-    product_id = session.get("ai_product_id")
-    version_id = session.get("ai_version_id")
+    product_id = request.GET.get("product", session.get("ai_product_id"))
+    version_id = request.GET.get("version", session.get("ai_version_id"))
+    product_id = int(product_id) if str(product_id).isascii() and str(product_id).isdigit() and len(str(product_id)) <= 18 else None
+    version_id = int(version_id) if str(version_id).isascii() and str(version_id).isdigit() and len(str(version_id)) <= 18 else None
     products = Product.objects.order_by("name")
     versions = Version.objects.select_related("product").order_by(
         "product__name", "value"
@@ -317,7 +353,7 @@ NAV_SECTIONS = TEST_NAV_SECTIONS + (
                 "fragments": (("/bugs/", None),),
             },
             {
-                "label": "缺陷与回归",
+                "label": "缺陷与复测",
                 "icon": "fa-refresh",
                 "url": "ai_assistant:dashboard",
                 "anchor": "defect-management",
@@ -458,6 +494,15 @@ def platform_navigation(context):
     url_name = getattr(resolver_match, "url_name", "") or ""
     app_name = getattr(resolver_match, "app_name", "") or ""
     current = f"{app_name}:{url_name}" if app_name else url_name
+    if app_name == "allure_reporting":
+        kind = getattr(resolver_match, "kwargs", {}).get("kind")
+        app_name, current = ("web_testing", "web_testing:run") if kind == "web" else ("ai_assistant", "ai_assistant:api_report")
+    if current == "ai_assistant:automation_archive":
+        kind = getattr(resolver_match, "kwargs", {}).get("kind")
+        if kind == "web":
+            app_name, current = "web_testing", "web_testing:run"
+        elif kind == "api":
+            current = "ai_assistant:api_report"
     path = getattr(request, "path", "") or ""
 
     plugin_active = False

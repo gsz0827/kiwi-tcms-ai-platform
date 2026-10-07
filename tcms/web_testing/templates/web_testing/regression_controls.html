@@ -1,0 +1,3 @@
+{% if regression_defect %}<p>关联缺陷：<a href="{% url 'ai_assistant:edit_defect_draft' regression_defect.pk %}">#{{ regression_defect.pk }} {{ regression_defect.title }}</a> · 修复版本：{{ frozen_context.version_name }} · 构建：{{ frozen_context.build_name }}</p>
+{% if regression_report_id %}<p><a href="{% url 'ai_assistant:edit_report' regression_report_id %}">查看复测报告</a></p>{% endif %}
+{% if run.terminal and regression_archived and can_write %}<form method="post" action="{% url 'web_testing:regression_verify' run.pk %}">{% csrf_token %}<button class="btn btn-success" type="submit">确认缺陷复测结论</button></form>{% endif %}{% endif %}

@@ -10,7 +10,7 @@ from django.urls import reverse, resolve
 from django.utils import timezone
 from tcms.management.models import Product, Classification
 from tcms.ai_assistant.crypto import encrypt_api_key, decrypt_api_key
-from .models import WebCase, WebSuite, WebRun, WebResult
+from .models import WebCase, WebSuite, WebRun, WebResult, WebEnvironment
 from .forms import CaseForm, SuiteForm
 from .runner import claim_run, recover_stale
 from .validation import validate_steps, validate_url
@@ -41,7 +41,7 @@ class WorkflowTests(TestCase):
         self.client.force_login(self.owner)
 
     def submit(self):
-        return self.client.post(reverse("web_testing:submit", args=[self.suite.pk]), {"token": str(uuid.uuid4())})
+        return self.client.post(reverse("web_testing:submit", args=[self.suite.pk]), {"token": str(uuid.uuid4()), "execution_mode": "debug"})
 
     def test_pages_render(self):
         for name in ("cases", "suites", "runs", "case_new", "suite_new"):
@@ -55,9 +55,11 @@ class WorkflowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         created = WebCase.objects.get(name="Created in UI")
         self.assertEqual(json.loads(decrypt_api_key(created.steps_encrypted)), self.steps)
+        environment = WebEnvironment.objects.create(owner=self.owner, product=self.product, name="UI Environment",
+                                                    base_url="https://kiwi-web:8443", ignore_https_errors=True)
         response = self.client.post(reverse("web_testing:suite_new"), {
-            "product": self.product.pk, "name": "UI Suite", "base_url": "https://kiwi-web:8443",
-            "cases": [created.pk], "ignore_https_errors": "on",
+            "product": self.product.pk, "name": "UI Suite", "environment": environment.pk,
+            "cases": [created.pk],
         })
         self.assertEqual(response.status_code, 302)
         self.assertEqual(WebSuite.objects.get(name="UI Suite").case_ids, [created.pk])
@@ -85,8 +87,8 @@ class WorkflowTests(TestCase):
     def test_submission_is_idempotent_and_snapshots_are_encrypted(self):
         token = str(uuid.uuid4())
         url = reverse("web_testing:submit", args=[self.suite.pk])
-        self.client.post(url, {"token": token})
-        self.client.post(url, {"token": token})
+        self.client.post(url, {"token": token, "execution_mode": "debug"})
+        self.client.post(url, {"token": token, "execution_mode": "debug"})
         self.assertEqual(WebRun.objects.count(), 1)
         run = WebRun.objects.get()
         self.case.name = "Changed"
@@ -145,7 +147,7 @@ class WorkflowTests(TestCase):
         run = WebRun.objects.get()
         run.status = "failed"
         run.save()
-        self.client.post(reverse("web_testing:retry", args=[run.pk]), {"token": str(uuid.uuid4())})
+        self.client.post(reverse("web_testing:retry", args=[run.pk]), {"token": str(uuid.uuid4()), "execution_mode": "debug"})
         child = WebRun.objects.get(source=run)
         self.assertEqual(child.snapshot_encrypted, run.snapshot_encrypted)
         self.assertNotEqual(child.pk, run.pk)

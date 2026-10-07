@@ -5,6 +5,7 @@ from tcms.ai_assistant.automation_data import variables, datasets
 from tcms.ai_assistant.crypto import encrypt_api_key, decrypt_api_key
 from .models import WebCase, WebEnvironment
 from .validation import validate_url, validate_steps
+from tcms.ai_assistant.execution_identity import capture_version
 
 
 def expand_steps(steps, values):
@@ -20,13 +21,13 @@ def expand_steps(steps, values):
 
 
 class EnvironmentForm(forms.ModelForm):
-    variables = forms.JSONField(required=False, label='环境变量', widget=forms.Textarea(attrs={'rows':4}),
+    variables = forms.JSONField(required=False, label='环境参数', widget=forms.Textarea(attrs={'rows':4}),
         help_text='例如 {"username":"demo"}。步骤中使用 {{username}} 引用；仅本人可见，加密保存。')
 
     class Meta:
         model = WebEnvironment
         fields = ('product','name','base_url','variables','setup_case','ignore_https_errors')
-        labels = {'product':'产品', 'setup_case':'公共登录/前置用例'}
+        labels = {'product':'项目', 'setup_case':'前置执行脚本'}
         help_texts = {'setup_case':'可选。每组数据先执行一次，成功后将 Cookie 与本地存储复制给该组各用例；不会跨执行保存登录态。'}
 
     def __init__(self, *args, owner, **kwargs):
@@ -44,9 +45,9 @@ class EnvironmentForm(forms.ModelForm):
             variables(data.get('variables') or {})
             if data.get('base_url'): validate_url(data['base_url'])
             if data.get('setup_case') and data['setup_case'].product_id != getattr(data.get('product'),'pk',None):
-                raise ValueError('公共登录用例必须属于所选产品。')
+                raise ValueError('前置执行脚本必须属于所选项目。')
             if self.instance.pk and getattr(data.get('product'),'pk',None) != self.instance.product_id:
-                raise ValueError('已有环境不能更换产品，请新建环境。')
+                raise ValueError('已有环境不能更换项目，请新建环境。')
         except ValueError as exc:
             raise forms.ValidationError(str(exc)) from exc
         return data
@@ -57,11 +58,12 @@ class EnvironmentForm(forms.ModelForm):
         return super().save(commit)
 
 
-def suite_snapshot(suite):
+def suite_snapshot(suite, environment=None):
     base_url, ignore_https = suite.base_url, suite.ignore_https_errors
     values, setup = {}, []
-    if suite.environment_id:
-        env = WebEnvironment.objects.get(pk=suite.environment_id, owner=suite.owner, product=suite.product)
+    environment_id = environment.pk if environment else suite.environment_id
+    if environment_id:
+        env = WebEnvironment.objects.get(pk=environment_id, owner=suite.owner, product=suite.product)
         base_url, ignore_https = env.base_url, env.ignore_https_errors
         values = variables(json.loads(decrypt_api_key(env.variables_encrypted) or '{}'))
         if env.setup_case_id:
@@ -80,5 +82,6 @@ def suite_snapshot(suite):
             case = selected[pk]
             steps = expand_steps(json.loads(decrypt_api_key(case.steps_encrypted)), merged)
             name = (case.name[:180]+' · 数据组 '+str(index+1)) if len(rows)>1 else case.name
-            cases.append({'id':pk,'name':name,'steps':steps,'dataset':index,'setup_steps':expanded_setup})
+            cases.append({'id':pk,'name':name,'steps':steps,'dataset':index,'setup_steps':expanded_setup, 'business_case_id':case.test_case_id,
+                'business_case_version':capture_version(case.test_case, suite.product_id)})
     return {'base_url':base_url,'ignore_https_errors':ignore_https,'stop_on_failure':suite.stop_on_failure,'cases':cases}

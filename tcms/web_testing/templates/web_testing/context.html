@@ -1,0 +1,10 @@
+<div class="web-run-context">
+<span class="web-state">{{ run.get_execution_mode_display }}</span>
+{% if frozen_context.plan_name %}<span>计划：{{ frozen_context.plan_name }}</span><span>版本 / 构建：{{ frozen_context.version_name }} / {{ frozen_context.build_name }}</span>{% endif %}
+{% if frozen_context.environment_name %}<span>环境：{{ frozen_context.environment_name }}</span>{% endif %}
+{% if frozen_base_url %}<span>执行站点：{{ frozen_base_url }}</span>{% endif %}
+{% if run.test_run_id %}<a href="{% url 'testruns-get' run.test_run_id %}">平台执行任务 TR-{{ run.test_run_id }}</a>{% endif %}
+</div>
+{% if run.execution_mode == 'debug' %}<p class="help-block">调试结果不进入正式报告。修复后验证请选择新构建并发起正式执行。</p>{% elif not can_publish %}<p class="alert alert-warning">本次历史快照缺少业务用例关联，无法正式归档。关联脚本后需重新执行，旧结果保持不变。</p>{% endif %}
+
+{% if retry_context.scope == 'failed' %}<p class="help-block">本次仅重跑原记录中的失败项，属于调试验证，不改变原执行结论。</p>{% endif %}

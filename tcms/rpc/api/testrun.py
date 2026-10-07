@@ -45,9 +45,7 @@ def add_case(run_id, case_id):
     if last_te:  # in case there are no other TEs
         sortkey += last_te.sortkey
 
-    return annotate_executions_with_properties(
-        run.create_execution(case=case, sortkey=sortkey)
-    )
+    return annotate_executions_with_properties(run.create_execution(case=case, sortkey=sortkey))
 
 
 def annotate_executions_with_properties(executions_iterable):
@@ -55,9 +53,7 @@ def annotate_executions_with_properties(executions_iterable):
 
     for execution in executions_iterable:
         serialized_execution = model_to_dict(execution)
-        serialized_execution["properties"] = list(
-            execution.properties().values("name", "value")
-        )
+        serialized_execution["properties"] = list(execution.properties().values("name", "value"))
         result.append(serialized_execution)
 
     return result
@@ -114,9 +110,7 @@ def get_cases(run_id):
         )
     )
 
-    executions = TestExecution.objects.filter(run_id=run_id).values(
-        "case", "pk", "status__name"
-    )
+    executions = TestExecution.objects.filter(run_id=run_id).values("case", "pk", "status__name")
     extra_info = {row["case"]: row for row in executions.iterator()}
 
     for case in result:
@@ -247,9 +241,20 @@ def filter(query=None):  # pylint: disable=redefined-builtin
     if query is None:
         query = {}
 
+    query = dict(query)
+    folder = query.pop("_resource_folder", None)
+    runs = TestRun.objects.filter(**query)
+    if folder is not None:
+        from tcms.ai_assistant.case_directories import filter_cases
+        from tcms.testplans.plan_library import numeric_id
+
+        runs = (
+            filter_cases(runs, "run", str(folder), product_field="build__version__product_id")
+            if numeric_id(folder) is not None
+            else runs.none()
+        )
     return list(
-        TestRun.objects.filter(**query)
-        .values(
+        runs.values(
             "id",
             "start_date",
             "stop_date",

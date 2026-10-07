@@ -32,8 +32,8 @@
                 <li>
                     <a>
                         {% get_current_timezone as TIME_ZONE %}
-                        <span id="clock" class="fa fa-clock-o" data-time-zone="{{ TIME_ZONE }}" title="{{ SERVER_TIME }} {{ TIME_ZONE }}">
-                            {{ SERVER_TIME|date:"G:i" }} {{ TIME_ZONE }}
+                        <span id="clock" class="fa fa-clock-o" data-time-zone="{{ UI_PREFERENCES.time_zone }}" title="{{ SERVER_TIME }} {{ UI_PREFERENCES.time_zone }}">
+                            {{ SERVER_TIME|date:"G:i" }}
                         </span>
                     </a>
                 </li>
@@ -41,7 +41,7 @@
                 {% comment %}
                 上游的语言下拉（地球图标）在这里去掉了：它并没有切换语言的功能，
                 五个条目分别是 Kiwi 文档、Crowdin 项目页、GitHub 新语言申请，以及
-                只对翻译贡献者有用的「翻译模式」。本平台的语言由个人资料决定，留着
+                只对翻译贡献者有用的「翻译模式」。本平台的语言由显示设置决定，留着
                 这个下拉只是让右上角更挤。
                 {% endcomment %}
 
@@ -67,20 +67,14 @@
                     </a>
                     <ul class="dropdown-menu">
                     {% if user.is_authenticated %}
-                        <li>
-                            <a href="{% url "testruns-search" %}?default_tester={{ user.username }}" target="_parent">{% trans "My Test Runs" %}</a>
-                        </li>
-
-                        <li>
-                            <a href="{% url "plans-search" %}?author={{ user.username }}" target="_parent">{% trans "My Test Plans" %}</a>
-                        </li>
-
-                        <li class="divider"></li>
-
                         <li class="dropdown-header">账户与偏好</li>
 
                         <li>
                             <a href="{% url "tcms-profile" user.pk %}" target="_parent">{% trans "My profile" %}</a>
+                        </li>
+
+                        <li>
+                            <a href="{% url "display-settings" %}" target="_parent">显示设置</a>
                         </li>
 
                         <li>

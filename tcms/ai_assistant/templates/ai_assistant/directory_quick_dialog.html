@@ -1,0 +1,18 @@
+<div class="modal fade kiwi-resource-modal" id="directory-quick-dialog" tabindex="-1" role="dialog" aria-labelledby="directory-quick-title"><div class="modal-dialog" role="document"><div class="modal-content">
+<div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-label="关闭"><span aria-hidden="true">&times;</span></button><h4 id="directory-quick-title" class="modal-title">目录操作</h4></div>
+<form method="post" id="directory-quick-form">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="resource_type"><input type="hidden" name="parent"><input type="hidden" name="expected_name">
+<div class="modal-body"><p id="directory-quick-target"></p>
+<div class="form-group" id="directory-quick-product-field"><label for="directory-quick-product">项目</label><select id="directory-quick-product" name="product" class="form-control">{% if browser.product and not browser.product_rooted %}<option value="{{ browser.product.pk }}">{{ browser.product.name }}</option>{% else %}<option value="">请选择项目</option>{% for product in browser.products %}<option value="{{ product.pk }}">{{ product.name }}</option>{% endfor %}{% endif %}</select></div>
+<div class="form-group" id="directory-quick-name-field"><label for="directory-quick-name">名称</label><input id="directory-quick-name" name="name" class="form-control" maxlength="120" autocomplete="off"></div>
+<p class="alert alert-warning" id="directory-quick-delete-note" hidden>将删除这个文件夹及其子文件夹。{% if browser.kind == 'requirement' and browser.product_rooted %}里面的需求会回到所属项目根目录，需求内容不会删除。{% elif browser.kind == 'plan' or browser.kind == 'run' %}里面的计划或执行任务会回到所属项目根目录，原有数据、关联和执行结果不会删除。{% elif browser.product_rooted %}里面的用例会回到所属项目根目录，用例和历史执行记录不会删除。{% else %}里面的资源会回到“未归档”，用例和历史执行记录不会删除。{% endif %}</p>
+<p class="help-block" id="directory-quick-rename-note" hidden>只修改当前用例名称，不改步骤或历史结果。接口用例只改接口脚本名称，不改关联平台用例名称。</p>
+</div><div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">取消</button><button class="btn btn-primary" type="submit" id="directory-quick-submit">保存</button></div></form>
+</div></div></div>
+<div id="directory-context-menu" class="directory-context-menu" role="menu" aria-label="目录操作" hidden>
+<button type="button" role="menuitem" data-tree-command="create">新建子文件夹</button><button type="button" role="menuitem" data-tree-command="rename">重命名文件夹</button><button type="button" role="menuitem" data-tree-command="delete" class="directory-danger">删除文件夹</button><button type="button" role="menuitem" data-tree-command="case-rename">重命名用例</button>
+<button type="button" role="menuitem" data-tree-command="new-case" hidden>新建用例</button>
+<button type="button" role="menuitem" data-tree-command="child-plan" hidden>新建子计划</button>
+<button type="button" role="menuitem" data-tree-command="copy-path" hidden>复制路径</button>
+</div>
+
+<form id="directory-move-form" method="post" data-case-url="{% url 'ai_assistant:assign_resource_folder' %}" hidden></form>

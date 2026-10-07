@@ -1,0 +1,7 @@
+{% extends 'ai_assistant/api/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block api_content %}
+<header class="api-header automation-page-header"><h1>{{ title }}</h1><a href="{{ back_url }}">返回脚本列表</a></header>
+<section class="api-card"><p>项目：{{ product.name }}</p><form method="post" enctype="multipart/form-data" class="automation-edit-form">{% csrf_token %}{{ form.non_field_errors }}{{ form.as_p }}<div class="automation-form-actions"><button class="btn btn-primary">预览集合</button><a class="btn btn-default" href="{{ back_url }}">取消</a></div></form></section>
+<section class="api-card"><h2>导入范围</h2><p>导入 HTTP 方法、路径、查询参数、请求头与 JSON 请求体。集合目录对应业务目录，不覆盖已有脚本。</p><p>服务地址和认证由执行环境维护。Postman JavaScript、脚本断言、动态变量、文件与表单不会自动转换；不支持的请求会在预览中标记。</p><p>请求导入后处于待复核状态，确认断言后才能执行。请勿上传包含明文密码、令牌或 Cookie 的集合。</p></section>
+{% endblock %}

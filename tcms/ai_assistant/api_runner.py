@@ -22,6 +22,7 @@ from tcms.testruns.models import TestExecution, TestExecutionStatus, TestRun
 from .api_validation import SENSITIVE, expand, lookup_json, redact, validate_case, validate_destination, validate_headers, variable_names
 from .crypto import decrypt_api_key, encrypt_api_key
 from .leases import WorkerHeartbeat, heartbeat_run
+from .execution_identity import capture_version
 from .models import APICase, APIEnvironment, APIResult, APIRun
 
 CASE_FIELDS = ("name", "method", "path", "headers", "query", "body", "send_body",
@@ -109,14 +110,16 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
         ).order_by("sequence", "pk"))
         if not cases or len(cases) != len(data["cases"]) or len(cases) > 20:
             raise ValueError("用例已发生变化，请重新选择，最多 20 条。")
+        if any(case.import_review_required for case in cases):
+            raise ValueError('所选脚本含待复核的 Postman 请求，请先编辑并确认断言后执行。')
         target = data.get("test_run")
         if target:
             target = TestRun.objects.select_for_update().get(pk=target.pk)
             if (target.plan.product_id != product.pk or target.stop_date is not None
                     or not can_write_run(owner, target)):
-                raise ValueError("没有权限回写该测试运行，或运行已经结束。")
+                raise ValueError("没有权限回写该执行任务，或运行已经结束。")
             if APIRun.objects.filter(test_run=target, status__in=APIRun.ACTIVE_STATUSES).exists():
-                raise ValueError("该测试运行已有接口任务正在执行，请等它完成后再提交。")
+                raise ValueError("该执行任务已有接口任务正在执行，请等它完成后再提交。")
             if not (data.get("passed_status") and data.get("failed_status")):
                 raise ValueError("请选择回写状态。")
             if data["passed_status"].weight <= 0 or data["failed_status"].weight >= 0:
@@ -126,7 +129,7 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
         validation_env = copy.deepcopy(env)
         if source_run and (source_run.owner_id != owner.pk or source_run.product_id != product.pk
                            or not source_run.is_terminal):
-            raise ValueError("只能重新执行自己已结束的同产品任务。")
+            raise ValueError("只能重新执行自己已结束的同项目任务。")
         from .api_dataset_support import validate_dataset_cases
         validate_dataset_cases(cases, env, rows)
         if target and len(rows) > 1:
@@ -136,10 +139,11 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
             validation_env["variables"].update(row)
             for case in cases:
                 if case.test_case_id and case.test_case.category.product_id != product.pk:
-                    raise ValueError("用例的业务分类已移到其他产品，请重新配置自动化套件。")
+                    raise ValueError("用例的业务分类已移到其他项目，请重新配置自动化套件。")
                 snapshot = {key: getattr(case, key) for key in CASE_FIELDS}
                 if case.test_case_id:
                     snapshot["name"] = case.test_case.summary
+                snapshot["business_case_version"] = capture_version(case.test_case, product.pk)
                 snapshot["case_id"] = case.pk
                 missing = required_variables(snapshot, validation_env) - validation_env["variables"].keys()
                 if missing:
@@ -154,6 +158,7 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                         raise ValueError(f"“{case.name}”需要关联该运行中唯一且未重复选择的一条测试用例。")
                     execution = executions[0]
                     linked_ids.add(execution.pk)
+                    snapshot["business_case_version"] = execution.case_text_version
                     snapshot["execution_id"] = execution.pk
                     snapshot["history_id"] = execution.history.latest().history_id
                 snapshot["dataset"] = dataset_index
@@ -339,7 +344,7 @@ def secrets_for(case, environment):
 
 def writeback_result(run, result, snapshot, case):
     if not case.get("execution_id"):
-        return "未关联测试运行"
+        return "未关联执行任务"
     if result.status not in ("passed", "failed"):
         return "请求异常，未改动测试执行状态，请排查后重新执行"
     with transaction.atomic():

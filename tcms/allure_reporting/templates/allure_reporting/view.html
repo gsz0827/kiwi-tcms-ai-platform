@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% load static allure_reports %}
+{% block title %}Allure 执行报告{% endblock %}
+{% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/execution_results.css' %}">{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
+{% block external_head_scripts %}{% endblock %}
+{% block external_footer_scripts %}{% endblock %}
+{% block contents %}<div class="container-fluid" style="padding:24px">
+<div class="clearfix"><h1 class="pull-left">Allure 执行报告</h1><div class="pull-right" style="margin-top:20px"><a class="btn btn-default" href="{{ back_url }}">返回执行结果</a>{% if report.status == 'ready' %} <a class="btn btn-default" href="{% url 'allure_reporting:artifact' allure_kind allure_run.pk %}?download=1">下载 HTML</a>{% endif %}</div></div>
+{% if report.status == 'ready' %}<p class="text-muted">本次执行的独立报告 · 仅当前账号可访问 · 不等同于审批或发布结论</p>
+<iframe title="Allure 测试报告" src="{% url 'allure_reporting:artifact' allure_kind allure_run.pk %}" sandbox="allow-scripts allow-downloads" referrerpolicy="no-referrer" style="width:100%;height:78vh;min-height:650px;border:1px solid #dce4ec;border-radius:8px"></iframe>
+{% else %}{% allure_report_card allure_kind allure_run %}{% endif %}
+</div>{% endblock %}

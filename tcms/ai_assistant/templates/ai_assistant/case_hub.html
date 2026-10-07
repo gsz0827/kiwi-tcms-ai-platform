@@ -1,0 +1,69 @@
+{% extends "ai_assistant/api/base.html" %}{% load ui_labels %}
+{% load static %}
+{% block title %}用例库{% endblock %}
+{% block api_content %}
+<link rel="stylesheet" href="{% static 'ai_assistant/hub_inventory.css' %}">
+<header class="api-header">
+  <div><p class="text-muted">测试管理 / 用例库</p><h1>用例库</h1>
+    <p>目录组织业务模块，类型区分执行方式；点击用例名称查看详情。</p>
+  </div>
+</header>
+<form method="get" class="api-product-picker hub-filter-bar" id="hub-search">
+  <input type="hidden" name="type" value="{{ selected_type }}">
+  {% if selected_folder %}<input type="hidden" name="folder" value="{{ selected_folder }}">{% endif %}
+  <div><label for="case-hub-product">项目</label>
+  <select id="case-hub-product" name="product" class="form-control">
+    <option value="">全部项目</option>
+    {% for item in products %}<option value="{{ item.pk }}"{% if item.pk == product.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}
+  </select></div>
+  <div><label for="case-hub-q">用例名称</label>
+  <input id="case-hub-q" name="q" class="form-control" value="{{ q }}" placeholder="搜索三类用例名称"></div>
+  <div><label for="hub-page-size">每页</label><select id="hub-page-size" class="form-control" name="page_size">
+    {% for size in page_sizes %}<option value="{{ size }}"{% if size == page_size %} selected{% endif %}>{{ size }} 条</option>{% endfor %}
+  </select></div>
+  <div class="hub-filter-actions"><button type="submit" class="btn btn-default">查询</button>
+  <a href="{% url 'ai_assistant:case_hub' %}?product={{ product.pk|default:'' }}&amp;type={{ selected_type }}" class="btn btn-link">清除筛选</a></div>
+</form>
+{% if products %}
+<ul class="nav nav-tabs" aria-label="用例类型" style="margin-bottom:16px">
+  {% for tab in tabs %}<li{% if tab.active %} class="active"{% endif %}><a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %}>{{ tab.label|ui_term }}{% if tab.count != None %} <span class="badge">{{ tab.count }}</span>{% endif %}</a></li>{% endfor %}
+</ul>
+<form id="hub-batch" class="hub-batch-toolbar" method="post" action="{% url 'ai_assistant:case_hub_batch' %}">
+  {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <label class="hub-selection"><input type="checkbox" id="hub-select-page"> 全选本页</label>
+  <span id="hub-selected-count" aria-live="polite">已选 0 条</span>
+  {% if can_batch_move %}
+  <label for="hub-batch-folder" class="sr-only">目标共享目录</label>
+  <select id="hub-batch-folder" name="folder" class="form-control">
+    <option value="">选择目标共享目录</option>
+    {% for folder in batch_folders %}<option value="{{ folder.pk }}">{% if not product %}{{ folder.product.name }} / {% endif %}{{ folder.path_label }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn btn-default" name="action" value="move" data-hub-batch-action disabled>批量归档</button>
+  <button type="submit" class="btn btn-default" name="action" value="unfile" data-hub-batch-action disabled>移出目录</button>
+  {% endif %}
+  <button type="submit" class="btn btn-default" name="action" value="export" data-hub-batch-action disabled>导出所选清单</button>
+</form>
+<p class="text-muted hub-inventory-note">共 {{ page.paginator.count }} 条 · 本页 {{ page.start_index }}–{{ page.end_index }} 条，按类型及编号倒序排列。批量整理限同一项目；导出仅含清单，不含认证信息、请求参数或步骤。</p>
+{% for section in sections %}
+{% if section.rows or selected_type != 'all' or not page.paginator.count %}
+<section class="api-card" data-case-kind="{{ section.kind }}">
+  <header><h2><span class="fa {{ section.icon }}" aria-hidden="true"></span> {{ section.label|ui_term }} <small>{{ section.count }} 条</small></h2><a class="btn btn-default" href="{{ section.manage_url }}">进入用例管理</a></header>
+  <div class="api-table-scroll"><table class="table">
+    <thead><tr><th style="width:38px"><span class="sr-only">选择用例</span></th><th style="width:100px">编号</th><th>用例名称</th>{% if not product %}<th>项目</th>{% endif %}<th>分类 / 测试内容</th><th style="width:180px">目录归属</th><th style="width:80px">操作</th></tr></thead>
+    <tbody>{% for row in section.rows %}<tr>
+      <td><input type="checkbox" name="selected" value="{{ row.kind }}:{{ row.pk }}" form="hub-batch" class="hub-case-check" data-can-move="{{ row.can_move|yesno:'true,false' }}" aria-label="选择 {{ row.number }}"></td>
+      <td>{{ row.number }}</td><td><a href="#{{ row.modal_id }}" data-toggle="modal">{{ row.name }}</a></td>{% if not product %}<td>{{ row.product.name }}</td>{% endif %}<td>{{ row.detail }}</td><td>{% include "ai_assistant/_hub_move_select.html" %}</td><td><a href="#{{ row.modal_id }}" data-toggle="modal">详情</a></td>
+    </tr>{% empty %}<tr><td colspan="7" class="api-empty">{% if q or selected_folder %}当前筛选没有匹配用例，可清除筛选或切换目录。{% else %}暂无用例，可进入用例管理新建或生成 AI 草稿。{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endfor %}
+{% if page.has_other_pages %}<nav class="api-pagination hub-pagination" aria-label="用例库分页">
+  {% if page.has_previous %}<a href="{{ pagination_url }}&amp;page={{ page.previous_page_number }}">上一页</a>{% endif %}
+  <span>第 {{ page.number }} / {{ page.paginator.num_pages }} 页</span>
+  {% if page.has_next %}<a href="{{ pagination_url }}&amp;page={{ page.next_page_number }}">下一页</a>{% endif %}
+</nav>{% endif %}
+{% else %}<p class="api-empty">请先在“平台管理 → 项目配置”新建项目。</p>{% endif %}
+{% include "ai_assistant/_hub_case_modals.html" %}
+<script src="{% static 'ai_assistant/hub_cases.js' %}"></script>
+{% endblock %}

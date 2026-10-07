@@ -1,12 +1,12 @@
 """共享资产的可见性一致性：列表里看得到的，点开也要打得开。
 
-角色与权限把「同一产品的成员」当作可见范围（``roles.visible_*``）。列表页用了这些
+角色与权限把「同一项目的成员」当作可见范围（``roles.visible_*``）。列表页用了这些
 queryset，详情页如果还按作者过滤，就会出现「列表里看得到、点开 403/404」的分裂——
 造演示数据时就撞上了：经理在「测试质量趋势」里看得到同事的报告，点开却是 403。
 
 这一组测试钉住五条路径：测试报告详情、执行任务的报告列表、测试质量趋势、
 迭代报告详情、需求下草稿用例的编辑与导入。三个账号的 Django 权限完全一样，
-差别只在产品成员关系，这样断言才只反映可见范围本身。
+差别只在项目成员关系，这样断言才只反映可见范围本身。
 """
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -25,7 +25,7 @@ from .services import build_test_run_snapshot
 
 
 class SharedAssetVisibilityTests(TestCase):
-    """同一产品里两个同事 + 一个局外人；权限相同，只有产品成员关系不同。"""
+    """同一项目里两个同事 + 一个局外人；权限相同，只有项目成员关系不同。"""
 
     def setUp(self):
         self.author = self._make_user("visibility-author")
@@ -33,7 +33,7 @@ class SharedAssetVisibilityTests(TestCase):
         self.outsider = self._make_user("visibility-outsider")
 
         self.product = Product.objects.create(
-            name="可见性产品",
+            name="可见性项目",
             classification=Classification.objects.create(name="可见性分类"),
         )
         version = Version.objects.create(value="1.0", product=self.product)
@@ -108,7 +108,7 @@ class SharedAssetVisibilityTests(TestCase):
         )
         self.ai_request = AIRequest.objects.create(
             title="可见性需求",
-            requirement="同一产品的同事之间应当能互相协作。",
+            requirement="同一项目的同事之间应当能互相协作。",
             created_by=self.author,
             category=category,
         )
@@ -153,7 +153,7 @@ class SharedAssetVisibilityTests(TestCase):
         self.assertEqual(page.status_code, 404)
 
     def test_product_member_opens_the_run_pages_without_the_run_permission(self):
-        """造演示数据时撞上的那条路：产品成员没有 testruns.view_testrun，也该进得去。"""
+        """造演示数据时撞上的那条路：项目成员没有 testruns.view_testrun，也该进得去。"""
         member = self._make_user("visibility-member", with_run_permission=False)
         roles.add_product_member(member, self.product, granted_by=self.author)
 

@@ -207,7 +207,7 @@ class WorkflowRegressionTests(TestCase):
             APISuite.objects.filter(pk=suite.pk).update(next_run_at=advanced)
 
         with patch(
-            "tcms.ai_assistant.api_suite_views.prepare_case",
+            "tcms.ai_assistant.api_dataset_support.validate_dataset_cases",
             side_effect=dispatch_during_validation,
         ):
             self.assertEqual(self.suite_post(suite).status_code, 302)

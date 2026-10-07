@@ -1,15 +1,42 @@
 from django.urls import path
+from . import regression_tasks
 
-from . import views
+from . import views, scenario_workflow, scenario_adoption, case_design_views, task_details
+from . import task_assignee_views, document_options, source_review_views
 from . import api_views
-from . import api_ai_views
-from . import api_suite_views, case_library, automation_archive
+from . import api_ai_views, case_hub, case_hub_actions, saved_case_views, case_tree_actions
+from . import api_suite_views, case_library, automation_archive, case_directories
 
+
+from . import postman_views
 
 app_name = "ai_assistant"
 
 
 urlpatterns = [
+    path('api-testing/products/<int:product_id>/postman/', postman_views.upload, name='postman_upload'),
+    path('api-testing/products/<int:product_id>/postman/<uuid:pk>/', postman_views.preview, name='postman_preview'),
+    path("regression/<str:kind>/<int:pk>/new/", regression_tasks.new_task, name="new_regression_task"),
+    path("dev-tasks/<int:pk>/recheck/", source_review_views.recheck, {"kind": "task"}, name="dev_task_recheck"),
+    path("scenarios/<int:pk>/recheck/", source_review_views.recheck, {"kind": "case"}, name="scenario_recheck"),
+    path('document-options/', document_options.choices, name='document_options'),
+    path("dev-tasks/assignees/", task_assignee_views.choices, name="dev_task_assignees"),
+    path("requests/<int:pk>/case-design/", case_design_views.design, name="case_design"),
+    path("scenarios/", scenario_workflow.library, name="scenario_library"),
+    path("scenarios/new/", scenario_workflow.new, name="scenario_new_choose"),
+    path("scenarios/products/<int:product_id>/new/", scenario_workflow.edit, name="scenario_new"),
+    path("scenarios/<int:pk>/", scenario_workflow.detail, name="scenario_detail"),
+    path("scenarios/<int:pk>/preview/", scenario_workflow.preview, name="scenario_preview"),
+    path("scenarios/<int:pk>/edit/", scenario_workflow.edit, name="scenario_edit"),
+    path("requests/<int:pk>/confirm-cases/", scenario_adoption.confirm, name="scenario_confirm"),
+    path("resource-folders/<int:pk>/move/", case_directories.move_folder, name="move_resource_folder"),
+    path("cases/", case_hub.index, name="case_hub"),
+    path("cases/batch/", case_hub_actions.batch, name="case_hub_batch"),
+    path("cases/<str:kind>/<int:pk>/rename/", case_tree_actions.rename, name="case_tree_rename"),
+    path("cases/views/new/", saved_case_views.save, name="saved_case_view_new"),
+    path("cases/views/<int:pk>/", saved_case_views.load, name="saved_case_view_load"),
+    path("cases/views/<int:pk>/edit/", saved_case_views.save, name="saved_case_view_edit"),
+    path("cases/views/<int:pk>/delete/", saved_case_views.delete, name="saved_case_view_delete"),
     path("automation/<str:kind>/<uuid:pk>/archive/", automation_archive.archive, name="automation_archive"),
     path("case-library/", case_library.library, name="case_library"),
     path("case-library/products/<int:product_id>/new/", case_library.create_case, name="library_case_new"),
@@ -105,6 +132,7 @@ urlpatterns = [
         name="generate_dev_tasks",
     ),
     path("dev-tasks/", views.dev_task_list, name="dev_task_list"),
+    path("dev-tasks/<int:pk>/", task_details.detail, name="dev_task_detail"),
     path("dev-tasks/new/", views.dev_task_edit, name="dev_task_create"),
     path("dev-tasks/<int:pk>/edit/", views.dev_task_edit, name="edit_dev_task"),
     path("dev-tasks/<int:pk>/delete/", views.delete_dev_task, name="delete_dev_task"),

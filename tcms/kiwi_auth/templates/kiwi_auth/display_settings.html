@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}显示设置{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
+{% block contents %}
+<div class="container-fluid" style="max-width: 820px; padding-top: 28px">
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>显示设置</strong></div>
+    <div class="panel-body">
+      <p class="text-muted">这些设置只影响当前账号的界面显示，不会改变测试数据中的时间，也不会修改其他成员的设置。</p>
+      <form method="post" class="form-horizontal" novalidate>{% csrf_token %}
+        {{ form.non_field_errors }}
+        {% for field in form %}
+        <div class="form-group{% if field.errors %} has-error{% endif %}">
+          <label class="col-sm-3 control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          <div class="col-sm-7">{{ field }}{{ field.errors }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}</div>
+        </div>
+        {% endfor %}
+        <div class="form-group"><div class="col-sm-offset-3 col-sm-7"><button class="btn btn-primary" type="submit" name="_save">保存显示设置</button></div></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

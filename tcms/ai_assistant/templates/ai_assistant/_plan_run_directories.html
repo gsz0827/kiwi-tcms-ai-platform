@@ -1,0 +1,34 @@
+{% load ui_labels %}{% load static %}
+<link rel="stylesheet" href="{% static 'ai_assistant/product_case_tree.css' %}">
+<section class="kiwi-resource-browser product-case-tree" data-resource-browser="{{ browser.kind }}" data-product-tree data-product-rooted="true" data-selected-product="{{ browser.selected_product }}" data-tree-number-prefix="{{ browser.prefix }}" data-tree-number-key="t:">
+  <div class="kiwi-resource-browser-header product-tree-heading">{{ browser.title }}</div>
+  <div class="product-tree-filter">
+    <label class="sr-only" for="plan-run-tree-search">按编号或名称筛选{{ browser.title }}</label>
+    <input id="plan-run-tree-search" type="search" class="form-control" placeholder="输入编号或名称筛选" autocomplete="off">
+    <button type="button" class="btn btn-link" data-tree-search aria-label="筛选目录"><span class="fa fa-search" aria-hidden="true"></span></button>
+  </div>
+  <ul class="product-tree-nodes" role="tree" aria-label="{{ browser.title }}">
+    {% for node in browser.nodes %}
+    <li data-product-tree-node="{{ node.key }}" data-node-ancestors="{{ node.ancestors }}" data-node-search="{{ node.label|ui_term }}" data-node-kind="{{ node.type }}" role="none">
+      <div class="product-tree-row{% if node.active %} product-tree-active{% endif %}" style="padding-left:{{ node.indent }}px">
+        {% if node.has_children %}<button type="button" class="product-tree-toggle" data-product-tree-toggle="{{ node.key }}" aria-expanded="true" aria-label="展开或收起 {{ node.label|ui_term }}"><span class="fa fa-angle-down" aria-hidden="true"></span></button>{% else %}<span class="product-tree-toggle" aria-hidden="true"></span>{% endif %}
+        <a class="product-tree-link{% if node.type == 'product' %} product-tree-root{% endif %}" href="{{ node.url }}" title="{{ node.label|ui_term }}" role="treeitem" data-tree-path="{{ node.path }}" data-tree-type="{{ node.type }}"{% if node.child_url %} data-tree-child-plan-url="{{ node.child_url }}"{% endif %}
+          {% if node.type == 'product' %}
+            data-tree-drop="root" data-drop-product="{{ node.product_id }}" data-drop-accept-case="true"
+            {% if node.can_manage %}data-tree-kind="{{ browser.kind }}" data-tree-product="{{ node.product_id }}" data-tree-create-url="{% url 'ai_assistant:create_resource_folder' %}"{% endif %}
+          {% elif node.type == 'folder' %}
+            data-tree-drop="folder" data-drop-id="{{ node.id }}" data-drop-product="{{ node.product_id }}" data-drop-kind="{{ browser.kind }}" data-drop-parent="{{ node.parent_id }}"
+            {% if node.can_manage %}data-directory-node="{{ node.id }}" data-tree-name="{{ node.label|ui_term }}" data-tree-kind="{{ browser.kind }}" data-tree-product="{{ node.product_id }}" data-tree-create-url="{% url 'ai_assistant:create_resource_folder' %}" data-tree-rename-url="{% url 'ai_assistant:rename_resource_folder' node.id %}" data-tree-delete-url="{% url 'ai_assistant:delete_resource_folder' node.id %}" draggable="true" data-tree-drag="folder" data-drag-id="{{ node.id }}" data-drag-kind="{{ browser.kind }}" data-drag-product="{{ node.product_id }}" data-drag-parent="{{ node.parent_id }}" data-tree-move-url="{% url 'ai_assistant:move_resource_folder' node.id %}"{% endif %}
+          {% elif node.can_move %}
+            draggable="true" data-tree-drag="resource" data-drag-id="{{ node.id }}" data-drag-kind="{{ browser.kind }}" data-drag-product="{{ node.product_id }}"
+          {% endif %}>
+          <span class="fa {% if node.type == 'product' %}fa-folder-open-o{% elif node.type == 'folder' %}fa-folder-o{% elif browser.kind == 'plan' %}fa-calendar{% else %}fa-play-circle-o{% endif %}" aria-hidden="true"></span><span>{{ node.label|ui_term }}</span>
+        </a>
+      </div>
+    </li>
+    {% empty %}<li class="text-muted">暂无项目</li>{% endfor %}
+  </ul>
+  <p id="product-tree-no-match" class="text-muted" hidden>没有匹配的记录</p>
+  {% if browser.has_more %}<p class="text-muted">目录展示前 {{ browser.display_limit }} 条记录，请选择项目或版本缩小范围。</p>{% endif %}
+</section>
+<script src="{% static 'ai_assistant/product_case_tree.js' %}"></script>

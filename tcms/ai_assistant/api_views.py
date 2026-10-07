@@ -20,42 +20,18 @@ from .api_forms import APICaseForm, APISubmitForm, EnvironmentForm
 from .api_runner import submit_run
 from .crypto import decrypt_api_key
 from .models import APICase, APIEnvironment, APIRun, APISuite
-
-
-def home_url(product):
-    return reverse("ai_assistant:api_home") + "?" + urlencode({"product": product.pk})
+from .automation_ui import api_list_context, home_url, return_url, write_guard
 
 
 @login_required
+@never_cache
 def home(request):
-    products = Product.objects.order_by("name")
-    product_id = request.GET.get("product")
-    product = get_object_or_404(products, pk=product_id) if product_id and product_id.isdigit() else products.first()
-    tab = request.GET.get("tab", "environments")
-    if tab not in {"environments", "cases", "suites", "runs"}:
-        tab = "environments"
-    context = {"products": products, "product": product, "tab": tab}
-    if product:
-        context.update({
-            "suites": APISuite.objects.filter(owner=request.user, product=product).order_by("name"),
-            "environments": APIEnvironment.objects.filter(owner=request.user, product=product),
-            "cases": Paginator(APICase.objects.filter(
-                owner=request.user, product=product
-            ).select_related("test_case").order_by("sequence", "pk"), 20).get_page(request.GET.get("case_page")),
-            "runs": Paginator(APIRun.objects.filter(
-                owner=request.user, product=product
-            ), 15).get_page(request.GET.get("page")),
-        })
-    if product and tab == "cases":
-        from .automation_folders import automation_cases
-        context["cases"] = Paginator(automation_cases(request.user, "api_case", product, request.GET), 20).get_page(request.GET.get("case_page"))
-        query = request.GET.copy()
-        query.pop("case_page", None)
-        context["case_query"] = query.urlencode()
-    return render(request, "ai_assistant/api/home.html", context)
+    return render(request, 'ai_assistant/api/home.html', api_list_context(request))
 
 
 @login_required
+@write_guard
+@never_cache
 def environment_edit(request, product_id, pk=None):
     product = get_object_or_404(Product, pk=product_id)
     instance = get_object_or_404(APIEnvironment, pk=pk, owner=request.user, product=product) if pk else APIEnvironment(owner=request.user, product=product)
@@ -63,18 +39,20 @@ def environment_edit(request, product_id, pk=None):
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "接口测试环境已保存")
-        return redirect(home_url(product))
+        return redirect(return_url(request, home_url(product)))
     # Credentials never reappear, even on a rejected form submission.
     if form.is_bound:
         form.data = form.data.copy()
         form.data["secret_headers"] = ""
     return render(request, "ai_assistant/api/form.html", {
-        "form": form, "product": product, "back_url": home_url(product),
+        "form": form, "product": product, "back_url": return_url(request, home_url(product)),
         "title": "编辑接口环境" if pk else "新建接口环境",
     })
 
 
 @login_required
+@write_guard
+@never_cache
 def case_edit(request, product_id, pk=None):
     product = get_object_or_404(Product, pk=product_id)
     instance = get_object_or_404(APICase, pk=pk, owner=request.user, product=product) if pk else APICase(owner=request.user, product=product)
@@ -92,16 +70,17 @@ def case_edit(request, product_id, pk=None):
                 case.is_automated = True
                 case._history_user = request.user
                 case.save(update_fields=("is_automated",))
-        messages.success(request, "接口用例已保存")
-        return redirect((home_url(product) + "&tab=cases"))
+        messages.success(request, "接口自动化脚本已保存")
+        return redirect(return_url(request, home_url(product, 'cases')))
     return render(request, "ai_assistant/api/form.html", {
-        "form": form, "product": product, "back_url": (home_url(product) + "&tab=cases"),
-        "title": "编辑接口用例" if pk else "新建接口用例",
+        "form": form, "product": product, "back_url": return_url(request, home_url(product, 'cases')),
+        "title": "编辑接口脚本" if pk else "新建接口脚本",
     })
 
 
 @login_required
 @never_cache
+@write_guard
 def submit(request, product_id=None, pk=None):
     source = None
     initial = {}
@@ -133,13 +112,16 @@ def submit(request, product_id=None, pk=None):
         else:
             return redirect("ai_assistant:api_report", pk=run.pk)
     return render(request, "ai_assistant/api/form.html", {
-        "form": form, "product": product, "back_url": home_url(product),
+        "form": form, "product": product, "back_url": return_url(request, home_url(product, 'runs')),
         "title": "重新执行接口测试" if source else "执行接口测试", "is_execution": True,
         "source_run": source,
+        "environment_previews": {str(env.pk): {"name": env.name, "base_url": env.base_url, "timeout": env.timeout}
+                                 for env in form.fields["environment"].queryset},
     })
 
 
 @login_required
+@never_cache
 def report(request, pk):
     run = get_object_or_404(APIRun.objects.select_related("product", "test_run"), pk=pk, owner=request.user)
     results = list(run.results.all())
@@ -147,10 +129,13 @@ def report(request, pk):
               for key in ("passed", "failed", "error", "pending", "skipped")}
     for result in results:
         result.request_display = json.dumps(result.request_summary, ensure_ascii=False, indent=2)
+    from .execution_results import result_context
+    from .roles import is_read_only
     return render(request, "ai_assistant/api/report.html", {
+        **result_context('api', run, results), "can_write": not is_read_only(request.user),
         "run": run, "results": results, "counts": counts,
         "finished": len(results) - counts["pending"], "total": len(results),
-        "back_url": home_url(run.product),
+        "back_url": return_url(request, home_url(run.product, 'runs')),
         "reruns": run.reruns.filter(owner=request.user)[:10],
     })
 
@@ -186,6 +171,7 @@ def status(request, pk):
 
 @login_required
 @require_POST
+@write_guard
 def cancel(request, pk):
     with transaction.atomic():
         run = get_object_or_404(APIRun.objects.select_for_update(), pk=pk, owner=request.user)
@@ -202,6 +188,7 @@ def cancel(request, pk):
 @login_required
 @require_POST
 @permission_required("testcases.add_testcase", raise_exception=True)
+@write_guard
 def demo(request, product_id):
     product = get_object_or_404(Product, pk=product_id)
     with transaction.atomic():
@@ -226,12 +213,13 @@ def demo(request, product_id):
             from .case_library import attach_case
             attach_case(config)
     messages.success(request, "演示环境和 4 条用例已准备好；启动演示服务后即可选择它们执行")
-    return redirect(home_url(product))
+    return redirect(return_url(request, home_url(product)))
 
 
 @login_required
 @require_POST
 @permission_required("testcases.add_testcase", raise_exception=True)
+@write_guard
 def chain_demo(request, product_id):
     product = get_object_or_404(Product, pk=product_id)
     with transaction.atomic():
@@ -257,4 +245,4 @@ def chain_demo(request, product_id):
             from .case_library import attach_case
             attach_case(config)
     messages.success(request, "已添加 3 条链路用例，请按 10 → 20 → 30 的顺序一起执行")
-    return redirect(home_url(product))
+    return redirect(return_url(request, home_url(product)))

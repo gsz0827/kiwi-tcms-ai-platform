@@ -90,6 +90,41 @@ services:
     restart: unless-stopped
     stop_grace_period: 11m
 
+  allure-worker:
+    <<: *app
+    image: kiwi-tcms-allure:local
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+      target: allure-worker
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://deb.debian.org}
+    command: ["python", "manage.py", "allure_worker"]
+    environment:
+      DJANGO_SETTINGS_MODULE: tcms.settings.ai
+      KIWI_SECRET_KEY: ${KIWI_SECRET_KEY:?Set KIWI_SECRET_KEY in .env}
+      KIWI_DB_HOST: db
+      KIWI_DB_PORT: "3306"
+      KIWI_DB_NAME: kiwi
+      KIWI_DB_USER: kiwi
+      KIWI_DB_PASSWORD: ${KIWI_DB_PASSWORD:?Set KIWI_DB_PASSWORD in .env}
+      ALLURE_COMMAND: /opt/allure/node_modules/.bin/allure
+      NODE_OPTIONS: --max-old-space-size=384
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aq allure_worker /proc/1/cmdline"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 150s
+    cpus: "1.0"
+    mem_limit: 768m
+    cap_drop: ["ALL"]
+
+
   scheduler:
     <<: *app
     command: ["python", "manage.py", "api_scheduler"]

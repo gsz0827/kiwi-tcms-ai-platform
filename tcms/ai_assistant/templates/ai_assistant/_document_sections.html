@@ -1,0 +1,5 @@
+{% load ui_labels %}{% load extra_filters %}
+{% for block in document.document_blocks %}
+{% if block.optional %}<details class="document-extra-section" data-section="{{ block.name }}"><summary>{{ block.label|ui_term }}</summary><article class="document-prose">{{ block.body|markdown2html }}</article></details>
+{% else %}<section class="document-section" data-section="{{ block.name }}"><h2 class="document-section-title">{{ block.label|ui_term }}</h2>{% if block.empty %}<p class="document-section-empty">未填写</p>{% else %}<article class="document-prose">{{ block.body|markdown2html }}</article>{% endif %}</section>{% endif %}
+{% endfor %}

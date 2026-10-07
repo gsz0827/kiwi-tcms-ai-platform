@@ -1,0 +1,16 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'ai_assistant/product_case_tree.css' %}">
+<section class="kiwi-resource-browser product-case-tree" data-resource-browser="{{ browser.kind }}" data-product-tree data-selected-product="{{ browser.product.pk }}" data-product-rooted="true">
+<div class="kiwi-resource-browser-header product-tree-heading">用例目录</div>
+<form method="get" class="product-tree-filter" role="search"><label class="sr-only" for="product-tree-search">按业务用例编号或名称筛选</label><input type="search" id="product-tree-search" name="case_q" value="{{ browser.q }}" class="form-control" placeholder="输入用例编号或者名称筛选" autocomplete="off"><input type="hidden" name="product" value="{{ browser.product.pk }}"><input type="hidden" name="q" value="{{ browser.config_q }}">{% if browser.kind == 'api_case' %}<input type="hidden" name="tab" value="cases">{% endif %}<button class="btn btn-link" type="submit" aria-label="搜索业务用例"><span class="fa fa-search"></span></button></form>
+<nav class="automation-directory-scopes" aria-label="脚本筛选"><a href="{{ browser.all_url }}"{% if browser.all_active %} aria-current="true"{% endif %}>全部脚本</a><a href="{{ browser.unlinked_url }}"{% if browser.unlinked_active %} aria-current="true"{% endif %}>未关联业务用例 <span>{{ browser.unlinked_count }}</span></a></nav>
+<ul class="product-tree-nodes" role="tree" aria-label="关联业务用例目录">
+{% for node in browser.nodes %}<li role="none" data-product-tree-node="{{ node.key }}" data-node-ancestors="{{ node.ancestors }}" data-node-search="{{ node.search }}" data-node-kind="{{ node.kind }}">
+<div class="product-tree-row{% if node.active %} product-tree-active{% endif %}" style="padding-left:{{ node.indent }}px">
+{% if node.has_children %}<button class="product-tree-toggle" type="button" data-product-tree-toggle="{{ node.key }}" aria-expanded="true" aria-label="展开或折叠 {{ node.name }}"><span class="fa fa-angle-down"></span></button>{% else %}<span class="product-tree-toggle"></span>{% endif %}
+<a role="treeitem" class="product-tree-link {% if node.kind == 'case' %}kiwi-resource-item-link{% else %}kiwi-resource-folder{% endif %}{% if node.kind == 'product' %} product-tree-root{% endif %}" href="{{ node.url }}" data-tree-path="{{ node.path }}" data-tree-type="{{ node.kind }}" title="{{ node.path }}"><span class="fa {% if node.kind == 'case' %}fa-file-text-o{% elif node.kind == 'product' %}fa-folder-open-o{% else %}fa-folder-o{% endif %}"></span><span>{% if node.kind == 'case' %}{{ node.number }} · {% endif %}{{ node.name }}</span></a>
+</div></li>{% empty %}<li class="scenario-empty">暂无项目</li>{% endfor %}
+</ul><p class="scenario-empty" id="product-tree-no-match" hidden>暂无匹配的用例或目录</p>
+{% if browser.has_more %}<p class="text-muted">目录显示前 {{ browser.limit }} 条匹配用例，请筛选缩小范围。</p>{% endif %}
+<div class="automation-directory-footer"><a href="{{ browser.manage_url }}">在用例库管理目录</a></div>
+</section><script src="{% static 'ai_assistant/product_case_tree.js' %}"></script>

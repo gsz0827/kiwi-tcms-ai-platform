@@ -19,17 +19,17 @@ def visible_cases(owner):
 
 
 def library_products():
-    """用例库产品下拉用的查询集。"""
+    """用例库项目下拉用的查询集。"""
     return Product.objects.order_by("name")
 
 
 def selected_product(request, products=None):
-    """用例库当前产品：GET 参数指定，否则取第一个。返回 (下拉查询集, 当前产品)。
+    """用例库当前项目：GET 参数指定，否则取第一个。返回 (下拉查询集, 当前项目)。
 
-    页面表格与左侧共享目录都从这里取产品，避免两处口径漂移。
+    页面表格与左侧共享目录都从这里取项目，避免两处口径漂移。
     """
     products = library_products() if products is None else products
-    product_id = request.GET.get("product")
+    product_id = str(request.GET.get("product", request.session.get("ai_product_id", "")))
     if product_id and product_id.isdigit():
         return products, get_object_or_404(products, pk=product_id)
     return products, products.first()
@@ -57,7 +57,8 @@ def library_cases(request, product, user=None):
         cases = cases.filter(category_id=category_id)
     if request.GET.get("q"):
         cases = cases.filter(summary__icontains=request.GET["q"][:200])
-    return cases
+    from .case_directories import filter_cases
+    return filter_cases(cases, "case", request.GET.get("folder", ""), product)
 
 
 def attach_case(config):
@@ -71,7 +72,7 @@ def attach_case(config):
         raise ValueError("请先完成平台初始化，配置用例状态与优先级。")
     case = TestCase.objects.create(summary=config.name, category=category, author=config.owner,
         priority=priority, case_status=status, is_automated=True,
-        text="接口请求与断言见自动化配置。")
+        text="接口请求与断言见自动化脚本。")
     for permission in ("view_testcase", "change_testcase"):
         assign_perm(permission, config.owner, case)
     config.test_case = case

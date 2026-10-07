@@ -1,0 +1,7 @@
+.run-directory-workspace .plan-advanced-grid label{position:relative}
+.run-table-scroll #resultsTable{min-width:1100px;margin:0;width:100%!important}
+.run-table-scroll #resultsTable th{white-space:nowrap;background:#f5f8fb;color:#52677c;font-size:13px;padding:13px 12px}
+.run-table-scroll #resultsTable td{padding:14px 12px;vertical-align:middle;overflow-wrap:anywhere}
+.run-table-scroll #resultsTable th:nth-child(2),.run-table-scroll #resultsTable th:nth-child(3){min-width:165px}
+.run-table-scroll .dataTables_wrapper{min-width:1100px}
+.run-table-scroll .dt-buttons{padding:8px}

@@ -113,10 +113,11 @@ class ArchiveTests(TestCase):
         self.product=ProductFactory(); version=VersionFactory(product=self.product)
         self.plan=TestPlanFactory(product=self.product,product_version=version)
         self.build=BuildFactory(version=version)
-        TestCaseFactory(category__product=self.product)
+        self.business_case = TestCaseFactory(category__product=self.product)
+        self.business_case.save()
         self.states={key:TestExecutionStatus.objects.create(name='Archive '+key,weight=weight) for key,weight in [('passed',1),('failed',-1),('pending',0)]}
         self.run=WebRun.objects.create(owner=self.owner,product=self.product,name='Smoke',submission_token=uuid.uuid4(),
-            status='failed',total=3,completed_count=2,snapshot_encrypted=encrypted({'cases':[{'name':'Passed'},{'name':'Failed'},{'name':'Not executed'}],'secret':'private-value'}))
+            status='failed',total=3,completed_count=2,snapshot_encrypted=encrypted({'cases':[{'name':name,'business_case_id':self.business_case.pk,'business_case_version':self.business_case.history.latest().history_id} for name in ['Passed','Failed','Not executed']],'secret':'private-value'}))
         WebResult.objects.create(run=self.run,position=1,name='Passed',status='passed')
         WebResult.objects.create(run=self.run,position=2,name='Failed',status='failed',error='private-error')
         self.data=dict(plan=self.plan,build=self.build,defects=['2'],confirm=True,**self.states)

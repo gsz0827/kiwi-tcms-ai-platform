@@ -1,4 +1,4 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
 
 {% block ai_contents %}
 <div class="container-fluid">
@@ -37,7 +37,7 @@
             {% for log in page.object_list %}
                 <tr>
                     <td>{{ log.created }}</td>
-                    <td>{{ log.get_operation_display }}</td>
+                    <td>{{ log.get_operation_display|ui_term }}</td>
                     <td>{{ log.config_name }}<br><span class="text-muted">{{ log.model_name }}</span></td>
                     <td>
                         {% if log.status == "success" %}

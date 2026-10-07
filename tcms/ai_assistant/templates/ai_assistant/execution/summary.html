@@ -1,0 +1,7 @@
+<div class="execution-summary" aria-label="执行结果统计">
+  <div><strong>{{ execution_counts.passed }}</strong><span>通过</span></div>
+  <div><strong>{{ execution_counts.failed }}</strong><span>{% if execution_kind == 'api' %}断言失败{% else %}失败{% endif %}</span></div>
+  <div><strong>{{ execution_counts.error }}</strong><span>{% if execution_kind == 'api' %}请求异常{% else %}执行异常{% endif %}</span></div>
+  <div><strong>{{ execution_unexecuted }}</strong><span>未执行</span></div>
+</div>
+{% if execution_unknown %}<p class="text-warning">另有 {{ execution_unknown }} 条结果状态未知，请查看原始诊断。</p>{% endif %}

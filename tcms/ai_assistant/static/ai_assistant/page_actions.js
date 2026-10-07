@@ -11,6 +11,8 @@
         button.addEventListener("click", function () { window.print(); });
     });
     document.querySelectorAll("[data-confirm]").forEach(function (confirmation) {
+        // Folder forms have their own confirmation handler in platform_resource_browser.js.
+        if (!confirmation.form) { return; }
         confirmation.form.addEventListener("submit", function (event) {
             var button = event.submitter || confirmation;
             if (button.dataset.confirm && !window.confirm(button.dataset.confirm)) {

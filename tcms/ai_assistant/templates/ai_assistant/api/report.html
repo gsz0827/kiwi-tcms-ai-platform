@@ -1,22 +1,24 @@
-{% extends "ai_assistant/api/base.html" %}
-{% load static %}
+{% extends "ai_assistant/api/base.html" %}{% load ui_labels %}
+{% load static tz allure_reports %}
+{% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/execution_results.css' %}">{% endblock %}
 {% block api_content %}
-<header class="api-header"><div><p class="text-muted">{{ run.product.name }} / {{ run.environment_name }}</p><h1>接口执行报告</h1><p>{{ run.created|date:"Y-m-d H:i:s" }} · {{ run.get_status_display }} · 已处理 {{ finished }}/{{ total }} 条</p></div><a href="{{ back_url }}">返回接口自动化</a></header>
-<div id="api-run-status" data-url="{% url 'ai_assistant:api_status' run.pk %}" data-status="{{ run.status }}" data-finished="{{ finished }}" data-terminal="{{ run.is_terminal|yesno:'true,false' }}">
-{% if not run.is_terminal %}<p>结果会自动更新。{% if run.status == 'queued' %}等待后台 Worker 领取。{% endif %}<span id="api-poll-error" hidden>暂时无法更新，请刷新页面查看。</span></p><form action="{% url 'ai_assistant:api_cancel' run.pk %}" method="post">{% csrf_token %}<button class="btn btn-default" type="submit">停止后续用例</button></form>{% endif %}</div>
-{% if run.error %}<p class="alert alert-danger">{{ run.error }}</p>{% endif %}
-{% if run.is_terminal %}<div class="api-report-actions"><a class="btn btn-default" href="{% url 'ai_assistant:automation_archive' 'api' run.pk %}">归档报告 / 创建缺陷草稿</a><a class="btn btn-primary" href="{% url 'ai_assistant:api_rerun' run.pk %}">重新执行…</a><a class="btn btn-default" href="{% url 'ai_assistant:api_export' run.pk %}">导出 JSON 报告</a></div>{% endif %}
-{% if run.source_run_id %}<p>本次由<a href="{% url 'ai_assistant:api_report' run.source_run_id %}">此前的执行报告</a>重新提交。</p>{% endif %}
-<p>触发来源：{{ run.get_trigger_display }}{% if run.suite_id %} · <a href="{% url 'ai_assistant:api_suite' run.suite_id %}">{{ run.suite.name }}</a>{% endif %}</p>
-{% if reruns %}<p>后续执行：{% for item in reruns %}<a href="{% url 'ai_assistant:api_report' item.pk %}">{{ item.created|date:"m-d H:i:s" }}（{{ item.get_status_display }}）</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
-<div class="api-metrics"><div><strong>{{ counts.passed }}</strong>通过</div><div><strong>{{ counts.failed }}</strong>断言失败</div><div><strong>{{ counts.error }}</strong>请求异常</div><div><strong>{{ counts.pending|add:counts.skipped }}</strong>未执行</div></div>
-{% if run.test_run %}<p>关联运行：<a href="{% url 'testruns-get' run.test_run_id %}">{{ run.test_run.summary }}</a>。每条用例的回写情况见下方；请求异常不会被误记为业务断言失败。</p>{% endif %}
-{% for result in results %}<section class="api-card api-result-{{ result.status }}"><header><h2>{{ forloop.counter }}. {{ result.name }}</h2><strong>{{ result.get_status_display }}</strong></header><div class="api-result-body">
-{% if result.status_code %}<p>HTTP {{ result.status_code }} · {{ result.elapsed_ms }} 毫秒</p>{% endif %}{% if result.error %}<p class="text-danger">{{ result.error }}</p>{% endif %}{% if result.writeback %}<p>{{ result.writeback }}</p>{% endif %}
-{% if result.checks %}<div class="api-table-scroll"><table class="table"><thead><tr><th>断言</th><th>预期</th><th>实际</th><th>结果</th></tr></thead><tbody>{% for check in result.checks %}<tr><td>{{ check.label }}</td><td>{{ check.expected }}</td><td>{{ check.actual }}</td><td>{% if check.passed %}通过{% else %}<strong class="text-danger">失败</strong>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
-{% if result.request_summary %}<details><summary>请求详情（敏感字段已隐藏）</summary><pre>{{ result.request_display }}</pre></details>{% endif %}
-{% if result.response_summary %}<details><summary>响应摘要（最多 12000 字符）</summary><pre>{{ result.response_summary }}</pre></details>{% endif %}
-</div></section>{% endfor %}
-<p class="text-muted">“已完成”表示队列处理结束，是否通过请查看断言结果。历史报告使用提交时的配置，编辑环境或用例不会改变这次结果。</p>
+<header class="api-header"><h1>执行详情</h1><a href="{{ back_url }}">返回执行任务</a></header>
+<section class="api-card execution-overview">
+  <h2>{{ run.product.name }} · {{ run.environment_name }}</h2>
+  <div id="api-run-status" data-url="{% url 'ai_assistant:api_status' run.pk %}" data-status="{{ run.status }}" data-finished="{{ finished }}" data-terminal="{{ run.is_terminal|yesno:'true,false' }}">
+    <div class="execution-progress"><p>{{ run.get_status_display|ui_term }} · 已处理 {{ finished }}/{{ total }} 条</p><progress max="{{ total }}" value="{{ finished }}" aria-label="执行进度"></progress></div>
+    {% if not run.is_terminal %}<p><span id="api-poll-error" hidden>暂时无法更新，请刷新页面查看。</span></p>{% if can_write %}<form action="{% url 'ai_assistant:api_cancel' run.pk %}" method="post">{% csrf_token %}<button class="btn btn-default" type="submit">停止后续用例</button></form>{% endif %}{% endif %}
+  </div>
+  {% if run.error %}<p class="text-danger">{{ run.error }}</p>{% endif %}
+  <div class="execution-metadata"><span>提交：{{ run.created|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i:s' }}</span>{% if run.started %}<span>开始：{{ run.started|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i:s' }}</span>{% endif %}{% if run.completed %}<span>结束：{{ run.completed|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i:s' }}</span>{% endif %}<span>触发：{{ run.get_trigger_display }}</span>{% if run.suite_id %}<a href="{% url 'ai_assistant:api_suite' run.suite_id %}">{{ run.suite.name }}</a>{% endif %}</div>
+  {% if run.is_terminal %}<div class="api-report-actions">{% if can_write %}<a class="btn btn-default" href="{% url 'ai_assistant:automation_archive' 'api' run.pk %}">归档报告 / 创建缺陷草稿</a><a class="btn btn-default" href="{% url 'ai_assistant:api_rerun' run.pk %}">重新执行…</a>{% endif %}<a href="{% url 'ai_assistant:api_export' run.pk %}">导出原始结果 JSON</a></div>{% endif %}
+  {% if run.source_run_id %}<p><a href="{% url 'ai_assistant:api_report' run.source_run_id %}">原执行记录</a></p>{% endif %}
+  {% if run.test_run %}<p>关联任务：<a href="{% url 'testruns-get' run.test_run_id %}">{{ run.test_run.summary }}</a></p>{% endif %}
+  {% if reruns %}<details><summary>后续执行</summary><p>{% for item in reruns %}<a href="{% url 'ai_assistant:api_report' item.pk %}">{{ item.created|timezone:UI_PREFERENCES.time_zone|date:'m-d H:i:s' }}（{{ item.get_status_display|ui_term }}）</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p></details>{% endif %}
+</section>
+{% include 'ai_assistant/execution/summary.html' %}
+{% allure_report_card 'api' run %}
+{% include 'ai_assistant/execution/results.html' %}
+{% if run.is_terminal %}<p class="text-muted">任务已结束不等于全部通过，请以用例结果为准。</p>{% endif %}
 <script src="{% static 'ai_assistant/api_report.js' %}" defer></script>
 {% endblock %}

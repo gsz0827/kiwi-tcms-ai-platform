@@ -8,7 +8,7 @@
             <a href="{% url 'ai_assistant:run_report' test_run.pk %}"
                class="btn btn-primary">测试报告</a>
             <a href="{% url 'testruns-get' test_run.pk %}"
-               class="btn btn-default">返回测试运行</a>
+               class="btn btn-default">返回执行任务</a>
             <a href="{% url 'ai_assistant:index' %}"
                class="btn btn-default">返回 AI 测试助手</a>
         </div>
@@ -22,7 +22,7 @@
         <form method="post" id="run-analysis-form">
             {% csrf_token %}
             <button type="submit" id="run-analysis-button" class="btn btn-primary">
-                {% if analyses %}重新分析当前运行{% else %}分析当前测试运行{% endif %}
+                {% if analyses %}重新分析当前运行{% else %}分析当前执行任务{% endif %}
             </button>
             <span class="text-muted">
                 当前模型：{{ active_config.name }}（{{ active_config.model }}）

@@ -10,8 +10,9 @@
         <li>
             <form method="post" action="{% url 'ai_assistant:set_project_context' %}">
                 {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <div class="form-group">
-                    <label for="ai-project-product">项目（产品）</label>
+                    <label for="ai-project-product">项目（项目）</label>
                     <select id="ai-project-product" name="product" class="form-control">
                         <option value="">全部项目</option>
                         {% for product in products %}

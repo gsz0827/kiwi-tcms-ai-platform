@@ -1,0 +1,29 @@
+{% extends "ai_assistant/api/base.html" %}{% load ui_labels %}
+{% load static %}
+{% block title %}{{ title }}{% endblock %}
+{% block api_content %}
+<link rel="stylesheet" href="{% static 'ai_assistant/scenario_workflow.css' %}">
+<header class="api-header"><div><p class="text-muted">测试管理 / 用例库</p><h1>{{ title }}</h1><p>{{ product.name }}{% if form.instance.pk %} · TC-{{ form.instance.pk }}{% endif %}</p></div><a class="btn btn-default" href="{{ back_url }}">{% if design_source %}返回用例设计{% else %}返回用例库{% endif %}</a></header>
+<form method="post" id="scenario-design-form" data-design-mode="{{ form.mode }}" data-document-unsaved="{{ form.is_bound|yesno:'true,false' }}">{% csrf_token %}{% if form.instance.pk %}<input type="hidden" name="edit_token" value="{{ request.document_edit_token }}">{% endif %}{{ form.non_field_errors }}
+{% if design_source %}<input type="hidden" name="design_request" value="{{ design_source.pk }}"><input type="hidden" name="design_fingerprint" value="{{ design_snapshot.fingerprint }}">{% for task in design_tasks %}<input type="hidden" name="dev_tasks" value="{{ task.pk }}">{% endfor %}<p>来源需求：{{ design_source.title }} · V{{ design_source.version }}{% for task in design_tasks %} · {{ task.task_number }} {{ task.title }}{% endfor %}</p>{% endif %}
+<section class="api-card"><header><h2>基本信息</h2></header><div class="api-result-body scenario-form-grid">
+<div class="form-group scenario-form-wide">{{ form.summary.label_tag|ui_term }}{{ form.summary }}{{ form.summary.errors }}</div>
+{% if not form.instance.pk %}<div class="form-group scenario-form-wide">{{ form.folder.label_tag|ui_term }}{{ form.folder }}{{ form.folder.errors }}</div>{% endif %}
+<div class="form-group">{{ form.category.label_tag|ui_term }}{{ form.category }}{{ form.category.errors }}</div><div class="form-group">{{ form.priority.label_tag|ui_term }}{{ form.priority }}{{ form.priority.errors }}</div>
+<div class="form-group">{{ form.case_status.label_tag|ui_term }}{{ form.case_status }}{{ form.case_status.errors }}</div><div class="form-group">{{ form.requirement.label_tag|ui_term }}{{ form.requirement }}{{ form.requirement.errors }}</div>
+</div></section>
+<section class="api-card"><header><h2>用例设计</h2><div class="scenario-edit-mode">{{ form.design_mode }}{{ form.design_mode.errors }}</div></header><div class="api-result-body">
+<div data-structured-editor>{{ form.case_number }}
+<div class="form-group">{{ form.test_type.label_tag|ui_term }}{{ form.test_type }}{{ form.test_type.errors }}<datalist id="scenario-test-types"><option value="功能测试"><option value="异常测试"><option value="边界值测试"><option value="权限测试"><option value="兼容性测试"><option value="性能测试"></datalist></div>
+<div class="form-group">{{ form.preconditions.label_tag|ui_term }}{{ form.preconditions }}{{ form.preconditions.errors }}</div>
+<div class="scenario-design-block"><h3>测试步骤</h3>{{ steps.management_form }}{{ steps.non_form_errors }}<div class="api-table-scroll"><table class="table scenario-steps scenario-step-editor"><thead><tr><th scope="col" class="scenario-step-number">序号</th><th scope="col">操作步骤 <span class="text-danger">*</span></th><th scope="col">输入数据</th><th scope="col">预期结果 <span class="text-danger">*</span></th><th scope="col">操作</th></tr></thead><tbody id="scenario-step-rows">{% for step in steps %}{% include 'ai_assistant/_scenario_step_editor.html' with number=forloop.counter %}{% endfor %}</tbody></table></div><button class="btn btn-default" type="button" id="scenario-step-add"><span class="fa fa-plus"></span> 添加步骤</button></div>
+<details class="scenario-design-block"{% if form.extra.errors %} open{% endif %}><summary>补充原文</summary><div class="form-group">{{ form.extra }}{{ form.extra.errors }}</div></details>
+</div>
+<div data-raw-editor><div class="form-group">{{ form.text.label_tag|ui_term }}{{ form.text }}{{ form.text.errors }}</div></div>
+</div></section>
+<section class="api-card"><header><h2>备注</h2></header><div class="api-result-body">{{ form.notes }}{{ form.notes.errors }}</div></section>
+<div class="scenario-form-footer"><label class="scenario-confirm">{{ form.confirmed }} {{ form.confirmed.label|ui_term }}</label>{{ form.confirmed.errors }}<div class="scenario-actions"><button class="btn btn-primary" type="submit">确认并保存用例</button><a class="btn btn-default" href="{{ back_url }}">取消</a></div></div>
+</form>
+<template id="scenario-empty-step">{% include 'ai_assistant/_scenario_step_editor.html' with step=steps.empty_form number='' %}</template>
+<script src="{% static 'ai_assistant/scenario_editor.js' %}"></script>
+{% endblock %}

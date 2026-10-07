@@ -56,6 +56,9 @@ from .models import (
     ProjectResourceFolder,
 )
 from . import roles
+from .edit_safety import guard_edit, valid_edit
+from .source_review_views import task_content, mark_task_cases
+from .project_context import return_url as project_return_url
 from .engineering import (
     build_iteration_snapshot,
     canonical_hash,
@@ -80,9 +83,9 @@ from .services import (
 
 
 def _run_product(test_run):
-    """执行任务所属的产品；拿不到就返回 None。
+    """执行任务所属的项目；拿不到就返回 None。
 
-    和 ``roles.visible_reports`` 一样先看计划的 product，再回落到构建版本上的产品。
+    和 ``roles.visible_reports`` 一样先看计划的 product，再回落到构建版本上的项目。
     """
     if test_run is None:
         return None
@@ -98,7 +101,7 @@ def _run_product(test_run):
 def _has_run_permission(user, permission, test_run):
     if user.has_perm(permission) or user.has_perm(permission, test_run):
         return True
-    # 平台把「同一产品的成员」当作可见范围（roles.visible_reports 用的是同一套判定）。
+    # 平台把「同一项目的成员」当作可见范围（roles.visible_reports 用的是同一套判定）。
     # 少了这一条，报告会出现在测试质量趋势里，点开却是 403。
     product = _run_product(test_run)
     return product is not None and roles.is_product_member(user, product)
@@ -112,23 +115,33 @@ def _require_run_permission(user, permission, test_run):
 RESOURCE_FOLDER_PERMISSIONS = {
     "case": "testcases.change_testcase",
     "plan": "testplans.change_testplan",
+    "run": "testruns.change_testrun",
 }
 
 
 def _resource_browser_redirect(request, resource_type=None):
     next_url = request.POST.get("next", "")
-    if next_url.startswith("/") and not next_url.startswith("//"):
-        return redirect(next_url)
+    if next_url:
+        from .project_context import return_url
+        return redirect(return_url(request))
     return redirect(
         {
             "requirement": "ai_assistant:index",
             "case": "testcases-search",
             "plan": "plans-search",
+            "run": "testruns-search",
         }.get(resource_type, "core-views-index")
     )
 
 
-def _require_folder_management_permission(user, resource_type):
+def _require_folder_management_permission(user, resource_type, product=None):
+    if resource_type in {"case", "case_group", "web_case", "api_case", "plan", "run"} and roles.is_read_only(user):
+        raise PermissionDenied
+    if resource_type == "case_group":
+        from .case_directories import can_manage_common
+        if not can_manage_common(user, product):
+            raise PermissionDenied
+        return
     if resource_type in {"web_case", "api_case"}:
         if not user.is_authenticated or roles.is_read_only(user):
             raise PermissionDenied
@@ -141,6 +154,8 @@ def _require_folder_management_permission(user, resource_type):
 
 
 def _resource_for_assignment(user, resource_type, object_id):
+    if resource_type in {"case", "web_case", "api_case", "plan", "run"} and roles.is_read_only(user):
+        raise PermissionDenied
     if resource_type in {"web_case", "api_case"}:
         from tcms.web_testing.models import WebCase
         from .models import APICase
@@ -149,7 +164,7 @@ def _resource_for_assignment(user, resource_type, object_id):
         resource = get_object_or_404(model.objects.select_related("product"), pk=object_id, owner=user)
         return resource, resource.product
     if resource_type == "requirement":
-        # 与需求列表同一套可见范围：产品成员之间可以互相归档对方的需求。
+        # 与需求列表同一套可见范围：项目成员之间可以互相归档对方的需求。
         resource = get_object_or_404(
             roles.visible_requests(user).select_related("category__product"),
             pk=object_id,
@@ -179,6 +194,15 @@ def _resource_for_assignment(user, resource_type, object_id):
             raise PermissionDenied
         return resource, resource.product
 
+    if resource_type == "run":
+        resource = get_object_or_404(
+            TestRun.objects.select_related("build__version__product"), pk=object_id
+        )
+        if not (user.has_perm("testruns.change_testrun")
+                or user.has_perm("testruns.change_testrun", resource)):
+            raise PermissionDenied
+        return resource, resource.build.version.product
+
     raise PermissionDenied
 
 
@@ -186,8 +210,8 @@ def _resource_for_assignment(user, resource_type, object_id):
 @login_required
 def create_resource_folder(request):
     resource_type = request.POST.get("resource_type", "")
-    _require_folder_management_permission(request.user, resource_type)
     product = get_object_or_404(Product, pk=request.POST.get("product"))
+    _require_folder_management_permission(request.user, resource_type, product)
     name = request.POST.get("name", "").strip()
     if not name or len(name) > 120:
         messages.error(request, "目录名称不能为空且不能超过 120 个字符。")
@@ -197,7 +221,8 @@ def create_resource_folder(request):
     parent_id = request.POST.get("parent")
     if parent_id:
         parent = get_object_or_404(ProjectResourceFolder, pk=parent_id)
-        if parent.product_id != product.pk or parent.resource_type != resource_type:
+        from .case_directories import folder_types
+        if parent.product_id != product.pk or parent.resource_type not in folder_types(resource_type):
             raise PermissionDenied
 
     if ProjectResourceFolder.objects.filter(
@@ -232,7 +257,7 @@ def create_resource_folder(request):
 @login_required
 def rename_resource_folder(request, pk):
     folder = get_object_or_404(ProjectResourceFolder, pk=pk)
-    _require_folder_management_permission(request.user, folder.resource_type)
+    _require_folder_management_permission(request.user, folder.resource_type, folder.product)
     name = request.POST.get("name", "").strip()
     if not name or len(name) > 120:
         messages.error(request, "目录名称不能为空且不能超过 120 个字符。")
@@ -261,9 +286,14 @@ def rename_resource_folder(request, pk):
 def delete_resource_folder(request, pk):
     folder = get_object_or_404(ProjectResourceFolder, pk=pk)
     resource_type = folder.resource_type
-    _require_folder_management_permission(request.user, resource_type)
+    _require_folder_management_permission(request.user, resource_type, folder.product)
     folder.delete()
-    messages.success(request, "共享目录已删除，其中的资源已回到未归档状态。")
+    messages.success(
+        request,
+        "共享目录已删除，用例已回到所属项目根目录。"
+        if resource_type in {"case", "case_group", "web_case", "api_case"}
+        else "共享目录已删除，其中的资源已回到所属项目根目录，原有记录保留。",
+    )
     return _resource_browser_redirect(request, resource_type)
 
 
@@ -282,14 +312,19 @@ def assign_resource_folder(request):
         ProjectResourceAssignment.objects.filter(
             resource_type=resource_type, object_id=object_id
         ).delete()
-        messages.success(request, "资源已移到未归档。")
+        messages.success(
+            request,
+            "用例已移到所属项目根目录。"
+            if resource_type in {"case", "web_case", "api_case"}
+            else "资源已移到所属项目根目录。",
+        )
         return _resource_browser_redirect(request, resource_type)
 
     folder = get_object_or_404(ProjectResourceFolder, pk=folder_id)
     if (
         product is None
         or folder.product_id != product.pk
-        or folder.resource_type != resource_type
+        or folder.resource_type not in ({resource_type, "case_group"} if resource_type in {"case", "web_case", "api_case"} else {resource_type})
     ):
         raise PermissionDenied
     ProjectResourceAssignment.objects.update_or_create(
@@ -417,13 +452,13 @@ def set_project_context(request):
     )
     if product_id and product is None:
         messages.error(request, "所选项目不存在。")
-        return redirect("ai_assistant:dashboard")
+        return redirect(project_return_url(request))
     if version_id and version is None:
         messages.error(request, "所选版本不存在。")
-        return redirect("ai_assistant:dashboard")
+        return redirect(project_return_url(request))
     if version and product and version.product_id != product.pk:
         messages.error(request, "所选版本不属于当前项目。")
-        return redirect("ai_assistant:dashboard")
+        return redirect(project_return_url(request))
     if version and product is None:
         product = version.product
     if product:
@@ -435,7 +470,7 @@ def set_project_context(request):
     else:
         request.session.pop("ai_version_id", None)
     messages.success(request, "项目视图已切换。")
-    return redirect("ai_assistant:dashboard")
+    return redirect(project_return_url(request, product, version, update_filters=True))
 
 
 @login_required
@@ -703,8 +738,8 @@ def dashboard(request):
             pending_actions.append(
                 {
                     "level": "warning",
-                    "title": f"验证报告 #{row['report'].pk} 的修复回归",
-                    "detail": "该报告包含失败用例，但还没有回归验证记录。",
+                    "title": f"验证报告 #{row['report'].pk} 的修复复测",
+                    "detail": "该报告包含失败用例，但还没有缺陷复测记录。",
                     "url": reverse(
                         "ai_assistant:edit_report", args=[row["report"].pk]
                     ),
@@ -720,7 +755,7 @@ def dashboard(request):
         regression_counts["passed"] > 0
         or (bool(reports) and total_failures == 0),
     ]
-    stage_names = ("需求", "用例", "执行", "缺陷", "报告", "回归")
+    stage_names = ("需求", "用例", "执行", "缺陷", "报告", "复测")
     stages = [
         {"name": name, "complete": complete}
         for name, complete in zip(stage_names, stage_flags)
@@ -776,8 +811,8 @@ _EMPTY_DEV_TASK_STATS = {"total": 0, "done": 0, "percent": 0}
 def _dev_task_stats_map(user, request_ids=None):
     """一次查询算出每条需求的开发任务完成度，避免逐条需求再查库。
 
-    统计范围是「用户看得见的需求下的全部任务单」，而不是只有自己建的：需求已经按
-    产品共享，完成度也必须是团队口径，否则经理看到的进度会缺掉别人负责的那部分。
+    统计范围是「用户看得见的需求下的全部开发任务」，而不是只有自己建的：需求已经按
+    项目共享，完成度也必须是团队口径，否则经理看到的进度会缺掉别人负责的那部分。
     """
     queryset = AIDevTask.objects.filter(request__in=roles.visible_requests(user))
     if request_ids is not None:
@@ -797,7 +832,7 @@ def _dev_task_stats_map(user, request_ids=None):
 
 
 def _assignee_choices_by_product(user, products):
-    """按产品列出可被指派的人，供任务单列表里的「指派」下拉使用。"""
+    """按项目列出可被指派的人，供开发任务列表里的「指派」下拉使用。"""
     choices = {}
     for product in products:
         if product is None:
@@ -810,7 +845,7 @@ def _assignee_choices_by_product(user, products):
 
 @login_required
 def dev_task_list(request):
-    """任务单页：按需求分组展示开发任务单，并从这里发起拆分与指派。"""
+    """开发任务页：按需求分组展示开发任务，并从这里发起拆分与指派。"""
     status_filter = request.GET.get("status", "").strip()
     request_filter = request.GET.get("request", "").strip()
     scope = request.GET.get("scope", "all").strip()
@@ -845,8 +880,12 @@ def dev_task_list(request):
         else:
             tasks = tasks.filter(request=selected_request)
 
+    visible_requirement_ids = set(roles.visible_requests(request.user).values_list("pk", flat=True))
     grouped, order = {}, []
     for task in tasks:
+        task.can_edit = request.user.is_active and roles.can_update_dev_task_status(request.user, task)
+        task.can_delete = request.user.is_active and roles.can_delete_dev_task(request.user, task)
+        task.can_design = request.user.is_active and task.request_id in visible_requirement_ids and roles.can_generate_cases(request.user, task.request)
         if task.request_id not in grouped:
             grouped[task.request_id] = {"request": task.request, "tasks": []}
             order.append(task.request_id)
@@ -860,7 +899,8 @@ def dev_task_list(request):
             request.user, group["request"]
         )
         group["can_edit"] = roles.can_edit_requirement(request.user, group["request"])
-        group["can_split"] = roles.can_split_dev_tasks(request.user, group["request"])
+        group["can_view_requirement"] = group["request"].pk in visible_requirement_ids
+        group["can_split"] = group["can_view_requirement"] and roles.can_split_dev_tasks(request.user, group["request"])
     assignee_choices = _assignee_choices_by_product(
         request.user,
         [group["request"].category.product if group["request"].category_id else None
@@ -934,7 +974,7 @@ def generate_dev_tasks(request, pk):
         messages.warning(request, "请先配置一个 AI 模型并设为默认，再拆分开发任务。")
         return redirect("ai_assistant:model_settings")
     if ai_request.dev_tasks.exists():
-        messages.warning(request, "该需求已经拆分过开发任务，请先删除现有任务单再重新拆分。")
+        messages.warning(request, "该需求已经拆分过开发任务，请先删除现有开发任务再重新拆分。")
         return redirect(target)
     try:
         job, created = enqueue_ai_job(
@@ -948,15 +988,16 @@ def generate_dev_tasks(request, pk):
         messages.error(request, str(exc))
         return redirect(target)
     if created:
-        messages.success(request, "已提交拆分开发任务，稍后回到任务单页面查看结果。")
+        messages.success(request, "已提交拆分开发任务，稍后回到开发任务页面查看结果。")
     else:
         messages.info(request, "这份需求正在拆分，已打开原任务。")
     return redirect("ai_assistant:job_detail", pk=job.pk)
 
 
 @login_required
+@guard_edit(AIDevTask)
 def dev_task_edit(request, pk=None):
-    """新建或编辑一条开发任务单。
+    """新建或编辑一条开发任务。
 
     负责人（被指派人）只能改状态，看不到标题、工时、负责人这些字段——模板会按
     ``can_manage`` 决定渲染哪一组字段，表单也会据此裁剪字段，所以 POST 时不会因为
@@ -970,20 +1011,29 @@ def dev_task_edit(request, pk=None):
         if not can_manage and not roles.can_update_dev_task_status(request.user, task):
             raise PermissionDenied
 
+    previous_content = task_content(task) if task else None
     if request.method == "POST":
         form = AIDevTaskForm(
             request.POST, instance=task, user=request.user, can_manage=can_manage
         )
-        if form.is_valid():
+        if form.is_valid() and valid_edit(request, form):
             saved = form.save(commit=False)
             if task is None:
                 saved.owner = request.user
                 if not roles.can_split_dev_tasks(request.user, saved.request):
                     raise PermissionDenied
             if can_manage:
+                if task is None or "request" in form.changed_data:
+                    saved.requirement_version = saved.request.version
+                    if saved.target_version_id is None:
+                        saved.target_version = saved.request.target_version
+                    saved.needs_update = task is not None
                 _apply_task_assignee(request, saved)
             saved.save()
-            messages.success(request, "任务单已保存。")
+            mark_task_cases(saved, previous_content)
+            messages.success(request, "开发任务已保存。")
+            if request.POST.get("return_detail") == "1":
+                return redirect("ai_assistant:dev_task_detail", pk=saved.pk)
             return redirect(
                 f"{reverse('ai_assistant:dev_task_list')}?request={saved.request_id}"
             )
@@ -1021,7 +1071,7 @@ def _apply_task_assignee(request, task):
 @login_required
 @require_POST
 def assign_dev_task(request, pk):
-    """指派或改派一条任务单；传空的 assignee 表示收回指派。"""
+    """指派或改派一条开发任务；传空的 assignee 表示收回指派。"""
     task = get_object_or_404(roles.visible_dev_tasks(request.user), pk=pk)
     if not roles.can_assign_dev_tasks(request.user, task.request):
         raise PermissionDenied
@@ -1033,17 +1083,17 @@ def assign_dev_task(request, pk):
         task.assigned_by = None
         task.assigned_at = None
         task.save(update_fields=["assignee", "assigned_by", "assigned_at", "updated"])
-        messages.success(request, "已收回这条任务单的指派。")
+        messages.success(request, "已收回这条开发任务的指派。")
         return redirect(target)
 
     product = task.request.category.product if task.request.category_id else None
     candidates = roles.assignable_users(product).filter(pk=assignee_id)
     assignee = candidates.first()
     if assignee is None:
-        messages.error(request, "只能指派给该产品的成员。")
+        messages.error(request, "只能指派给该项目的成员。")
         return redirect(target)
     if task.assignee_id == assignee.pk:
-        messages.info(request, "这条任务单的负责人没有变化。")
+        messages.info(request, "这条开发任务的负责人没有变化。")
         return redirect(target)
 
     task.assignee = assignee
@@ -1057,13 +1107,13 @@ def assign_dev_task(request, pk):
 @login_required
 @require_POST
 def delete_dev_task(request, pk):
-    """删除一条开发任务单。"""
+    """删除一条开发任务。"""
     task = get_object_or_404(roles.visible_dev_tasks(request.user), pk=pk)
     if not roles.can_delete_dev_task(request.user, task):
         raise PermissionDenied
     request_id = task.request_id
     task.delete()
-    messages.success(request, "任务单已删除。")
+    messages.success(request, "开发任务已删除。")
     return redirect(f"{reverse('ai_assistant:dev_task_list')}?request={request_id}")
 
 
@@ -1078,7 +1128,7 @@ def index(request):
             messages.warning(request, "请先配置一个 AI 模型并设为默认，再使用 AI 助手。")
             return redirect("ai_assistant:model_settings")
 
-        form = AIRequestForm(request.POST)
+        form = AIRequestForm(request.POST, user=request.user)
         if form.is_valid():
             action = request.POST.get("action", "generate")
             operation = (
@@ -1100,7 +1150,7 @@ def index(request):
                         messages.info(request, "这份需求已提交，已打开原任务。")
                     return redirect("ai_assistant:job_detail", pk=job.pk)
     else:
-        form = AIRequestForm()
+        form = AIRequestForm(user=request.user)
 
     ai_requests = (
         roles.visible_requests(request.user)
@@ -1114,6 +1164,12 @@ def index(request):
         .prefetch_related("drafts", "drafts__imported_case")
         .order_by("-created")
     )
+    product_id = str(request.GET.get("product", request.session.get("ai_product_id", "")))
+    if product_id.isdigit():
+        ai_requests = ai_requests.filter(category__product_id=product_id)
+    ai_requests = Paginator(ai_requests, 20).get_page(request.GET.get("page"))
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
     dev_task_stats = _dev_task_stats_map(request.user)
     for ai_request in ai_requests:
         ai_request.unimported_draft_count = sum(
@@ -1123,12 +1179,14 @@ def index(request):
             ai_request.pk, _EMPTY_DEV_TASK_STATS
         )
         ai_request.can_edit = roles.can_edit_requirement(request.user, ai_request)
+        ai_request.can_design = request.user.is_active and roles.can_generate_cases(request.user, ai_request)
     return render(
         request,
         "ai_assistant/index.html",
         {
             "form": form,
             "ai_requests": ai_requests,
+            "pagination_query": pagination_params.urlencode(),
             "active_config": active_config,
             "can_submit": roles.can_submit_requirement(request.user),
         },
@@ -1252,58 +1310,55 @@ def edit_draft(request, pk):
 
 
 @login_required
+@guard_edit(AIRequest)
 def edit_requirement(request, pk):
     ai_request = get_object_or_404(roles.visible_requests(request.user), pk=pk)
     if not roles.can_edit_requirement(request.user, ai_request):
         raise PermissionDenied
     if request.method == "POST":
-        old_title = ai_request.title
-        old_requirement = ai_request.requirement
-        form = RequirementChangeForm(request.POST, instance=ai_request)
-        if form.is_valid():
-            changed = (
-                form.cleaned_data["title"] != old_title
-                or form.cleaned_data["requirement"] != old_requirement
-            )
-            if not changed:
+        old_content = (ai_request.title, ai_request.requirement, dict(ai_request.document_sections), ai_request.target_version_id)
+        old_attributes = ai_request.document_attributes
+        form = RequirementChangeForm(request.POST, instance=ai_request, user=request.user)
+        if form.is_valid() and valid_edit(request, form):
+            content_changed = old_content != (form.cleaned_data["title"], form.cleaned_data["requirement"], form.cleaned_data["document_sections"], ai_request.target_version_id)
+            if not content_changed and ai_request.document_attributes == old_attributes:
                 messages.info(request, "需求内容没有变化。")
             else:
                 with transaction.atomic():
-                    locked = AIRequest.objects.select_for_update().get(
-                        pk=ai_request.pk
-                    )
-                    locked.title = form.cleaned_data["title"]
-                    locked.requirement = form.cleaned_data["requirement"]
-                    locked.version += 1
-                    locked.needs_case_review = True
-                    locked.changed_at = timezone.now()
-                    locked.analysis = {}
-                    locked.analysis_raw = ""
-                    locked.analysis_model_config = None
-                    locked.analyzed_at = None
-                    locked.coverage_analysis = {}
-                    locked.coverage_raw = ""
-                    locked.coverage_model_config = None
-                    locked.coverage_analyzed_at = None
+                    locked = AIRequest.objects.select_for_update().get(pk=ai_request.pk)
+                    for field in ("title", "requirement", "document_sections", "target_version", "assigned_to", "priority", "status"):
+                        setattr(locked, field, form.cleaned_data[field])
+                    if content_changed:
+                        locked.version += 1
+                        locked.needs_case_review = locked.drafts.exists()
+                        locked.changed_at = timezone.now()
+                        locked.analysis = {}
+                        locked.analysis_raw = ""
+                        locked.analysis_model_config = None
+                        locked.analyzed_at = None
+                        locked.coverage_analysis = {}
+                        locked.coverage_raw = ""
+                        locked.coverage_model_config = None
+                        locked.coverage_analyzed_at = None
                     locked.save()
-                    locked.drafts.update(needs_update=True)
-                    AIRequirementVersion.objects.create(
-                        request=locked,
-                        version=locked.version,
-                        title=locked.title,
-                        requirement=locked.requirement,
-                        change_summary=form.cleaned_data["change_summary"],
-                        changed_by=request.user,
-                    )
-                messages.success(request, f"需求已更新为 V{locked.version}，相关用例已标记待更新。")
+                    if content_changed:
+                        locked.drafts.update(needs_update=True)
+                        locked.dev_tasks.update(needs_update=True)
+                        AIRequirementVersion.objects.create(
+                            request=locked, version=locked.version, title=locked.title,
+                            requirement=locked.requirement, document_sections=locked.document_sections,
+                            attributes=locked.document_attributes,
+                            change_summary=form.cleaned_data["change_summary"], changed_by=request.user,
+                        )
+                messages.success(request, f"需求已更新为 V{locked.version}，关联开发任务和用例已标记待复核。" if content_changed else "需求属性已保存，业务修订未变化。")
                 return redirect("ai_assistant:requirement_trace", pk=locked.pk)
     else:
-        form = RequirementChangeForm(instance=ai_request)
-    return render(
-        request,
-        "ai_assistant/edit_requirement.html",
-        {"ai_request": ai_request, "form": form, "versions": ai_request.versions.select_related("changed_by")},
-    )
+        form = RequirementChangeForm(instance=ai_request, user=request.user)
+    return render(request, "ai_assistant/edit_requirement.html", {
+        "ai_request": ai_request, "form": form,
+        "versions": ai_request.versions.select_related("changed_by"),
+    })
+
 
 
 @login_required
@@ -1330,7 +1385,14 @@ def requirement_trace(request, pk):
             ).prefetch_related("regression_verifications")
         )
         rows.append({"draft": draft, "executions": executions, "defects": defects})
-    dev_tasks = list(ai_request.dev_tasks.all())
+    dev_tasks = list(ai_request.dev_tasks.select_related("assignee"))
+    can_design = request.user.is_active and roles.can_generate_cases(request.user, ai_request)
+    ai_request.can_design = can_design
+    ai_request.can_edit = roles.can_edit_requirement(request.user, ai_request)
+    ai_request.unimported_draft_count = sum(
+        1 for draft in ai_request.drafts.all() if draft.imported_case_id is None
+    )
+    active_config = AIModelConfig.objects.filter(owner=request.user, is_active=True).first() if can_design else None
     return render(
         request,
         "ai_assistant/requirement_trace.html",
@@ -1339,6 +1401,9 @@ def requirement_trace(request, pk):
             "rows": rows,
             "dev_tasks": dev_tasks,
             "can_edit": roles.can_edit_requirement(request.user, ai_request),
+            "can_design": can_design,
+            "can_create": can_design and request.user.has_perm("testcases.add_testcase"),
+            "active_config": active_config,
             "can_split": roles.can_split_dev_tasks(request.user, ai_request),
             "can_assign": roles.can_assign_dev_tasks(request.user, ai_request),
             "dev_task_stats": _dev_task_stats_map(
@@ -1383,7 +1448,7 @@ def import_request(request, pk):
 
 @login_required
 def member_list(request):
-    """产品成员与角色：哪个产品有谁、各是什么角色。
+    """项目成员与角色：哪个项目有谁、各是什么角色。
 
     成员用 guardian 的 ``management.view_product`` 对象权限表示，角色用 Django 的
     用户组表示——两者都在 Django admin 里看得见，不额外建表。
@@ -1436,7 +1501,7 @@ def member_list(request):
 @login_required
 @require_POST
 def add_product_member(request):
-    """把一个已有账号加进产品。"""
+    """把一个已有账号加进项目。"""
     if not roles.can_manage_members(request.user):
         raise PermissionDenied
     product = get_object_or_404(
@@ -1450,7 +1515,7 @@ def add_product_member(request):
         messages.error(request, "请选择一个有效的账号。")
         return redirect(target)
     if roles.is_product_member(member, product):
-        messages.info(request, f"{member.username} 已经是该产品的成员。")
+        messages.info(request, f"{member.username} 已经是该项目的成员。")
         return redirect(target)
 
     roles.add_product_member(member, product, granted_by=request.user)
@@ -1466,7 +1531,7 @@ def add_product_member(request):
 @login_required
 @require_POST
 def remove_product_member(request, pk):
-    """把一个成员移出产品；顺带清掉他的角色，避免留下没有产品的空角色。"""
+    """把一个成员移出项目；顺带清掉他的角色，避免留下没有项目的空角色。"""
     if not roles.can_manage_members(request.user):
         raise PermissionDenied
     product = get_object_or_404(
@@ -1476,7 +1541,7 @@ def remove_product_member(request, pk):
     target = f"{reverse('ai_assistant:member_list')}?product={product.pk}"
 
     if member == request.user:
-        messages.warning(request, "不能把自己移出产品，请让其他管理员操作。")
+        messages.warning(request, "不能把自己移出项目，请让其他管理员操作。")
         return redirect(target)
     roles.remove_product_member(member, product)
     if not roles.member_products(member).exists():
@@ -1499,7 +1564,7 @@ def set_member_roles(request, pk):
 
     selected = set(request.POST.getlist("roles")) & set(roles.ROLE_GROUPS)
     if not roles.is_product_member(member, product):
-        messages.error(request, "该账号不是这个产品的成员，请先添加成员。")
+        messages.error(request, "该账号不是这个项目的成员，请先添加成员。")
         return redirect(target)
     roles.set_user_roles(member, selected)
     if selected:
@@ -1560,10 +1625,10 @@ def instruction_profiles(request):
 
 
 def _default_classification():
-    """产品分类不进平台界面：新产品统一落到已有分类，一个都没有时建「默认分类」。
+    """项目分类不进平台界面：新项目统一落到已有分类，一个都没有时建「默认分类」。
 
     分类是上游 Kiwi 的模型，系统后台与 XML-RPC 的 Classification.* 仍在用它，
-    平台侧只是不为它提供界面，所以这里保证新建产品总能拿到一个分类。
+    平台侧只是不为它提供界面，所以这里保证新建项目总能拿到一个分类。
     """
     classification = Classification.objects.order_by("pk").first()
     if classification is None:
@@ -1578,7 +1643,7 @@ def create_product(request):
     if not (next_url.startswith("/") and not next_url.startswith("//")):
         next_url = ""
     form = ProductForm(request.POST or None)
-    # 「产品分类」不是平台概念：字段从表单里拿掉，保存时自动归类。
+    # 「项目分类」不是平台概念：字段从表单里拿掉，保存时自动归类。
     form.fields.pop("classification", None)
     if request.method == "POST" and form.is_valid():
         product = form.save(commit=False)
@@ -1586,7 +1651,7 @@ def create_product(request):
         product.save()
         messages.success(
             request,
-            f"产品“{product.name}”已创建，并已自动生成默认用例分类、版本和构建。",
+            f"项目“{product.name}”已创建，并已自动生成默认用例分类、版本和构建。",
         )
         if next_url:
             return redirect(next_url)
@@ -1723,7 +1788,7 @@ def run_analysis(request, pk):
 
     if request.method == "POST":
         if active_config is None:
-            messages.warning(request, "请先配置一个 AI 模型并设为默认，再分析测试运行。")
+            messages.warning(request, "请先配置一个 AI 模型并设为默认，再分析执行任务。")
             return redirect("ai_assistant:model_settings")
         return _queue_job(
             request,
@@ -1851,6 +1916,7 @@ def edit_defect_draft(request, pk):
             "duplicate_candidates": duplicate_candidates(draft),
             "status_history": draft.status_history.select_related("changed_by"),
             "regression_form": RegressionVerificationForm(),
+            "web_regression_available": draft.execution.run.web_runs.filter(owner=request.user, execution_mode="formal").exists(),
             "regressions": draft.regression_verifications.select_related("regression_run"),
         },
     )
@@ -1934,12 +2000,29 @@ def create_defect_regression(request, pk):
     _require_run_permission(request.user, "testruns.view_testrun", draft.execution.run)
     form = RegressionVerificationForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "请填写有效的回归测试运行 ID。")
+        messages.error(request, "请填写有效的复测执行任务编号。")
         return redirect("ai_assistant:edit_defect_draft", pk=draft.pk)
     regression_run = get_object_or_404(TestRun, pk=form.cleaned_data["regression_run_id"])
     _require_run_permission(request.user, "testruns.view_testrun", regression_run)
-    status, result = verify_defect_regression(draft, regression_run)
-    AIRegressionVerification.objects.create(
+    if roles.is_read_only(request.user):
+        raise PermissionDenied
+    web_regression = regression_run.web_runs.filter(owner=request.user, execution_mode="formal").first()
+    if web_regression:
+        import json
+        from .crypto import decrypt_api_key
+        context = json.loads(decrypt_api_key(web_regression.snapshot_encrypted)).get("regression_context", {})
+        if context.get("defect_id") != draft.pk:
+            messages.error(request, "复测任务不属于当前缺陷，请从当前缺陷发起正式复测。")
+            return redirect("ai_assistant:edit_defect_draft", pk=draft.pk)
+        from tcms.web_testing.regression import verify
+        return verify(request, web_regression.pk)
+    try:
+        status, result = verify_defect_regression(draft, regression_run)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("ai_assistant:edit_defect_draft", pk=draft.pk)
+    from .regression_tasks import save_verification
+    save_verification(
         owner=request.user,
         defect_draft=draft,
         regression_run=regression_run,
@@ -1953,20 +2036,20 @@ def create_defect_regression(request, pk):
             "pending_verification",
             user=request.user,
             source="regression",
-            reason=f"TR-{regression_run.pk} 回归通过，等待人工关闭",
+            reason=f"TR-{regression_run.pk} 复测通过，等待人工关闭",
         )
-        messages.success(request, "回归通过，缺陷已转为“待验证”。")
+        messages.success(request, "复测通过，缺陷已转为“待验证”。")
     elif status == "failed":
         transition_defect(
             draft,
             "in_progress",
             user=request.user,
             source="regression",
-            reason=f"TR-{regression_run.pk} 回归失败，自动重新打开",
+            reason=f"TR-{regression_run.pk} 复测失败，自动重新打开",
         )
-        messages.warning(request, "回归失败，缺陷已自动重新打开为“处理中”。")
+        messages.warning(request, "复测失败，缺陷已自动重新打开为“处理中”。")
     else:
-        messages.info(request, "回归运行中的对应用例尚未完成，已保存验证记录。")
+        messages.info(request, "复测执行任务中的对应用例尚未完成，已保存验证记录。")
     return redirect("ai_assistant:edit_defect_draft", pk=draft.pk)
 
 
@@ -2022,7 +2105,7 @@ def edit_report(request, pk):
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     can_edit = report.owner_id == request.user.pk
     if request.method == "POST" and not can_edit:
-        # 产品成员可以查看并审批别人的报告，但正文只能由作者本人改——改正文会清空
+        # 项目成员可以查看并审批别人的报告，但正文只能由作者本人改——改正文会清空
         # 已有的审批签名，不能让审批人顺手把自己刚签的字抹掉。
         raise PermissionDenied
     if request.method == "POST":
@@ -2062,9 +2145,7 @@ def edit_report(request, pk):
         {
             "report": report,
             "form": form,
-            "regression_form": RegressionVerificationForm(
-                initial={"regression_run_id": report.test_run_id}
-            ),
+            "regression_form": RegressionVerificationForm(),
             "verifications": verifications,
             "approval_form": ReportApprovalForm(),
             "can_edit": can_edit,
@@ -2087,7 +2168,7 @@ def create_regression_verification(request, pk):
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     form = RegressionVerificationForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "请填写有效的回归测试运行 ID。")
+        messages.error(request, "请填写有效的复测执行任务编号。")
         return redirect("ai_assistant:edit_report", pk=report.pk)
     regression_run = get_object_or_404(
         TestRun, pk=form.cleaned_data["regression_run_id"]
@@ -2095,9 +2176,12 @@ def create_regression_verification(request, pk):
     _require_run_permission(
         request.user, "testruns.view_testrun", regression_run
     )
+    if roles.is_read_only(request.user):
+        raise PermissionDenied
     try:
         status, result = verify_regression(report, regression_run)
-        AIRegressionVerification.objects.create(
+        from .regression_tasks import save_verification
+        save_verification(
             owner=request.user,
             source_report=report,
             regression_run=regression_run,
@@ -2106,9 +2190,9 @@ def create_regression_verification(request, pk):
             notes=form.cleaned_data["notes"],
         )
     except Exception as exc:
-        messages.error(request, f"回归验证失败：{exc}")
+        messages.error(request, f"缺陷复测失败：{exc}")
     else:
-        messages.success(request, "修复后回归验证已完成并保存。")
+        messages.success(request, "修复后复测验证已完成并保存。")
     return redirect("ai_assistant:edit_report", pk=report.pk)
 
 
@@ -2226,7 +2310,7 @@ def evaluate_report_gate(request, pk):
         waived=report.gate_waived_at is not None,
     )
     report.save(update_fields=("gate_result", "release_decision", "updated"))
-    messages.success(request, "发布门禁已按当前产品规则重新评估。")
+    messages.success(request, "发布门禁已按当前项目规则重新评估。")
     return redirect("ai_assistant:edit_report", pk=report.pk)
 
 
@@ -2260,13 +2344,13 @@ def export_report_pdf(request, pk):
 
 @login_required
 def release_gate_settings(request):
-    """产品级发布门禁规则：一个产品一条，只有测试经理能维护。"""
+    """项目级发布门禁规则：一个项目一条，只有测试经理能维护。"""
     if not roles.can_manage_release_gate(request.user):
         raise PermissionDenied
     products = Product.objects.order_by("name")
     if request.method == "POST":
-        # 一个产品一条规则：把已存在的那条作为 instance 交给表单。否则 ModelForm 的唯一性
-        # 校验会把「这个产品已经有规则」判成重复，第二次保存会被静默拦成表单错误。
+        # 一个项目一条规则：把已存在的那条作为 instance 交给表单。否则 ModelForm 的唯一性
+        # 校验会把「这个项目已经有规则」判成重复，第二次保存会被静默拦成表单错误。
         posted_product = request.POST.get("product")
         existing = None
         if posted_product and str(posted_product).isdigit():
@@ -2327,7 +2411,7 @@ def iteration_reports(request):
                     _require_run_permission(request.user, "testruns.view_testrun", run)
                 product = form.cleaned_data["product"]
                 if any(run.plan.product_id != product.pk for run in runs):
-                    form.add_error("run_ids", "所有 TestRun 必须属于所选产品")
+                    form.add_error("run_ids", "所有 TestRun 必须属于所选项目")
                 else:
                     metrics_snapshot, run_snapshots = build_iteration_snapshot(runs)
                     gate_result = evaluate_release_gate(
@@ -2358,7 +2442,7 @@ def iteration_reports(request):
 
 @login_required
 def iteration_report_detail(request, pk):
-    # 与列表同口径：同一产品的成员看得到彼此的迭代报告。
+    # 与列表同口径：同一项目的成员看得到彼此的迭代报告。
     report = get_object_or_404(
         roles.visible_iterations(request.user).select_related("product", "version").prefetch_related("runs"),
         pk=pk,
@@ -2368,7 +2452,7 @@ def iteration_report_detail(request, pk):
 
 @login_required
 def report_trends(request):
-    # 与看板同口径：同一产品的成员看得到彼此的报告。
+    # 与看板同口径：同一项目的成员看得到彼此的报告。
     reports = roles.visible_reports(request.user).filter(is_current=True).select_related(
         "test_run", "test_run__plan__product", "test_run__build__version"
     )[:100]

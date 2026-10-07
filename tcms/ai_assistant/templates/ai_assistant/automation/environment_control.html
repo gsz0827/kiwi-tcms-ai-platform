@@ -1,0 +1,6 @@
+<div class="automation-environment-control">{{ field }}{% include 'ai_assistant/automation/environment_action.html' %}</div>
+{% if environment_summary %}<dl class="automation-environment-summary" aria-live="polite">
+<dt>{{ environment_url_label|default:'测试站点' }}</dt><dd data-environment-site>请选择环境</dd>
+<dt data-environment-certificate hidden>证书策略</dt><dd data-environment-certificate-value hidden>—</dd>
+<dt data-environment-timeout hidden>请求超时</dt><dd data-environment-timeout-value hidden>—</dd>
+</dl>{% endif %}

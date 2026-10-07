@@ -1,45 +1,109 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
+{% load static %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'ai_assistant/dashboard.css' %}">
+{% endblock %}
 
 {% block ai_contents %}
 <div class="container-fluid">
     <div class="clearfix">
         <h1 class="pull-left">AI 测试质量看板</h1>
     </div>
-    <p class="text-muted">仅汇总当前账号创建的 AI 需求、分析、缺陷草稿、测试报告和回归验证记录。</p>
-    <form method="get" class="well form-inline"><strong>项目筛选：</strong> <select class="form-control" name="product"><option value="">全部产品</option>{% for product in products %}<option value="{{ product.pk }}" {% if selected_product == product.pk %}selected{% endif %}>{{ product.name }}</option>{% endfor %}</select> <select class="form-control" name="version"><option value="">全部版本</option>{% for version in versions %}<option value="{{ version.pk }}" {% if selected_version == version.pk %}selected{% endif %}>{{ version.product.name }} / {{ version.value }}</option>{% endfor %}</select> <select class="form-control" name="plan"><option value="">全部测试计划</option>{% for plan in plans %}<option value="{{ plan.pk }}" {% if selected_plan == plan.pk %}selected{% endif %}>{{ plan.name }}</option>{% endfor %}</select> <button class="btn btn-primary" type="submit">应用筛选</button> <a class="btn btn-link" href="{% url 'ai_assistant:dashboard' %}?scope=all">清除</a></form>
+    <p class="text-muted">汇总项目内成员互相可见的 AI 需求、分析、缺陷草稿、测试报告和缺陷复测记录。</p>
 
+    <form method="get" class="well form-inline">
+        <strong>项目筛选：</strong>
+        <select class="form-control" name="product">
+            <option value="">全部项目</option>
+            {% for product in products %}
+                <option value="{{ product.pk }}" {% if selected_product == product.pk %}selected{% endif %}>{{ product.name }}</option>
+            {% endfor %}
+        </select>
+        <select class="form-control" name="version">
+            <option value="">全部版本</option>
+            {% for version in versions %}
+                <option value="{{ version.pk }}" {% if selected_version == version.pk %}selected{% endif %}>{{ version.product.name }} / {{ version.value }}</option>
+            {% endfor %}
+        </select>
+        <select class="form-control" name="plan">
+            <option value="">全部测试计划</option>
+            {% for plan in plans %}
+                <option value="{{ plan.pk }}" {% if selected_plan == plan.pk %}selected{% endif %}>{{ plan.name }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary" type="submit">应用筛选</button>
+        <a class="btn btn-link" href="{% url 'ai_assistant:dashboard' %}?scope=all">清除</a>
+    </form>
+
+    {# 阶段记录完整度 #}
     <div class="panel panel-primary">
-        <div class="panel-heading"><strong>流程完成度：{{ closed_loop_score }}%</strong></div>
+        <div class="panel-heading"><strong>阶段记录完整度：{{ closed_loop_score }}%</strong></div>
         <div class="panel-body">
             <div class="progress" style="margin-bottom:15px">
-                <div class="progress-bar {% if closed_loop_score == 100 %}progress-bar-success{% else %}progress-bar-info{% endif %}" role="progressbar" aria-valuenow="{{ closed_loop_score }}" aria-valuemin="0" aria-valuemax="100" style="width:{{ closed_loop_score }}%">{{ closed_loop_score }}%</div>
+                <div class="progress-bar {% if closed_loop_score == 100 %}progress-bar-success{% else %}progress-bar-info{% endif %}"
+                     role="progressbar"
+                     aria-valuenow="{{ closed_loop_score }}"
+                     aria-valuemin="0"
+                     aria-valuemax="100"
+                     style="width:{{ closed_loop_score }}%">{{ closed_loop_score }}%</div>
             </div>
-            <div class="row">
+            <div class="dash-stages">
                 {% for stage in stages %}
-                    <div class="col-sm-2 text-center">
-                        <div class="well" style="margin-bottom:5px">
-                            <span class="fa {% if stage.complete %}fa-check-circle text-success{% else %}fa-circle-o text-muted{% endif %}" style="font-size:24px"></span><br>
-                            <strong>{{ stage.name }}</strong><br>
-                            {% if stage.complete %}<span class="label label-success">已形成记录</span>{% else %}<span class="label label-default">待完成</span>{% endif %}
-                        </div>
+                    <div class="dash-stage">
+                        <span class="fa {% if stage.complete %}fa-check-circle text-success{% else %}fa-circle-o text-muted{% endif %}"></span>
+                        <strong>{{ stage.name }}</strong>
+                        {% if stage.complete %}
+                            <span class="label label-success">已形成记录</span>
+                        {% else %}
+                            <span class="label label-default">待补齐</span>
+                        {% endif %}
                     </div>
                 {% endfor %}
             </div>
-            <p class="help-block">完成度表示当前账号是否已经形成各阶段记录，不等同于具体项目的发布质量评分。</p>
+            <p class="help-block">仅表示当前筛选范围内的阶段记录完整度，不代表测试进度、需求覆盖率或发布质量。</p>
         </div>
     </div>
 
-    <div class="row"><div class="col-md-4"><div class="panel panel-default"><div class="panel-heading"><strong>缺陷状态统计</strong></div><div class="panel-body">{% for item in status_stats %}<span class="label label-default">{{ item.label }} {{ item.total }}</span> {% empty %}暂无缺陷{% endfor %}</div></div></div><div class="col-md-4"><div class="panel panel-default"><div class="panel-heading"><strong>严重程度统计</strong></div><div class="panel-body">{% for item in severity_stats %}<span class="label label-warning">{{ item.label }} {{ item.total }}</span> {% empty %}暂无缺陷{% endfor %}</div></div></div><div class="col-md-4"><div class="panel panel-default"><div class="panel-heading"><strong>优先级统计</strong></div><div class="panel-body">{% for item in priority_stats %}<span class="label label-danger">{{ item.priority }} {{ item.total }}</span> {% empty %}暂无缺陷{% endfor %}</div></div></div></div>
-
-    <div class="row">
-        <div class="col-sm-2"><div class="well"><strong>需求</strong><br><span style="font-size:24px">{{ metrics.requirements }}</span></div></div>
-        <div class="col-sm-2"><div class="well"><strong>用例草稿 / 已导入</strong><br><span style="font-size:24px">{{ metrics.drafts }} / {{ metrics.imported }}</span></div></div>
-        <div class="col-sm-2"><div class="well"><strong>已分析运行</strong><br><span style="font-size:24px">{{ metrics.runs }}</span></div></div>
-        <div class="col-sm-2"><div class="well"><strong>失败执行</strong><br><span style="font-size:24px">{{ metrics.failures }}</span></div></div>
-        <div class="col-sm-2"><div class="well"><strong>缺陷草稿 / 已关联</strong><br><span style="font-size:24px">{{ metrics.defect_drafts }} / {{ metrics.linked_defects }}</span></div></div>
-        <div class="col-sm-2"><div class="well"><strong>报告 / 回归</strong><br><span style="font-size:24px">{{ metrics.reports }} / {{ metrics.regressions }}</span></div></div>
+    {# 缺陷三项统计 #}
+    <div class="dash-defect-cards">
+        <div class="dash-card">
+            <div class="dash-card-heading"><strong>缺陷状态统计</strong></div>
+            <div class="dash-card-body">
+                {% for item in status_stats %}
+                    <span class="label label-default">{{ item.label|ui_term }} {{ item.total }}</span>
+                {% empty %}暂无缺陷{% endfor %}
+            </div>
+        </div>
+        <div class="dash-card">
+            <div class="dash-card-heading"><strong>严重程度统计</strong></div>
+            <div class="dash-card-body">
+                {% for item in severity_stats %}
+                    <span class="label label-warning">{{ item.label|ui_term }} {{ item.total }}</span>
+                {% empty %}暂无缺陷{% endfor %}
+            </div>
+        </div>
+        <div class="dash-card">
+            <div class="dash-card-heading"><strong>优先级统计</strong></div>
+            <div class="dash-card-body">
+                {% for item in priority_stats %}
+                    <span class="label label-danger">{{ item.priority }} {{ item.total }}</span>
+                {% empty %}暂无缺陷{% endfor %}
+            </div>
+        </div>
     </div>
 
+    {# 核心指标卡 #}
+    <div class="dash-metrics">
+        <div class="dash-metric"><small>需求</small><strong>{{ metrics.requirements }}</strong></div>
+        <div class="dash-metric"><small>用例草稿 / 已导入</small><strong>{{ metrics.drafts }} / {{ metrics.imported }}</strong></div>
+        <div class="dash-metric"><small>已分析运行</small><strong>{{ metrics.runs }}</strong></div>
+        <div class="dash-metric"><small>失败执行</small><strong>{{ metrics.failures }}</strong></div>
+        <div class="dash-metric"><small>缺陷草稿 / 已关联</small><strong>{{ metrics.defect_drafts }} / {{ metrics.linked_defects }}</strong></div>
+        <div class="dash-metric"><small>报告 / 复测</small><strong>{{ metrics.reports }} / {{ metrics.regressions }}</strong></div>
+    </div>
+
+    {# 待办事项 + 缺陷复测结论 #}
     <div class="row">
         <div class="col-md-7">
             <div class="panel panel-default">
@@ -60,7 +124,7 @@
         </div>
         <div class="col-md-5">
             <div class="panel panel-default">
-                <div class="panel-heading"><strong>回归验证结论</strong></div>
+                <div class="panel-heading"><strong>缺陷复测结论</strong></div>
                 <div class="panel-body">
                     <p><span class="label label-success">通过</span> {{ regression_counts.passed }} 次</p>
                     <p><span class="label label-danger">失败</span> {{ regression_counts.failed }} 次</p>
@@ -73,56 +137,105 @@
         </div>
     </div>
 
+    {# 需求到用例 #}
     <h3>需求到用例</h3>
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
-            <thead><tr><th>需求</th><th>产品 / 分类</th><th>草稿</th><th>已导入</th><th>覆盖评分</th><th>状态</th></tr></thead>
+            <thead>
+                <tr><th>需求</th><th>项目 / 分类</th><th>草稿</th><th>已导入</th><th>覆盖评分</th><th>状态</th></tr>
+            </thead>
             <tbody>
             {% for row in request_rows %}
                 <tr>
-                    <td><a href="{% url 'ai_assistant:requirement_trace' row.request.pk %}">#{{ row.request.pk }} {{ row.request.title }}</a><br><small>V{{ row.request.version }} · 全链路追踪</small>{% if row.request.needs_case_review %} <span class="label label-warning">用例待更新</span>{% endif %}</td>
+                    <td>
+                        <a href="{% url 'ai_assistant:requirement_trace' row.request.pk %}">#{{ row.request.pk }} {{ row.request.title }}</a>
+                        <br><small>V{{ row.request.version }} · 全链路追踪</small>
+                        {% if row.request.needs_case_review %} <span class="label label-warning">用例待更新</span>{% endif %}
+                    </td>
                     <td>{% if row.request.category %}{{ row.request.category.product.name }} / {{ row.request.category.name }}{% else %}-{% endif %}</td>
-                    <td>{{ row.draft_count }}</td><td>{{ row.imported_count }}</td><td>{{ row.coverage_score|default:"-" }}</td>
-                    <td>{% if row.state == 'complete' %}<span class="label label-success">{{ row.state_label }}</span>{% elif row.state == 'risk' %}<span class="label label-danger">{{ row.state_label }}</span>{% elif row.state == 'pending' %}<span class="label label-warning">{{ row.state_label }}</span>{% else %}<span class="label label-info">{{ row.state_label }}</span>{% endif %}</td>
+                    <td>{{ row.draft_count }}</td>
+                    <td>{{ row.imported_count }}</td>
+                    <td>{{ row.coverage_score|default:"-" }}</td>
+                    <td>
+                        {% if row.state == 'complete' %}<span class="label label-success">{{ row.state_label }}</span>
+                        {% elif row.state == 'risk' %}<span class="label label-danger">{{ row.state_label }}</span>
+                        {% elif row.state == 'pending' %}<span class="label label-warning">{{ row.state_label }}</span>
+                        {% else %}<span class="label label-info">{{ row.state_label }}</span>{% endif %}
+                    </td>
                 </tr>
-            {% empty %}<tr><td colspan="6" class="text-muted">当前账号还没有 AI 需求记录。</td></tr>{% endfor %}
+            {% empty %}
+                <tr><td colspan="6" class="text-muted">还没有可见的 AI 需求记录。</td></tr>
+            {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <h3>执行到回归</h3>
+    {# 执行到缺陷复测 #}
+    <h3>执行到缺陷复测</h3>
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
-            <thead><tr><th>测试运行</th><th>完成率</th><th>成功 / 失败 / 未执行</th><th>报告</th><th>回归结论</th><th>操作</th></tr></thead>
+            <thead>
+                <tr><th>执行任务</th><th>完成率</th><th>成功 / 失败 / 未执行</th><th>报告</th><th>复测结论</th><th>操作</th></tr>
+            </thead>
             <tbody>
             {% for row in run_rows %}
                 <tr>
                     <td>TR-{{ row.test_run.pk }} · {{ row.test_run.summary }}</td>
                     <td>{{ row.metrics.completion_rate|default:0 }}%</td>
-                    <td><span class="text-success">{{ row.metrics.success|default:0 }}</span> / <span class="text-danger">{{ row.metrics.failure|default:0 }}</span> / {{ row.metrics.pending|default:0 }}</td>
-                    <td>{% if row.report %}<a href="{% url 'ai_assistant:edit_report' row.report.pk %}">#{{ row.report.pk }} {{ row.report.title }}</a><br><span class="text-muted">{{ row.report.get_release_decision_display }}</span>{% else %}<span class="label label-warning">待生成</span>{% endif %}</td>
-                    <td>{% if row.verification %}{% if row.verification.status == 'passed' %}<span class="label label-success">回归通过</span>{% elif row.verification.status == 'failed' %}<span class="label label-danger">回归失败</span>{% else %}<span class="label label-warning">回归未完成</span>{% endif %}{% else %}-{% endif %}</td>
-                    <td><a class="btn btn-xs btn-default" href="{% url 'ai_assistant:run_analysis' row.test_run.pk %}">运行分析</a> <a class="btn btn-xs btn-default" href="{% url 'ai_assistant:run_report' row.test_run.pk %}">测试报告</a></td>
+                    <td>
+                        <span class="text-success">{{ row.metrics.success|default:0 }}</span> /
+                        <span class="text-danger">{{ row.metrics.failure|default:0 }}</span> /
+                        {{ row.metrics.pending|default:0 }}
+                    </td>
+                    <td>
+                        {% if row.report %}
+                            <a href="{% url 'ai_assistant:edit_report' row.report.pk %}">#{{ row.report.pk }} {{ row.report.title }}</a>
+                            <br><span class="text-muted">{{ row.report.get_release_decision_display }}</span>
+                        {% else %}<span class="label label-warning">待生成</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if row.verification %}
+                            {% if row.verification.status == 'passed' %}<span class="label label-success">复测通过</span>
+                            {% elif row.verification.status == 'failed' %}<span class="label label-danger">复测失败</span>
+                            {% else %}<span class="label label-warning">复测未完成</span>{% endif %}
+                        {% else %}-{% endif %}
+                    </td>
+                    <td>
+                        <a class="btn btn-xs btn-default" href="{% url 'ai_assistant:run_analysis' row.test_run.pk %}">运行分析</a>
+                        <a class="btn btn-xs btn-default" href="{% url 'ai_assistant:run_report' row.test_run.pk %}">测试报告</a>
+                    </td>
                 </tr>
-            {% empty %}<tr><td colspan="6" class="text-muted">当前账号还没有测试运行分析记录。</td></tr>{% endfor %}
+            {% empty %}
+                <tr><td colspan="6" class="text-muted">还没有可见的执行任务分析记录。</td></tr>
+            {% endfor %}
             </tbody>
         </table>
     </div>
 
+    {# 失败执行与缺陷处理 #}
     <h3 id="defect-management">失败执行与缺陷处理</h3>
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
-            <thead><tr><th>测试运行</th><th>失败用例</th><th>执行状态</th><th>缺陷处理</th><th>操作</th></tr></thead>
+            <thead>
+                <tr><th>执行任务</th><th>失败用例</th><th>执行状态</th><th>缺陷处理</th><th>操作</th></tr>
+            </thead>
             <tbody>
             {% for row in failure_rows %}
                 <tr>
                     <td>TR-{{ row.test_run.pk }}</td>
                     <td>{{ row.failure.case_number }} · {{ row.failure.case_summary }}</td>
                     <td><span class="label label-danger">{{ row.failure.status }}</span></td>
-                    <td>{% if row.failure.defect_count %}<span class="label label-success">已有关联缺陷</span>{% elif row.draft.linked_reference_id %}<span class="label label-success">草稿已关联</span>{% elif row.draft %}<span class="label label-warning">草稿待关联</span>{% else %}<span class="label label-danger">尚未处理</span>{% endif %}</td>
+                    <td>
+                        {% if row.failure.defect_count %}<span class="label label-success">已有关联缺陷</span>
+                        {% elif row.draft.linked_reference_id %}<span class="label label-success">草稿已关联</span>
+                        {% elif row.draft %}<span class="label label-warning">草稿待关联</span>
+                        {% else %}<span class="label label-danger">尚未处理</span>{% endif %}
+                    </td>
                     <td><a class="btn btn-xs btn-danger" href="{% url 'ai_assistant:execution_defect' row.failure.execution_id %}">缺陷草稿/关联</a></td>
                 </tr>
-            {% empty %}<tr><td colspan="5" class="text-muted">最近运行分析中没有失败执行。</td></tr>{% endfor %}
+            {% empty %}
+                <tr><td colspan="5" class="text-muted">最近运行分析中没有失败执行。</td></tr>
+            {% endfor %}
             </tbody>
         </table>
     </div>

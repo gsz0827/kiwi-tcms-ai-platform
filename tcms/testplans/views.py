@@ -17,10 +17,8 @@ from tcms.testplans.forms import (
     ClonePlanForm,
     NewPlanForm,
     PlanNotifyFormSet,
-    SearchPlanForm,
 )
 from tcms.testplans.models import TestPlan
-from tcms.testruns.models import TestRun
 
 
 @method_decorator(permission_required("testplans.add_testplan"), name="dispatch")
@@ -32,12 +30,44 @@ class NewTestPlanView(CreateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         # clear fields which are set dynamically via JavaScript
-        form.populate(self.request.POST.get("product", -1))
+        form.populate(self.request.POST.get("product", form.initial.get("product", -1)))
         return form
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["initial"]["author"] = self.request.user
+        if self.request.method == "GET":
+            from tcms.management.models import Product, Version
+            from tcms.testplans.plan_library import numeric_id
+
+            product_id = numeric_id(
+                self.request.GET.get("product", self.request.session.get("ai_product_id", ""))
+            )
+            product = Product.objects.filter(pk=product_id).first()
+            if product:
+                kwargs["initial"]["product"] = product.pk
+                version_id = numeric_id(
+                    self.request.GET.get(
+                        "product_version", self.request.session.get("ai_version_id", "")
+                    )
+                )
+                version = Version.objects.filter(pk=version_id, product=product).first()
+                if version:
+                    kwargs["initial"]["product_version"] = version.pk
+        if self.request.method == "GET" and "parent" in self.request.GET:
+            from django.shortcuts import get_object_or_404
+            from tcms.testplans.plan_hierarchy import visible_plans
+            from tcms.testplans.plan_library import numeric_id
+
+            parent = get_object_or_404(
+                visible_plans(self.request.user), pk=numeric_id(self.request.GET["parent"])
+            )
+            kwargs["initial"].update(
+                parent=parent.pk,
+                product=parent.product_id,
+                product_version=parent.product_version_id,
+                type=parent.type_id,
+            )
         kwargs["request"] = self.request
         return kwargs
 
@@ -56,9 +86,7 @@ class NewTestPlanView(CreateView):
             return HttpResponseRedirect(test_plan.get_absolute_url())
 
         # taken from FormMixin.form_invalid()
-        return self.render_to_response(
-            self.get_context_data(notify_formset=notify_formset)
-        )
+        return self.render_to_response(self.get_context_data(notify_formset=notify_formset))
 
 
 @method_decorator(
@@ -113,14 +141,9 @@ class SearchTestPlanView(TemplateView):
     template_name = "testplans/search.html"
 
     def get_context_data(self, **kwargs):
-        form = SearchPlanForm(self.request.GET)
-        form.populate(product_id=self.request.GET.get("product"))
+        from tcms.testplans.plan_library import plan_list_context
 
-        context_data = {
-            "form": form,
-        }
-
-        return context_data
+        return plan_list_context(self.request)
 
 
 @method_decorator(
@@ -139,9 +162,9 @@ class TestPlanGetView(DetailView):
         context["statuses"] = TestCaseStatus.objects.all()
         context["priorities"] = Priority.objects.filter(is_active=True)
         context["comment_form"] = SimpleCommentForm()
-        context["test_runs"] = TestRun.objects.filter(
-            plan_id=self.object.pk, stop_date__isnull=True
-        ).order_by("-id")[:5]
+        from tcms.testplans.plan_library import plan_detail_context
+
+        context.update(plan_detail_context(self.object, self.request))
         context["OBJECT_MENU_ITEMS"] = [
             (
                 "...",

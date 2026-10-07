@@ -15,7 +15,6 @@ from tcms.testcases.models import (
     TestCaseEmailSettings,
     TestCaseStatus,
 )
-from tcms.testruns.models import TestExecution
 
 from .crypto import decrypt_api_key
 from .models import (
@@ -29,7 +28,7 @@ from .models import (
 
 ANALYSIS_SYSTEM_PROMPT = """
 你是一名资深软件测试分析师。请在设计测试用例之前分析需求，识别功能范围、
-业务规则、边界条件、异常路径、安全风险、质量风险和需要产品经理澄清的问题。
+业务规则、边界条件、异常路径、安全风险、质量风险和需要项目经理澄清的问题。
 
 只输出一个 JSON 对象，不要输出 Markdown、解释或推理过程。格式必须是：
 {
@@ -72,7 +71,7 @@ priority 只能是 P1、P2、P3、P4、P5。至少生成 5 条、最多生成 30
 
 
 DEV_TASK_SYSTEM_PROMPT = """
-你是一名资深开发负责人。请把需求拆成可以直接排期开发的任务单（开发文档），
+你是一名资深开发负责人。请把需求拆成可以直接排期开发的开发任务（开发文档），
 按实际动手顺序排列：先把数据模型和接口定下来，再写业务逻辑，最后收尾联调。
 
 只输出一个 JSON 对象，不要输出 Markdown、解释或推理过程。格式必须是：
@@ -175,7 +174,7 @@ score 必须是 0 到 100 的整数。severity 只能是 high、medium、low。
 
 
 RUN_ANALYSIS_SYSTEM_PROMPT = """
-你是一名资深测试经理。请根据测试运行的结构化执行快照，分析完成度、质量风险、
+你是一名资深测试经理。请根据执行任务的结构化执行快照，分析完成度、质量风险、
 失败聚类、阻塞问题和回归范围，并给出明确的发布建议。
 
 只输出一个 JSON 对象，不要输出 Markdown、解释或推理过程。格式必须是：
@@ -232,7 +231,7 @@ severity 只能是 critical、high、medium、low。
 
 
 TEST_REPORT_SYSTEM_PROMPT = """
-你是一名资深测试经理。请根据测试运行快照、AI 运行分析和已关联缺陷生成测试报告草稿。
+你是一名资深测试经理。请根据执行任务快照、AI 运行分析和已关联缺陷生成测试报告草稿。
 报告中的数据必须与输入快照一致；不能把待验证原因写成已确认事实；运行未完成时不能建议直接发布。
 
 只输出一个 JSON 对象，不要输出 Markdown、解释或推理过程。格式必须是：
@@ -451,9 +450,12 @@ def _request_config_content(
         if not content:
             raise RuntimeError("AI返回内容为空")
     except Exception as exc:
-        safe_error = "接口用例生成调用失败，请检查模型配置或稍后重试。" if operation == "api_case_generation" else exc
+        safe_error = (
+            "接口用例生成调用失败，请检查模型配置或稍后重试。" if operation == "api_case_generation" else
+            "Web 用例生成调用失败，请检查模型配置或稍后重试。" if operation == "web_case_generation" else exc
+        )
         _record_ai_usage(config, operation, "error", started_at, error=safe_error)
-        if operation == "api_case_generation":
+        if operation in {"api_case_generation", "web_case_generation"}:
             raise RuntimeError(safe_error) from None
         raise
 
@@ -690,7 +692,7 @@ def parse_test_cases(content):
 
 
 def parse_dev_tasks(content):
-    """把模型返回的开发任务单归一化成 AIDevTask 的字段字典列表。"""
+    """把模型返回的开发任务归一化成 AIDevTask 的字段字典列表。"""
     data = _decode_json(content)
     if isinstance(data, dict):
         tasks = data.get("dev_tasks") or data.get("tasks")
@@ -699,15 +701,15 @@ def parse_dev_tasks(content):
     if not isinstance(tasks, list) or not tasks:
         raise AIResponseError("AI 返回结果中没有 dev_tasks 数组")
     if len(tasks) > 30:
-        raise AIResponseError("AI 返回任务单数量超过 30 条安全上限")
+        raise AIResponseError("AI 返回开发任务数量超过 30 条安全上限")
 
     normalized, used_numbers = [], set()
     for index, item in enumerate(tasks, start=1):
         if not isinstance(item, dict):
-            raise AIResponseError(f"第 {index} 条任务单不是 JSON 对象")
+            raise AIResponseError(f"第 {index} 条开发任务不是 JSON 对象")
         title = str(item.get("title") or item.get("name") or "").strip()
         if not title:
-            raise AIResponseError(f"第 {index} 条任务单缺少标题")
+            raise AIResponseError(f"第 {index} 条开发任务缺少标题")
         task_number = str(item.get("task_number") or f"DEV-{index:03d}").strip()[:50]
         if task_number in used_numbers:
             task_number = f"DEV-{index:03d}"
@@ -802,11 +804,11 @@ def parse_test_case_review(content):
 def parse_test_run_analysis(content):
     data = _decode_json(content)
     if not isinstance(data, dict):
-        raise AIResponseError("AI 测试运行分析结果必须是 JSON 对象")
+        raise AIResponseError("AI 执行任务分析结果必须是 JSON 对象")
 
     executive_summary = str(data.get("executive_summary") or "").strip()
     if not executive_summary:
-        raise AIResponseError("AI 测试运行分析缺少 executive_summary")
+        raise AIResponseError("AI 执行任务分析缺少 executive_summary")
 
     risk_level = str(data.get("risk_level") or "medium").strip().lower()
     if risk_level not in {"high", "medium", "low"}:
@@ -938,6 +940,7 @@ def parse_test_report(content, valid_defect_urls=None):
 
 
 def build_test_run_snapshot(test_run):
+    from .regression_checks import execution_context
     executions = test_run.executions.all()
     status_rows = list(
         executions.values("status_id", "status__name", "status__weight")
@@ -979,6 +982,7 @@ def build_test_run_snapshot(test_run):
         failure_details.append(
             {
                 "execution_id": execution.pk,
+                "execution_context": execution_context(execution),
                 "case_id": execution.case_id,
                 "case_number": f"TC-{execution.case_id}",
                 "case_summary": execution.case.summary,
@@ -1141,7 +1145,8 @@ def analyze_requirement(
 
 
 def generate_test_cases(
-    title, requirement, user, analysis=None, model_config=None, skill_snapshot=None
+    title, requirement, user, analysis=None, model_config=None, skill_snapshot=None,
+    dev_task_context=None,
 ):
     analysis_context = ""
     if analysis:
@@ -1162,6 +1167,14 @@ def generate_test_cases(
 
 请生成结构化软件测试用例。
 """
+    if dev_task_context:
+        user_prompt += (
+            "\n参考开发任务（开发文档，不是测试执行任务）：\n"
+            + json.dumps(dev_task_context, ensure_ascii=False, indent=2)
+            + "\n以需求和验收标准为主要依据，开发文档仅补充实现与接口细节；"
+            "不要遗漏端到端流程、边界、异常与安全场景，不要把实现描述当作预期结果。"
+            "文档冲突或缺少信息时注明待确认，不要编造业务规则。\n"
+        )
     skill_context = render_instruction_context(
         skill_snapshot, "test_case_generation"
     )
@@ -1181,7 +1194,7 @@ def generate_test_cases(
 def break_down_dev_tasks(
     title, requirement, user, analysis=None, model_config=None, skill_snapshot=None
 ):
-    """把需求拆成可以直接排期的开发任务单（开发文档）。"""
+    """把需求拆成可以直接排期的开发任务（开发文档）。"""
     analysis_context = ""
     if analysis:
         analysis_context = f"""
@@ -1199,7 +1212,7 @@ def break_down_dev_tasks(
 {requirement}
 {analysis_context}
 
-请把这份需求拆成开发任务单。
+请把这份需求拆成开发任务。
 """
     skill_context = render_instruction_context(skill_snapshot, "dev_task_breakdown")
     system_prompt = DEV_TASK_SYSTEM_PROMPT
@@ -1236,7 +1249,7 @@ def analyze_test_coverage(ai_request, user, model_config=None):
 {ai_request.title}
 
 需求描述：
-{ai_request.requirement}
+{ai_request.requirement_document}
 
 需求分析（可能为空）：
 {json.dumps(ai_request.analysis or {}, ensure_ascii=False, indent=2)}
@@ -1298,7 +1311,7 @@ def generate_coverage_gap_test_cases(ai_request, user, model_config=None):
 {ai_request.title}
 
 需求描述：
-{ai_request.requirement}
+{ai_request.requirement_document}
 
 需求分析（可能为空）：
 {json.dumps(ai_request.analysis or {}, ensure_ascii=False, indent=2)}
@@ -1347,13 +1360,13 @@ def review_test_case(test_case, user, model_config=None):
 def analyze_test_run(test_run, user, model_config=None):
     snapshot = build_test_run_snapshot(test_run)
     if snapshot["metrics"]["total"] == 0:
-        raise RuntimeError("该测试运行还没有可分析的测试执行")
+        raise RuntimeError("该执行任务还没有可分析的测试执行")
 
     user_prompt = f"""
-测试运行执行快照：
+执行任务执行快照：
 {json.dumps(snapshot, ensure_ascii=False, indent=2)}
 
-请基于快照生成结构化测试运行分析。区分直接证据与待验证的可能原因。
+请基于快照生成结构化执行任务分析。区分直接证据与待验证的可能原因。
 """
     content, config = _request_ai_content(
         user,
@@ -1390,7 +1403,7 @@ def generate_test_report(
 ):
     snapshot = build_test_run_snapshot(test_run)
     if snapshot["metrics"]["total"] == 0:
-        raise RuntimeError("该测试运行还没有可生成报告的测试执行")
+        raise RuntimeError("该执行任务还没有可生成报告的测试执行")
 
     defects = []
     for link in (
@@ -1433,71 +1446,33 @@ def generate_test_report(
 
 
 def verify_regression(source_report, regression_run):
-    source_failures = source_report.metrics_snapshot.get("failure_details") or []
-    if not source_failures:
-        raise RuntimeError("来源报告没有失败执行，不需要创建修复后回归验证")
+    from collections import Counter
+    from .regression_checks import failed_report_executions, evaluate_execution, execution_context
+    from .execution_identity import canonical_case_id
 
-    source_case_ids = {
-        item.get("case_id")
-        for item in source_failures
-        if isinstance(item, dict) and item.get("case_id")
-    }
-    target_executions = list(
-        TestExecution.objects.filter(
-            run=regression_run, case_id__in=source_case_ids
-        )
-        .select_related("case", "status")
-        .order_by("case_id", "id")
-    )
-    by_case = {}
-    for execution in target_executions:
-        by_case.setdefault(execution.case_id, []).append(execution)
-
+    sources = failed_report_executions(source_report)
+    required = Counter((canonical_case_id(execution),execution_context(execution)) for execution in sources)
     items = []
     counts = {"passed": 0, "failed": 0, "pending": 0, "missing": 0}
-    for source in source_failures:
-        case_id = source.get("case_id")
-        matches = by_case.get(case_id, [])
-        if not matches:
-            outcome = "missing"
-        elif any(item.status.weight < 0 for item in matches):
-            outcome = "failed"
-        elif all(item.status.weight > 0 for item in matches):
-            outcome = "passed"
-        else:
-            outcome = "pending"
-        counts[outcome] += 1
-        items.append(
-            {
-                "case_id": case_id,
-                "case_number": source.get("case_number") or f"TC-{case_id}",
-                "case_summary": source.get("case_summary") or "",
-                "source_execution_id": source.get("execution_id"),
-                "source_status": source.get("status") or "",
-                "outcome": outcome,
-                "regression_executions": [
-                    {
-                        "execution_id": item.pk,
-                        "status": item.status.name,
-                        "status_weight": item.status.weight,
-                    }
-                    for item in matches
-                ],
-            }
+    for source, execution in zip(source_report.metrics_snapshot["failure_details"], sources):
+        outcome, matches, identity = evaluate_execution(
+            execution, regression_run, as_of=source_report.created,
+            required=required[(canonical_case_id(execution),execution_context(execution))],
         )
-
-    if counts["failed"]:
-        status = "failed"
-    elif counts["passed"] == len(items):
-        status = "passed"
-    else:
-        status = "incomplete"
+        counts[outcome] += 1
+        items.append({
+            "case_id": source["case_id"], "business_case_id": identity,
+            "case_number": source.get("case_number") or f"TC-{identity}",
+            "case_summary": source.get("case_summary") or "",
+            "source_execution_id": execution.pk, "source_status": source.get("status") or "",
+            "outcome": outcome,
+            "regression_executions": [{"execution_id": item.pk, "status": item.status.name,
+                                        "status_weight": item.status.weight} for item in matches],
+        })
+    status = "failed" if counts["failed"] else "passed" if counts["passed"] == len(items) else "incomplete"
     return status, {
-        "source_run_id": source_report.test_run_id,
-        "regression_run_id": regression_run.pk,
-        "total_source_failures": len(items),
-        "counts": counts,
-        "items": items,
+        "source_run_id": source_report.test_run_id, "regression_run_id": regression_run.pk,
+        "total_source_failures": len(items), "counts": counts, "items": items,
     }
 
 

@@ -1,4 +1,4 @@
-"""共享目录：用例库目录栏、产品隔离，以及需求目录的团队可见性。"""
+"""共享目录：用例库目录栏、项目隔离，以及需求目录的团队可见性。"""
 from django.test import TestCase
 from django.urls import reverse
 
@@ -15,7 +15,7 @@ def pane_html(response):
 
 
 class CaseLibrarySharedFolderTests(TestCase):
-    """用例库是单产品视图：目录栏跟随页面筛选，只列当前产品的目录。"""
+    """用例库是单项目视图：目录栏跟随页面筛选，只列当前项目的目录。"""
 
     def setUp(self):
         self.owner = UserFactory(is_superuser=True)
@@ -27,7 +27,7 @@ class CaseLibrarySharedFolderTests(TestCase):
             product=self.product, resource_type="case", name="冒烟用例", created_by=self.owner
         )
         self.other_folder = ProjectResourceFolder.objects.create(
-            product=self.other_product, resource_type="case", name="别的产品目录", created_by=self.owner
+            product=self.other_product, resource_type="case", name="别的项目目录", created_by=self.owner
         )
         self.client.force_login(self.owner)
 
@@ -103,7 +103,7 @@ class CaseLibrarySharedFolderTests(TestCase):
 
 
 class RequirementSharedFolderTests(TestCase):
-    """需求目录：产品成员互相可见，目录本身对所有登录用户开放。"""
+    """需求目录：项目成员互相可见，目录本身对所有登录用户开放。"""
 
     def setUp(self):
         roles.ensure_role_groups()

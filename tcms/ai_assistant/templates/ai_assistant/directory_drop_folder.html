@@ -1,0 +1,4 @@
+{% if folder.resource_type == 'case_group' or folder.resource_type == 'case' or folder.resource_type == 'web_case' or folder.resource_type == 'api_case' %}
+ data-tree-drop="folder" data-drop-id="{{ folder.pk }}" data-drop-product="{{ folder.product_id }}" data-drop-kind="{{ folder.resource_type }}" data-drop-parent="{{ folder.parent_id|default:'' }}"
+ {% if folder.can_quick_manage %}draggable="true" data-tree-drag="folder" data-drag-id="{{ folder.pk }}" data-drag-product="{{ folder.product_id }}" data-drag-kind="{{ folder.resource_type }}" data-drag-parent="{{ folder.parent_id|default:'' }}" data-tree-move-url="{% url 'ai_assistant:move_resource_folder' folder.pk %}"{% else %}draggable="false"{% endif %}
+{% else %}draggable="false"{% endif %}

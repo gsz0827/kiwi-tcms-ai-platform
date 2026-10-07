@@ -22,13 +22,14 @@ from .api_forms import SuiteForm
 from .api_runner import CASE_FIELDS, prepare_case, required_variables
 from .api_scheduling import queue_suite, rotate_token
 from .api_validation import validate_destination
-from .api_views import home_url
+from .automation_ui import home_url, return_url, write_guard
 from .crypto import decrypt_api_key
 from .models import APIRun, APISuite
 
 
 @login_required
 @never_cache
+@write_guard
 def suite_edit(request, product_id, pk=None):
     product = get_object_or_404(Product, pk=product_id)
     suite = get_object_or_404(APISuite, owner=request.user, product=product, pk=pk) if pk else APISuite(owner=request.user, product=product)
@@ -49,6 +50,8 @@ def suite_edit(request, product_id, pk=None):
                 current = APISuite.objects.select_for_update().get(pk=suite.pk) if suite.pk else None
                 if not suite.schedule_enabled:
                     suite.next_run_at = None
+                elif form.cleaned_data.get('next_run_at'):
+                    suite.next_run_at = form.cleaned_data['next_run_at']
                 elif (current and current.schedule_enabled and current.next_run_at
                       and current.interval_minutes == suite.interval_minutes):
                     suite.next_run_at = current.next_run_at
@@ -62,13 +65,16 @@ def suite_edit(request, product_id, pk=None):
         except ValueError as exc:
             form.add_error(None, str(exc))
         else:
-            return redirect("ai_assistant:api_suite", pk=suite.pk)
+            return redirect(return_url(request, reverse('ai_assistant:api_suite', args=[suite.pk])))
     return render(request, "ai_assistant/api/form.html", dict(form=form, product=product,
-        back_url=home_url(product), title="自动化套件与定时设置"))
+        back_url=return_url(request, home_url(product, 'suites')), title="编辑测试套件" if pk else "新建测试套件",
+        environment_summary=True, environment_url_label="服务地址",
+        environment_previews={str(env.pk): {"base_url": env.base_url, "timeout": env.timeout}
+                              for env in form.fields["environment"].queryset}))
 
 
 def suite_context(suite):
-    return dict(suite=suite, product=suite.product, back_url=home_url(suite.product),
+    return dict(suite=suite, product=suite.product, back_url=home_url(suite.product, 'suites'),
                 runs=suite.runs.all()[:20], timezone_name=timezone.get_current_timezone_name(),
                 submission_token=uuid.uuid4())
 
@@ -76,11 +82,14 @@ def suite_context(suite):
 @login_required
 def suite_detail(request, pk):
     suite = get_object_or_404(APISuite, pk=pk, owner=request.user)
-    return render(request, "ai_assistant/api/suite.html", suite_context(suite))
+    context = suite_context(suite)
+    context['back_url'] = return_url(request, context['back_url'])
+    return render(request, "ai_assistant/api/suite.html", context)
 
 
 @login_required
 @require_POST
+@write_guard
 def suite_action(request, pk, action):
     suite = get_object_or_404(APISuite, pk=pk, owner=request.user)
     if action == "execute":

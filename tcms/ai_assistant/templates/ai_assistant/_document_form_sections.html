@@ -1,0 +1,2 @@
+{% for field in form.document_fields %}{% include 'ai_assistant/_document_field.html' %}{% endfor %}
+{% if form.optional_document_fields %}<details class="document-form-extra"{% if form.optional_document_open %} open{% endif %}><summary>补充资料与技术说明</summary><div>{% for field in form.optional_document_fields %}{% include 'ai_assistant/_document_field.html' %}{% endfor %}</div></details>{% endif %}

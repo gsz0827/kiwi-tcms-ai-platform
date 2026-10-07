@@ -1,0 +1,10 @@
+{% load static %}
+<section id="web-step-editor" hidden>
+<div class="web-editor-heading"><h3>操作与断言</h3><div class="web-editor-modes" aria-label="步骤编辑方式"><button type="button" class="web-editor-mode is-selected" data-step-mode="table" aria-pressed="true">表格编辑</button><button type="button" class="web-editor-mode" data-step-mode="json" aria-pressed="false">JSON 编辑</button></div></div>
+<p id="web-editor-error" class="text-danger" role="alert" hidden></p>
+<div id="web-step-table"><div class="web-editor-scroll"><table class="web-editor-table"><thead><tr><th scope="col">序号</th><th scope="col">操作 / 断言</th><th scope="col">元素定位器</th><th scope="col">输入 / 预期值</th><th scope="col">操作</th></tr></thead><tbody id="web-step-rows"></tbody></table></div><div class="web-editor-footer"><button type="button" class="btn btn-default" id="web-add-step">添加步骤</button><span id="web-editor-limit" class="text-muted"></span></div></div>
+<div id="web-step-json" hidden></div>
+</section>
+{{ step_schema|json_script:"web-step-schema" }}
+<link rel="stylesheet" href="{% static 'web_testing/editor.css' %}?v=2.1">
+<script src="{% static 'web_testing/editor.js' %}?v=2.1"></script>

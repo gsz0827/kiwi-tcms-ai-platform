@@ -1,0 +1,15 @@
+ARG KIWI_BASE=kiwitcms/kiwi:latest
+FROM node:24-bookworm-slim AS allure
+WORKDIR /opt/allure
+RUN npm install --omit=dev --no-audit --no-fund allure@3.20.0
+
+FROM ${KIWI_BASE}
+USER root
+COPY --from=allure /usr/local/bin/node /usr/local/bin/node
+COPY --from=allure /opt/allure /opt/allure
+ENV ALLURE_COMMAND=/opt/allure/node_modules/.bin/allure
+ENV NODE_OPTIONS=--max-old-space-size=384
+RUN node --version && /opt/allure/node_modules/.bin/allure --version
+USER 1001
+WORKDIR /Kiwi
+CMD ["/venv/bin/python", "/Kiwi/manage.py", "allure_worker"]

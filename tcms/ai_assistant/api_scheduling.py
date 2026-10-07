@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .api_runner import submit_run
+from .roles import is_read_only
 from .models import APICase, APIRun, APISuite
 
 
@@ -19,7 +20,7 @@ def suite_data(suite, submission_token):
     cases = list(APICase.objects.filter(
         pk__in=suite.case_ids, owner=suite.owner, product=suite.product))
     if not cases or len(cases) != len(suite.case_ids):
-        raise ValueError("套件中的用例已删除或所属产品发生变化，请重新保存套件。")
+        raise ValueError("套件中的用例已删除或所属项目发生变化，请重新保存套件。")
     return dict(environment=suite.environment, cases=cases, submission_token=submission_token,
                 stop_on_failure=suite.stop_on_failure, share_cookies=suite.share_cookies,
                 test_run=None, passed_status=None, failed_status=None,
@@ -32,8 +33,8 @@ def queue_suite(pk, owner_id, *, trigger="manual", key=None, now=None):
         # Same lock order as submit_run and edits: owner -> suite -> environment.
         owner = get_user_model().objects.select_for_update().get(pk=owner_id)
         suite = APISuite.objects.select_for_update().get(pk=pk, owner=owner)
-        if not owner.is_active:
-            raise ValueError("套件所属账号已停用。")
+        if not owner.is_active or is_read_only(owner):
+            raise ValueError("套件所属账号已停用或为只读账号，不能执行测试。")
         if trigger == "schedule":
             if not suite.schedule_enabled or not suite.next_run_at or suite.next_run_at > now:
                 return None
@@ -60,7 +61,7 @@ def queue_suite(pk, owner_id, *, trigger="manual", key=None, now=None):
         except (ValueError, ObjectDoesNotExist):
             if trigger != "schedule":
                 raise
-            suite.last_error = "提交失败：请检查环境白名单、用例、变量和产品归属后重新保存套件。"
+            suite.last_error = "提交失败：请检查环境白名单、用例、变量和项目归属后重新保存套件。"
             suite.save(update_fields=("last_error",))
             return None
         suite.last_triggered, suite.last_error = now, ""

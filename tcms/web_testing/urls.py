@@ -1,8 +1,14 @@
 from django.urls import path
-from . import views
+from . import views, ai_views, run_actions, regression
 
 app_name = "web_testing"
 urlpatterns = [
+    path("defects/<int:pk>/regression/", regression.new, name="regression_new"),
+    path("runs/<uuid:pk>/verify-regression/", regression.verify, name="regression_verify"),
+    path("products/<int:product_id>/ai-requests/new/", ai_views.generate, name="ai_generate"),
+    path("ai-requests/<int:pk>/", ai_views.detail, name="ai_detail"),
+    path("ai-requests/<int:pk>/import/", ai_views.import_selected, name="ai_import"),
+    path("ai-drafts/<int:pk>/review/", ai_views.review, name="ai_review"),
     path("environments/", views.environments, name="environments"),
     path("environments/new/", views.edit_environment, name="environment_new"),
     path("environments/<int:pk>/", views.edit_environment, name="environment_edit"),
@@ -10,6 +16,7 @@ urlpatterns = [
     path("cases/new/", views.edit_case, name="case_new"),
     path("cases/<int:pk>/", views.edit_case, name="case_edit"),
     path("cases/<int:pk>/delete/", views.delete_case, name="case_delete"),
+    path("cases/<int:pk>/debug/", run_actions.debug_case, name="case_debug"),
     path("suites/", views.suites, name="suites"),
     path("suites/new/", views.edit_suite, name="suite_new"),
     path("suites/<int:pk>/", views.edit_suite, name="suite_edit"),

@@ -2,6 +2,8 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from .source_review_models import DocumentSourceReview
+from .postman_models import PostmanImport
 
 from tcms.management.models import Product
 
@@ -22,6 +24,7 @@ class APIEnvironment(models.Model):
 
 
 class APICase(models.Model):
+    import_review_required = models.BooleanField(default=False, editable=False)
     METHODS = [(value, value) for value in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")]
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
@@ -257,7 +260,12 @@ class AIRequest(models.Model):
     submission_token = models.UUIDField(null=True, blank=True, editable=False)
     submission_fingerprint = models.CharField(max_length=64, blank=True, editable=False)
     title = models.CharField(max_length=200, verbose_name="需求标题")
-    requirement = models.TextField(verbose_name="需求描述")
+    requirement = models.TextField(verbose_name="功能说明")
+    document_sections = models.JSONField(default=dict, blank=True, verbose_name="需求文档分区")
+    target_version = models.ForeignKey("management.Version", blank=True, null=True, on_delete=models.SET_NULL, related_name="ai_target_requirements", verbose_name="目标产品版本")
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, blank=True, null=True, on_delete=models.SET_NULL, related_name="assigned_ai_requirements", verbose_name="需求负责人")
+    priority = models.CharField(max_length=8, default="P3", choices=[(f"P{i}", f"P{i}") for i in range(1,6)], verbose_name="优先级")
+    status = models.CharField(max_length=16, default="draft", choices=[("draft","草稿"),("confirmed","已确认"),("doing","进行中"),("done","已完成")], verbose_name="需求状态")
     version = models.PositiveIntegerField(default=1, verbose_name="需求版本")
     needs_case_review = models.BooleanField(
         default=False, verbose_name="需求变更后用例待更新"
@@ -333,6 +341,21 @@ class AIRequest(models.Model):
         return self.title
 
     @property
+    def document_blocks(self):
+        from .document_sections import blocks
+        return blocks(self)
+
+    @property
+    def requirement_document(self):
+        from .document_sections import requirement_text
+        return requirement_text(self)
+
+    @property
+    def document_attributes(self):
+        from .document_sections import requirement_attributes
+        return requirement_attributes(self)
+
+    @property
     def generation_failed(self):
         return self.result.startswith("AI生成失败：")
 
@@ -365,6 +388,10 @@ class AIRequest(models.Model):
 
 
 class AITestCaseDraft(models.Model):
+    source_context = models.JSONField(default=dict, blank=True, verbose_name="用例设计依据快照")
+    dev_tasks = models.ManyToManyField(
+        "AIDevTask", blank=True, related_name="case_designs", verbose_name="参考开发任务单"
+    )
     request = models.ForeignKey(
         AIRequest,
         on_delete=models.CASCADE,
@@ -452,6 +479,8 @@ class AIDevTask(models.Model):
     module = models.CharField(max_length=200, blank=True, verbose_name="涉及模块")
     description = models.TextField(blank=True, verbose_name="开发说明")
     acceptance = models.TextField(blank=True, verbose_name="验收标准")
+    document_sections = models.JSONField(default=dict, blank=True, verbose_name="开发文档分区")
+    target_version = models.ForeignKey("management.Version", blank=True, null=True, on_delete=models.SET_NULL, related_name="ai_target_dev_tasks", verbose_name="目标产品版本")
     priority = models.CharField(max_length=8, default="P3", verbose_name="优先级")
     estimate_hours = models.PositiveIntegerField(
         blank=True, null=True, verbose_name="预估工时（小时）"
@@ -485,6 +514,11 @@ class AIDevTask(models.Model):
 
     def __str__(self):
         return f"{self.task_number} {self.title}".strip()
+
+    @property
+    def document_blocks(self):
+        from .document_sections import blocks
+        return blocks(self, task=True)
 
     @property
     def is_done(self):
@@ -1147,7 +1181,14 @@ class AIRequirementVersion(models.Model):
     )
     version = models.PositiveIntegerField(verbose_name="版本")
     title = models.CharField(max_length=200, verbose_name="需求标题快照")
+    @property
+    def document_blocks(self):
+        from .document_sections import blocks
+        return blocks(self)
+
     requirement = models.TextField(verbose_name="需求描述快照")
+    document_sections = models.JSONField(default=dict, blank=True, verbose_name="需求分区快照")
+    attributes = models.JSONField(default=dict, blank=True, verbose_name="需求属性快照")
     change_summary = models.CharField(max_length=255, blank=True, verbose_name="变更说明")
     changed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1173,6 +1214,7 @@ class AIRequirementVersion(models.Model):
 class AIJob(models.Model):
     OPERATION_CHOICES = (
         ("api_case_generation", "AI 生成接口用例"),
+        ("web_case_generation", "AI 生成 Web 用例"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
         ("dev_task_breakdown", "拆分开发任务"),
@@ -1250,6 +1292,7 @@ class AIJob(models.Model):
 class AIUsageLog(models.Model):
     OPERATION_CHOICES = (
         ("api_case_generation", "AI 生成接口用例"),
+        ("web_case_generation", "AI 生成 Web 用例"),
         ("requirement_analysis", "需求分析"),
         ("test_case_generation", "生成测试用例"),
         ("dev_task_breakdown", "拆分开发任务"),
@@ -1316,6 +1359,8 @@ class ProjectResourceFolder(models.Model):
         ("requirement", "需求"),
         ("case", "测试用例"),
         ("plan", "测试计划"),
+        ("run", "执行任务"),
+        ("case_group", "共享用例业务目录"),
         ("web_case", "Web 自动化用例"),
         ("api_case", "接口自动化用例"),
     )
@@ -1420,3 +1465,26 @@ class ProjectResourceAssignment(models.Model):
 
     def __str__(self):
         return f"{self.get_resource_type_display()} #{self.object_id} -> {self.folder}"
+
+class SavedCaseView(models.Model):
+    """Personal filter preferences, never a grant of case or folder access."""
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_case_views"
+    )
+    name = models.CharField("视图名称", max_length=80)
+    filters = models.JSONField("筛选条件", default=dict)
+    revision = models.PositiveIntegerField("修订号", default=1)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name", "pk")
+        constraints = [
+            models.UniqueConstraint(fields=("owner", "name"), name="unique_saved_case_view_name")
+        ]
+        verbose_name = "个人用例筛选视图"
+        verbose_name_plural = "个人用例筛选视图"
+
+    def __str__(self):
+        return self.name

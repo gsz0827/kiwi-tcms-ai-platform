@@ -10,6 +10,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from . import roles
+from .edit_test_client import EditClient
 from .crypto import decrypt_api_key, encrypt_api_key
 from .forms import (
     AIDefectDraftForm,
@@ -1293,9 +1294,9 @@ class AIInstructionProfileTests(TestCase):
         self.assertContains(home, reverse("ai_assistant:project_settings"))
         settings_page = self.client.get(reverse("ai_assistant:project_settings"), secure=True)
         self.assertContains(settings_page, reverse("ai_assistant:create_product"))
-        self.assertNotContains(settings_page, "产品分类")
+        self.assertNotContains(settings_page, "项目分类")
 
-        # 平台界面不暴露「产品分类」：表单里既没有该字段，提交时也不需要它。
+        # 平台界面不暴露「项目分类」：表单里既没有该字段，提交时也不需要它。
         form_page = self.client.get(reverse("ai_assistant:create_product"), secure=True)
         self.assertNotContains(form_page, 'name="classification"')
         self.assertNotContains(form_page, "新建分类")
@@ -1303,14 +1304,14 @@ class AIInstructionProfileTests(TestCase):
         response = self.client.post(
             reverse("ai_assistant:create_product"),
             {
-                "name": "新建 AI 产品",
+                "name": "新建 AI 项目",
                 "description": "由 AI 助手创建",
             },
             secure=True,
         )
 
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(name="新建 AI 产品")
+        product = Product.objects.get(name="新建 AI 项目")
         self.assertIsNotNone(product.classification_id)
         self.assertTrue(product.category.filter(name="--default--").exists())
         self.assertTrue(product.version.filter(value="unspecified").exists())
@@ -1325,17 +1326,18 @@ class AIInstructionProfileTests(TestCase):
 
         response = self.client.post(
             reverse("ai_assistant:create_product"),
-            {"name": "没有分类时的产品"},
+            {"name": "没有分类时的项目"},
             secure=True,
         )
 
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(name="没有分类时的产品")
+        product = Product.objects.get(name="没有分类时的项目")
         self.assertEqual(product.classification.name, "默认分类")
 
 
 @override_settings(SECRET_KEY="ai-run-analysis-test-secret")
 class TestRunAnalysisTests(TestCase):
+    client_class = EditClient
     def setUp(self):
         user_model = get_user_model()
         self.owner = user_model.objects.create_user(
@@ -1668,7 +1670,7 @@ class TestRunAnalysisTests(TestCase):
             metrics_snapshot=snapshot,
         )
         regression_run = TestRun.objects.create(
-            summary="登录修复后回归",
+            summary="登录修复后复测",
             notes="",
             plan=self.test_run.plan,
             build=self.test_run.build,
@@ -1752,7 +1754,7 @@ class TestRunAnalysisTests(TestCase):
         self.assertNotContains(defect_page, "其他账号的缺陷草稿")
         self.assertContains(report_page, "自己的测试报告")
         self.assertNotContains(report_page, "其他账号的测试报告")
-        self.assertContains(report_edit_page, "修复后回归验证")
+        self.assertContains(report_edit_page, "修复后复测验证")
 
     def test_quality_dashboard_renders_closed_loop_and_is_account_isolated(self):
         own_request = AIRequest.objects.create(
@@ -1811,7 +1813,7 @@ class TestRunAnalysisTests(TestCase):
         self.assertContains(dashboard_page, "待办事项")
         self.assertContains(index_page, "需求分析")
         self.assertContains(index_page, "执行任务")
-        self.assertContains(index_page, reverse("ai_assistant:case_library"))
+        self.assertContains(index_page, reverse("ai_assistant:scenario_library"))
         self.assertContains(index_page, reverse("testruns-search"))
         self.assertContains(index_page, reverse("ai_assistant:model_settings"))
 
@@ -1827,7 +1829,7 @@ class TestRunAnalysisTests(TestCase):
         )
         self.assertRedirects(
             response,
-            reverse("ai_assistant:dashboard"),
+            reverse("core-views-index") + f"?product={self.test_run.plan.product_id}&version={self.test_run.build.version_id}",
             fetch_redirect_response=False,
         )
         session = self.client.session
@@ -1875,12 +1877,12 @@ class TestRunAnalysisTests(TestCase):
             self.assertContains(response, "kiwi-resource-content")
         self.assertContains(requirement_page, own_request.title)
         self.assertContains(requirement_page, "自己的分析摘要")
-        self.assertContains(requirement_page, "进入完整追踪页面")
+        self.assertContains(requirement_page, "查看需求详情")
         self.assertNotContains(requirement_page, "其他账号的资源目录需求")
         self.assertContains(case_page, self.failed_execution.case.summary)
         self.assertContains(case_page, "进入完整用例页面")
         self.assertContains(plan_page, self.test_run.plan.name)
-        self.assertContains(plan_page, "进入完整计划页面")
+        self.assertContains(plan_page, f'href="/plan/{self.test_run.plan_id}/"')
 
     def test_project_resource_folders_are_shared_and_permission_protected(self):
         product = self.test_run.plan.product
@@ -1943,7 +1945,8 @@ class TestRunAnalysisTests(TestCase):
         self.assertContains(owner_page, "登录模块")
         self.assertContains(owner_page, "验证码登录")
         self.assertContains(owner_page, own_request.title)
-        self.assertContains(owner_page, "管理共享目录")
+        self.assertNotContains(owner_page, "管理共享目录")
+        self.assertContains(owner_page, f'data-directory-node="{child.pk}"')
 
         self.client.force_login(self.other_user)
         member_page = self.client.get(reverse("ai_assistant:index"), secure=True)
@@ -2112,7 +2115,7 @@ class TestRunAnalysisTests(TestCase):
         self.assertFalse(result["checks"][0]["passed"])
 
     def test_release_gate_counts_defects_drafted_by_other_people(self):
-        """门禁是产品级的：同事登记的 P1 也算数，不能因为不是自己登记的就放行。"""
+        """门禁是项目级的：同事登记的 P1 也算数，不能因为不是自己登记的就放行。"""
         other = get_user_model().objects.create_user(username="gate-other", password="pw")
         AIDefectDraft.objects.create(
             owner=other,
@@ -2197,7 +2200,7 @@ class TestRunAnalysisTests(TestCase):
             status="fixed",
         )
         regression_run = TestRun.objects.create(
-            summary="缺陷回归",
+            summary="缺陷复测",
             plan=self.test_run.plan,
             build=self.test_run.build,
             manager=self.owner,
@@ -2224,7 +2227,7 @@ class TestRunAnalysisTests(TestCase):
 
     def test_report_approval_exports_and_iteration_snapshot(self):
         snapshot = build_test_run_snapshot(self.test_run)
-        # 这个 run 有 1 条失败（成功率 50%），内建门禁会阻断审批；先给产品配一条宽松规则。
+        # 这个 run 有 1 条失败（成功率 50%），内建门禁会阻断审批；先给项目配一条宽松规则。
         AIReleaseGateRule.objects.create(
             product=self.test_run.plan.product,
             min_success_rate=0,
@@ -2291,7 +2294,7 @@ class TestRunAnalysisTests(TestCase):
                 "conclusion": "继续修复",
                 "release_decision": "no_go",
                 "recommendations_text": "修复阻断问题",
-                "change_reason": "补充回归结论",
+                "change_reason": "补充复测结论",
             },
             secure=True,
         )
@@ -2300,7 +2303,7 @@ class TestRunAnalysisTests(TestCase):
         self.assertEqual(report.title, "修订后报告")
         self.assertEqual(report.approval_status, "pending")
         self.assertEqual(report.signature, "")
-        self.assertEqual(report.revisions.get().change_reason, "补充回归结论")
+        self.assertEqual(report.revisions.get().change_reason, "补充复测结论")
 
     @patch("tcms.ai_assistant.jobs.generate_test_report")
     def test_report_job_creates_immutable_incrementing_versions(self, generate):
@@ -2313,7 +2316,7 @@ class TestRunAnalysisTests(TestCase):
             "conclusion": "暂缓发布",
             "release_decision": "no_go",
             "defect_summary": [],
-            "recommendations": ["修复后回归"],
+            "recommendations": ["修复后复测"],
         }
         generate.return_value = (result, config, "raw", snapshot)
         first_job = AIJob.objects.create(
@@ -2414,7 +2417,8 @@ class ApplyTestCaseReviewTests(TestCase):
 
 @override_settings(SECRET_KEY="ai-dev-task-test-secret")
 class AIDevTaskTests(TestCase):
-    """任务单（开发文档）：解析、后台生成、页面与权限范围。"""
+    client_class = EditClient
+    """开发任务（开发文档）：解析、后台生成、页面与权限范围。"""
 
     def setUp(self):
         user_model = get_user_model()
@@ -2426,7 +2430,7 @@ class AIDevTaskTests(TestCase):
         )
         self.config = AIModelConfig.objects.create(
             owner=self.owner,
-            name="任务单模型",
+            name="开发任务模型",
             api_base="https://api.example.test/v1",
             model="dev-task-model",
             timeout=300,
@@ -2587,7 +2591,7 @@ class AIDevTaskTests(TestCase):
         self.assertEqual(AIDevTask.objects.filter(request=fresh).count(), 1)
 
     def test_task_list_shows_completion_and_keeps_other_requests_out(self):
-        """可见性按「需求」划分：同一条需求下的任务单一起看，别人的需求看不到。"""
+        """可见性按「需求」划分：同一条需求下的开发任务一起看，别人的需求看不到。"""
         AIDevTask.objects.create(
             request=self.ai_request,
             owner=self.owner,
@@ -2641,8 +2645,8 @@ class AIDevTaskTests(TestCase):
             secure=True,
         )
 
-        self.assertContains(index_response, "需求与任务单")
-        self.assertContains(index_response, "任务单 1/2 · 50%")
+        self.assertContains(index_response, "需求与开发任务")
+        self.assertContains(index_response, "开发任务 1/2 · 50%")
         self.assertContains(trace_response, "开发任务完成度")
         self.assertContains(trace_response, "扩展登录接口参数")
 
@@ -2705,6 +2709,7 @@ class AIDevTaskTests(TestCase):
 
 @override_settings(SECRET_KEY="ai-roles-test-secret")
 class AIRoleTests(TestCase):
+    client_class = EditClient
     """角色矩阵：谁能拆、谁能指派、谁能看谁的东西。"""
 
     def setUp(self):
@@ -2725,7 +2730,7 @@ class AIRoleTests(TestCase):
 
         self.classification = Classification.objects.create(name="角色测试分类")
         self.product = Product.objects.create(
-            name="角色测试产品", classification=self.classification
+            name="角色测试项目", classification=self.classification
         )
         for member in (self.manager, self.engineer, self.developer, self.viewer):
             roles.add_product_member(member, self.product)

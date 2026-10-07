@@ -9,6 +9,8 @@ from tcms.testruns.models import TestRun
 
 from . import roles
 from .crypto import encrypt_api_key
+from .document_section_forms import RequirementSectionFormMixin, SectionFormMixin
+from .document_sections import TASK_SECTIONS
 from .models import (
     AIDefectDraft,
     AIDevTask,
@@ -27,20 +29,20 @@ class CategoryChoiceField(forms.ModelChoiceField):
         return f"{obj.product.name} / {obj.name}"
 
 
-class AIRequestForm(forms.ModelForm):
+class AIRequestForm(RequirementSectionFormMixin, forms.ModelForm):
     submission_token = forms.UUIDField(initial=uuid.uuid4, widget=forms.HiddenInput)
     category = CategoryChoiceField(
         queryset=Category.objects.select_related("product").order_by(
             "product__name", "name"
         ),
-        empty_label="请选择产品 / 分类",
+        empty_label="请选择项目 / 分类",
         label="目标分类",
         widget=forms.Select(attrs={"class": "form-control"}),
     )
 
     class Meta:
         model = AIRequest
-        fields = ("category", "title", "requirement")
+        fields = ("category", "title", "requirement", "target_version", "assigned_to", "priority", "status")
         widgets = {
             "title": forms.TextInput(
                 attrs={
@@ -52,7 +54,7 @@ class AIRequestForm(forms.ModelForm):
                 attrs={
                     "class": "form-control",
                     "rows": 6,
-                    "placeholder": "请输入需求描述、业务规则和验收标准",
+                    "placeholder": "说明用户操作流程和功能行为",
                 }
             ),
         }
@@ -131,11 +133,15 @@ class AITestCaseDraftForm(forms.ModelForm):
         return draft
 
 
-class AIDevTaskForm(forms.ModelForm):
-    """开发任务单的编辑表单：AI 拆分出来的结果和手工补的任务用同一套字段。
+class AIDevTaskForm(SectionFormMixin, forms.ModelForm):
+    section_definitions = TASK_SECTIONS
+    primary_names = ('title','objective','impact_scope','description','business_rules','exceptions','acceptance')
+    attribute_names = ('request','task_number','module','target_version','priority','estimate_hours','assignee','status')
+    preserve_names = ('target_version',)
+    """开发任务的编辑表单：AI 拆分出来的结果和手工补的任务用同一套字段。
 
     ``can_manage=False`` 时只保留「状态」一个字段——被指派的开发人员能做的事就是
-    推进自己那条任务单的进度，其余内容由需求提出人或测试经理维护。裁剪发生在
+    推进自己那条开发任务的进度，其余内容由需求提出人或测试经理维护。裁剪发生在
     ``__init__`` 里而不是模板里，这样 POST 上来少一堆字段也不会报必填错误。
     """
 
@@ -146,6 +152,7 @@ class AIDevTaskForm(forms.ModelForm):
             "task_number",
             "title",
             "module",
+            "target_version",
             "description",
             "acceptance",
             "priority",
@@ -180,7 +187,7 @@ class AIDevTaskForm(forms.ModelForm):
         self.fields["assignee"].required = False
         self.fields["assignee"].empty_label = "未指派"
         self.fields["assignee"].label = "负责人"
-        self.fields["assignee"].help_text = "只能指派给该产品的成员。"
+        self.fields["assignee"].help_text = "只能指派给该项目的成员。"
 
         queryset = AIRequest.objects.none()
         candidate_queryset = get_user_model().objects.none()
@@ -192,6 +199,11 @@ class AIDevTaskForm(forms.ModelForm):
         self.fields["request"].queryset = queryset
         self.fields["request"].empty_label = "请选择需求"
         self.fields["assignee"].queryset = candidate_queryset
+        self.document_product = self._bound_product(user) if user is not None else None
+        self.fields['target_version'].queryset = Version.objects.filter(product=self.document_product) if self.document_product else Version.objects.none()
+        self.fields['target_version'].widget.attrs['class'] = 'form-control'
+        self.fields['target_version'].empty_label = '未指定目标版本'
+        self.fields['description'].label = '实现方案与改动说明'
 
         if not can_manage:
             keep = ("status",)
@@ -200,11 +212,11 @@ class AIDevTaskForm(forms.ModelForm):
                     self.fields.pop(name)
 
     def _bound_product(self, user):
-        """猜这条任务单属于哪个产品，用来限定负责人候选范围。"""
-        if self.instance is not None and self.instance.pk:
+        """猜这条开发任务属于哪个项目，用来限定负责人候选范围。"""
+        if self.instance is not None and self.instance.pk and not self.is_bound:
             request_obj = self.instance.request
         else:
-            request_id = self.data.get("request") or self.initial.get("request")
+            request_id = self.data.get("request") if self.is_bound else self.initial.get("request")
             request_obj = None
             if request_id:
                 try:
@@ -321,7 +333,7 @@ class AIInstructionProfileForm(forms.ModelForm):
         self.owner = owner
         self.instance.owner = owner
         self.fields["product"].queryset = Product.objects.order_by("name")
-        self.fields["product"].label = "适用项目（Kiwi 产品）"
+        self.fields["product"].label = "适用项目（Kiwi 项目）"
         self.fields["product"].required = True
 
     def clean(self):
@@ -525,8 +537,8 @@ class AITestReportForm(LineListMixin, forms.ModelForm):
 class RegressionVerificationForm(forms.Form):
     regression_run_id = forms.IntegerField(
         min_value=1,
-        label="回归测试运行 ID",
-        help_text="填写修复后重新执行的 TestRun 编号。",
+        label="复测执行任务编号",
+        help_text="填写新建复测任务的编号，执行完成后验证结果。",
         widget=forms.NumberInput(attrs={"class": "form-control"}),
     )
     notes = forms.CharField(
@@ -556,7 +568,7 @@ class ReportApprovalForm(forms.Form):
 
 
 class AIReleaseGateRuleForm(forms.ModelForm):
-    """产品级门禁规则表单：一个产品一条，保存即更新该产品的那条。"""
+    """项目级门禁规则表单：一个项目一条，保存即更新该项目的那条。"""
 
     class Meta:
         model = AIReleaseGateRule
@@ -591,7 +603,7 @@ class IterationReportForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "form-control"}),
     )
     product = forms.ModelChoiceField(
-        queryset=Product.objects.none(), label="产品",
+        queryset=Product.objects.none(), label="项目",
         widget=forms.Select(attrs={"class": "form-control"}),
     )
     version = forms.ModelChoiceField(
@@ -599,8 +611,8 @@ class IterationReportForm(forms.Form):
         widget=forms.Select(attrs={"class": "form-control"}),
     )
     run_ids = forms.CharField(
-        label="TestRun ID",
-        help_text="填写多个 TestRun 编号，用逗号分隔。",
+        label="执行任务编号",
+        help_text="填写多个 执行任务编号，用逗号分隔。",
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "101, 102, 103"}),
     )
     conclusion = forms.CharField(
@@ -620,9 +632,9 @@ class IterationReportForm(forms.Form):
         try:
             ids = list(dict.fromkeys(int(item.strip()) for item in raw.split(",") if item.strip()))
         except ValueError as exc:
-            raise forms.ValidationError("TestRun ID 必须是用逗号分隔的整数") from exc
+            raise forms.ValidationError("执行任务编号 必须是用逗号分隔的整数") from exc
         if not ids:
-            raise forms.ValidationError("请至少填写一个 TestRun ID")
+            raise forms.ValidationError("请至少填写一个 执行任务编号")
         return ids
 
     def clean(self):
@@ -630,11 +642,11 @@ class IterationReportForm(forms.Form):
         product = cleaned.get("product")
         version = cleaned.get("version")
         if product and version and version.product_id != product.pk:
-            self.add_error("version", "所选版本不属于该产品")
+            self.add_error("version", "所选版本不属于该项目")
         return cleaned
 
 
-class RequirementChangeForm(forms.ModelForm):
+class RequirementChangeForm(RequirementSectionFormMixin, forms.ModelForm):
     change_summary = forms.CharField(
         max_length=255, label="变更说明",
         widget=forms.TextInput(attrs={"class": "form-control"}),
@@ -642,7 +654,7 @@ class RequirementChangeForm(forms.ModelForm):
 
     class Meta:
         model = AIRequest
-        fields = ("title", "requirement", "change_summary")
+        fields = ("title", "requirement", "change_summary", "target_version", "assigned_to", "priority", "status")
         widgets = {
             "title": forms.TextInput(attrs={"class": "form-control"}),
             "requirement": forms.Textarea(attrs={"class": "form-control", "rows": 8}),

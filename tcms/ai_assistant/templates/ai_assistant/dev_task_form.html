@@ -1,40 +1,31 @@
-{% extends "ai_assistant/base_ai.html" %}
-
+{% extends 'ai_assistant/base_ai.html' %}
+{% load static extra_filters %}
+{% block title %}{% if task %}编辑开发任务{% else %}新建开发任务{% endif %}{% endblock %}
 {% block ai_contents %}
-<div class="container-fluid">
-    <div class="clearfix">
-        <h1 class="pull-left">{% if task %}编辑任务单{% else %}新建任务单{% endif %}</h1>
-    </div>
-    {% include "ai_assistant/include/workspace_tabs.html" with active_tab="dev_tasks" %}
-    <p class="text-muted">
-        {% if can_manage %}
-            开发说明写清改哪一层、关键逻辑是什么；验收标准写清怎样算做完，两份都要能被人直接执行。
-        {% else %}
-            你是这条任务单的负责人，可以更新它的进度；标题、工时、负责人等内容由需求提出人或测试经理维护。
-        {% endif %}
-    </p>
-
-    <form method="post" class="form-horizontal">
-        {% csrf_token %}
-        {% if form.non_field_errors %}
-            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
-        {% endif %}
-        {% for field in form %}
-            <div class="form-group{% if field.errors %} has-error{% endif %}">
-                <label class="col-sm-2 control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-                <div class="col-sm-8">
-                    {{ field }}
-                    {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
-                    {% for error in field.errors %}<p class="help-block">{{ error }}</p>{% endfor %}
-                </div>
-            </div>
-        {% endfor %}
-        <div class="form-group">
-            <div class="col-sm-offset-2 col-sm-8">
-                <button class="btn btn-primary">保存</button>
-                <a class="btn btn-default" href="{% url 'ai_assistant:dev_task_list' %}{% if task %}?request={{ task.request_id }}{% endif %}">取消</a>
-            </div>
+<link rel="stylesheet" href="{% static 'ai_assistant/document_ui.css' %}">
+<div class="document-workspace" data-task-editor>
+    <header class="document-heading"><div>{% if task %}<p class="document-kicker">{{ task.task_number|default:task.pk }} · {{ task.title }}</p>{% endif %}<h1>{% if not can_manage %}更新任务状态{% elif task %}编辑开发任务{% else %}新建开发任务{% endif %}</h1></div><a class="btn btn-default" href="{% if task %}{% url 'ai_assistant:dev_task_detail' task.pk %}{% else %}{% url 'ai_assistant:dev_task_list' %}{% endif %}">{% if task %}返回开发任务详情{% else %}返回开发任务列表{% endif %}</a></header>
+    {% if not can_manage %}<p class="document-save-note">当前账号仅可更新这条开发任务的状态。</p>{% endif %}
+    <form method="post" class="document-structured-form" data-document-form data-document-unsaved="{% if form.is_bound and form.errors %}true{% else %}false{% endif %}"{% if can_manage %} data-task-assignees-url="{% url 'ai_assistant:dev_task_assignees' %}" data-task-id="{{ task.pk|default:'' }}"{% endif %}>
+        {% csrf_token %}{% if task %}<input type="hidden" name="edit_token" value="{{ request.document_edit_token }}">{% endif %}
+        <input type="hidden" name="return_detail" value="1">
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        {% for field in form.hidden_fields %}{{ field }}{% endfor %}
+        <div class="document-grid">
+            <section class="document-paper document-form-main">
+                {% if can_manage %}
+                    {% include 'ai_assistant/_document_form_sections.html' %}
+                {% else %}
+                    {% include 'ai_assistant/_document_sections.html' with document=task %}
+                {% endif %}
+            </section>
+            <aside class="document-properties document-form-properties" aria-label="开发任务属性"><h2>开发任务属性</h2>
+                {% for field in form.document_attribute_fields %}{% include 'ai_assistant/_document_field.html' %}{% endfor %}
+            </aside>
         </div>
+        <div class="document-form-footer document-actions"><button type="submit" class="btn btn-primary" data-document-save>保存</button><a class="btn btn-default" href="{% if task %}{% url 'ai_assistant:dev_task_detail' task.pk %}{% else %}{% url 'ai_assistant:dev_task_list' %}{% endif %}">取消</a></div>
     </form>
 </div>
+<script src="{% static 'ai_assistant/document_attributes.js' %}" defer></script>
+<script src="{% static 'ai_assistant/document_editor.js' %}" defer></script>
 {% endblock %}

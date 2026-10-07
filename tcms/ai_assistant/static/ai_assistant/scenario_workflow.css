@@ -1,0 +1,81 @@
+.scenario-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.scenario-filter { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin:18px 0; }
+.scenario-filter label { margin:0; flex:1 1 170px; }
+.scenario-stage-nav { display:flex; flex-wrap:wrap; gap:20px; padding:14px 0; margin-bottom:16px; border-bottom:1px solid #dfe7ed; }
+.scenario-text { white-space:normal; overflow-wrap:anywhere; max-height:500px; overflow-y:auto; line-height:1.8; }
+.scenario-config-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.scenario-table th, .scenario-table td { vertical-align:middle !important; }
+.hub-tree-row { display:flex; align-items:center; }
+.hub-tree-row .kiwi-resource-folder { display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
+.hub-folder-name { flex:1; min-width:0; overflow-wrap:anywhere; }
+.hub-tree-toggle { flex:0 0 20px; border:0; background:none; padding:0; }
+.hub-folder-active { background:#e7f4fb; border-left:3px solid #0088ce; }
+@media(max-width:767px) { .scenario-config-grid { grid-template-columns:1fr; } }
+
+.scenario-detail-header h1 { font-size:26px; line-height:1.35; overflow-wrap:anywhere; margin:6px 0 0; }
+.scenario-detail-header > div:first-child { min-width:0; flex:1; }
+.scenario-stage-nav a { padding:5px 0; font-weight:600; }
+.scenario-design-meta { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 24px; padding:16px; margin:0 0 20px; background:#f7f9fc; border:1px solid #e4eaf1; border-radius:6px; }
+.scenario-design-meta dt { font-size:12px; color:#617080; font-weight:400; margin-bottom:5px; }
+.scenario-design-meta dd { margin:0; color:#233748; overflow-wrap:anywhere; }
+.scenario-design-block { margin:20px 0; overflow-wrap:anywhere; line-height:1.65; }
+.scenario-design-block h3, .scenario-config-card h3 { font-size:15px; font-weight:600; margin:0 0 12px; }
+.scenario-design-columns, .scenario-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.scenario-design-columns .scenario-design-block { padding:16px; margin:0; border:1px solid #e4eaf1; border-radius:6px; }
+.scenario-steps { table-layout:fixed; margin-bottom:0; min-width:620px; }
+.scenario-steps th, .scenario-steps td { border:1px solid #e0e6ed !important; padding:12px !important; vertical-align:top !important; overflow-wrap:anywhere; line-height:1.65; }
+.scenario-steps thead th, .scenario-result-table thead th { background:#f3f6fa; color:#304458; font-size:12px; }
+.scenario-steps tbody tr:nth-child(even), .scenario-result-table tbody tr:nth-child(even) { background:#fafbfd; }
+.scenario-steps .scenario-step-number { width:58px; }
+.scenario-step-editor { min-width:760px; }
+.scenario-step-editor th:last-child { width:108px; }
+.scenario-step-editor textarea { resize:vertical; min-height:76px; }
+.scenario-step-controls .btn { padding:3px 6px; }
+.scenario-form-wide { grid-column:1 / -1; }
+.scenario-form-grid .form-group { margin:0; }
+.scenario-edit-mode ul { display:flex; gap:16px; list-style:none; margin:0; padding:0; }
+.scenario-edit-mode label { font-weight:400; margin:0; }
+.scenario-design-block summary, .scenario-history-scope summary { cursor:pointer; color:#617080; }
+.scenario-extra > div { margin-top:10px; }
+.scenario-config-card { border:1px solid #e4eaf1; border-radius:6px; padding:18px; }
+.scenario-link-list { list-style:none; padding:0; margin:10px 0 18px; }
+.scenario-link-list li { padding:9px 0; border-bottom:1px solid #eef1f5; overflow-wrap:anywhere; }
+.scenario-badge { display:inline-block; border-radius:4px; padding:3px 9px; background:#edf1f6; color:#3c4b5b; font-size:12px; white-space:nowrap; }
+.scenario-state-pass { background:#e8f5ed; color:#1e693b; }
+.scenario-state-fail { background:#fcecee; color:#a12431; }
+.scenario-result-table { margin:0 0 20px; min-width:540px; }
+.scenario-result-table th, .scenario-result-table td { padding:12px !important; vertical-align:middle !important; overflow-wrap:anywhere; }
+.scenario-empty { color:#74808f; text-align:center; padding:20px !important; }
+.scenario-form-footer { padding:20px 0; }
+.scenario-confirm { display:block; font-weight:400; margin-bottom:15px; }
+[data-structured-editor][hidden], [data-raw-editor][hidden] { display:none !important; }
+.scenario-step-editor .errorlist { padding-left:16px; color:#a12431; }
+@media(max-width:991px) { .scenario-design-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:767px) { .scenario-design-meta, .scenario-design-columns, .scenario-form-grid { grid-template-columns:1fr; } .scenario-detail-header h1 { font-size:22px; } .scenario-edit-mode ul { gap:8px; } }
+
+.scenario-design-meta { gap:12px 20px; padding:14px; }
+.scenario-design-meta dd { font-size:13px; }
+.scenario-steps { font-size:14px; }
+.scenario-steps:not(.scenario-step-editor) thead th:nth-child(3) { width:20%; }
+.scenario-steps:not(.scenario-step-editor) thead th:nth-child(4) { width:43%; }
+.scenario-step-editor thead th:nth-child(3) { width:20%; }
+.scenario-step-editor thead th:nth-child(4) { width:35%; }
+.scenario-design-block > div:not(.api-table-scroll) { font-size:14px; }
+#id_design_mode { display:flex; gap:16px; flex-wrap:wrap; }
+
+.scenario-library .scenario-filter { margin-top: 0; }
+.scenario-list-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 0 0 16px; }
+.scenario-list-toolbar > p { margin: 0; flex: 1 1 320px; font-size: 13px; }
+.scenario-list-toolbar .scenario-actions { margin-left: auto; }
+@media (max-width: 767px) { .scenario-list-toolbar .scenario-actions { margin-left: 0; } }
+
+.scenario-table .scenario-row-actions { white-space: nowrap; }
+.scenario-library .scenario-table thead th, .scenario-library .scenario-table tbody td:first-child { white-space: nowrap; }
+.scenario-library .scenario-table tbody td:nth-child(2) { min-width: 240px; overflow-wrap: anywhere; }
+.scenario-row-actions a + a { margin-left: 12px; }
+
+.scenario-library-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+.scenario-library-header h1{font-size:25px;margin:0;font-weight:600;line-height:1.4;color:#243b53}
+.scenario-library-header .btn{flex-shrink:0;white-space:nowrap}
+.scenario-library-total{font-size:13px;color:#66798c;vertical-align:middle;background:#edf2f7;border-radius:12px;padding:3px 9px;margin-left:6px;font-weight:400}
+@media(max-width:767px){.scenario-library-header{align-items:flex-start}.scenario-library-header h1{font-size:22px}}

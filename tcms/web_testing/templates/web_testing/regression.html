@@ -1,0 +1,13 @@
+{% extends "web_testing/base.html" %}{% load ui_labels %}
+{% block workspace %}<section class="api-card web-form">
+<dl class="web-execution-preview">
+<dt>关联缺陷</dt><dd><a href="{% url 'ai_assistant:edit_defect_draft' defect.pk %}">#{{ defect.pk }} {{ defect.title }}</a></dd>
+<dt>业务用例</dt><dd>TC-{{ case.pk }} · {{ case.summary }}</dd>
+<dt>原失败记录</dt><dd><a href="{% url 'web_testing:run' source.pk %}">原 Web 执行 · 第 {{ position }} 项</a></dd>
+<dt>执行站点</dt><dd>{{ base_url }}</dd>
+</dl>
+<p class="help-block">仅执行原失败项，保留当时的步骤、输入数据和前置登录。此操作可能提交表单，请确认修复已部署到上述测试站点。</p>
+<form method="post">{% csrf_token %}{{ form.submission_token }}{{ form.non_field_errors }}
+{% for field in form.visible_fields %}<div class="form-group">{% if field.name == 'confirm' %}{{ field }} {{ field.label_tag|ui_term }}{% else %}{{ field.label_tag|ui_term }}{{ field }}{% endif %}{{ field.errors }}</div>{% endfor %}
+<div class="web-form-actions"><button class="btn btn-primary" type="submit">开始正式复测</button> <a class="btn btn-default" href="{% url 'ai_assistant:edit_defect_draft' defect.pk %}">返回缺陷</a></div>
+</form></section>{% endblock %}

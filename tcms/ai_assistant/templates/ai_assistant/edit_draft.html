@@ -1,4 +1,4 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
 
 {% block ai_contents %}
 <div class="container">
@@ -11,7 +11,7 @@
         {% csrf_token %}
         {% for field in form %}
             <div class="form-group">
-                <label>{{ field.label }}</label>
+                <label>{{ field.label|ui_term }}</label>
                 {{ field }}
                 {% if field.help_text %}
                     <p class="help-block">{{ field.help_text }}</p>

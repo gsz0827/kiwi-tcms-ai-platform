@@ -1,15 +1,15 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
 {% load static %}
 
 {% block ai_contents %}
 <div class="container-fluid">
     <div class="clearfix">
-        <h1 class="pull-left">{{ job.get_operation_display }}</h1>
+        <h1 class="pull-left">{{ job.get_operation_display|ui_term }}</h1>
         <div class="btn-group pull-right" style="margin-top:20px"><a class="btn btn-default" href="{% url 'ai_assistant:job_list' %}">全部后台任务</a><a class="btn btn-default" href="{% url 'ai_assistant:index' %}">AI 测试助手</a></div>
     </div>
     <p class="text-muted">任务编号：{{ job.pk }} · 提交时间：{{ job.created }} · 第 {{ job.attempts }} 次尝试</p>
     <div id="job-panel" data-status-url="{% url 'ai_assistant:job_status' job.pk %}" class="panel {% if job.status == 'completed' %}panel-success{% elif job.status == 'failed' %}panel-danger{% elif job.status == 'interrupted' %}panel-warning{% else %}panel-info{% endif %}">
-        <div class="panel-heading"><strong id="job-status-label">{{ job.get_status_display }}</strong></div>
+        <div class="panel-heading"><strong id="job-status-label">{{ job.get_status_display|ui_term }}</strong></div>
         <div class="panel-body">
             <div class="progress">
                 <div id="job-progress-bar" class="progress-bar progress-bar-info progress-bar-striped {% if not job.is_terminal %}active{% endif %}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ job.progress }}" style="width:{{ job.progress }}%"><span id="job-progress-text">{{ job.progress }}%</span></div>

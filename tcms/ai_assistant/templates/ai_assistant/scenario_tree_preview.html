@@ -1,0 +1,5 @@
+{% load scenario_design %}
+<h4>TC-{{ case.pk }} · {{ case.summary }}</h4>
+<p class="text-muted">{{ case.category.product.name }} / {{ case.category.name }}</p>
+{% scenario_design case %}
+{% if can_edit %}<p><a class="btn btn-default" href="{% url 'ai_assistant:scenario_edit' case.pk %}">编辑用例</a></p>{% endif %}

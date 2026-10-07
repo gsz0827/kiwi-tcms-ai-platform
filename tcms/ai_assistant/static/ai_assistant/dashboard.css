@@ -1,0 +1,97 @@
+/* AI 测试质量看板 —— 现代 Grid 卡片风 */
+/* 与 workbench.css 视觉一致：浅灰卡片、圆角、绿/红状态色。仅作用于 dashboard 页面。 */
+
+.dash-metrics {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.dash-metric {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    border: 1px solid #dde6ec;
+    border-radius: 8px;
+    background: #f7fafc;
+    color: #40566a;
+}
+.dash-metric strong {
+    margin: 8px 0 0;
+    font-size: 24px;
+    line-height: 1.2;
+    color: #173e59;
+    font-weight: 600;
+}
+.dash-metric small {
+    color: #637585;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.dash-metric:hover {
+    border-color: #0088ce;
+    background: #f0f8fc;
+}
+
+/* 缺陷三项统计卡片 */
+.dash-defect-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.dash-card {
+    border: 1px solid #dde6ec;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+}
+.dash-card-heading {
+    padding: 12px 16px;
+    border-bottom: 1px solid #edf1f4;
+    font-size: 14px;
+}
+.dash-card-body {
+    padding: 12px 16px;
+    min-height: 44px;
+}
+.dash-card-body .label {
+    margin: 2px 4px 2px 0;
+    display: inline-block;
+}
+
+/* 流程完成度阶段块 */
+.dash-stages {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+}
+.dash-stage {
+    text-align: center;
+    padding: 12px 6px;
+    border: 1px solid #e8eef3;
+    border-radius: 8px;
+    background: #fbfcfd;
+}
+.dash-stage .fa {
+    font-size: 24px;
+    display: block;
+    margin-bottom: 6px;
+}
+.dash-stage strong {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+/* 响应式：窄屏降为两列 / 单列 */
+@media (max-width: 1100px) {
+    .dash-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dash-defect-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dash-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+    .dash-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dash-defect-cards { grid-template-columns: minmax(0, 1fr); }
+    .dash-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

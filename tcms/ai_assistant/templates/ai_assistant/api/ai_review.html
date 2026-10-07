@@ -1,33 +1,9 @@
-{% extends "ai_assistant/api/base.html" %}
-{% block title %}复核草稿{% endblock %}
+{% extends "ai_assistant/api/base.html" %}{% load static %}
+{% block title %}编辑与复核接口草稿{% endblock %}
 {% block api_content %}
-<header class="api-header">
-<div>
-<p class="text-muted">{{ product.name }} / 接口自动化</p>
-<h1>复核草稿</h1>
-<p>{{ draft.name }}</p>
-</div>
-<a href="{% url 'ai_assistant:api_ai_detail' draft.request_id %}">返回草稿列表</a>
-</header>
-
-<div class="api-guide"><strong>复核要求</strong>
-<p>核对请求与断言，填写待确认问题的处理结果，确认后保存。</p></div>
-
-{% if draft.questions %}<section class="api-card"><header><h2>待确认问题</h2></header>
-<div class="api-result-body"><ul>{% for question in draft.questions %}<li>{{ question }}</li>{% endfor %}</ul></div></section>{% endif %}
-
-<section class="api-card"><header><h2>本次提交的接口资料</h2></header>
-<p class="api-result-body"><strong>可用环境变量名</strong><br>{% if source.environment_variables %}{{ source.environment_variables|join:", " }}{% else %}<span class="text-muted">未声明。若配置中引用了变量，需重新生成并声明变量名。</span>{% endif %}</p>
-<details><summary>接口文档原文</summary><pre>{{ source.documentation }}</pre></details>
-<details><summary>业务要求与测试重点</summary><pre>{{ source.requirements|default:"未填写" }}</pre></details>
-</section>
-
-<section class="api-card"><header><h2>草稿内容</h2></header>
-{% if draft.imported_at %}<div class="alert alert-info">这条草稿已于 {{ draft.imported_at|date:"Y-m-d H:i:s" }} 导入用例库，当前内容只读。</div>{% endif %}
-<form method="post" class="api-edit-form">{% csrf_token %}
-{{ form.non_field_errors }}
-{% for hidden in form.hidden_fields %}{{ hidden }}{{ hidden.errors }}{% endfor %}
-{% for field in form.visible_fields %}<div class="form-group{% if field.errors %} has-error{% endif %}">{{ field.label_tag }}{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div>{% endfor %}
-<button class="btn btn-primary" type="submit">保存复核结果</button> <a class="btn btn-default" href="{% url 'ai_assistant:api_ai_detail' draft.request_id %}">返回</a>
-</form></section>
+<header class="api-header automation-page-header"><h1>编辑与复核接口草稿</h1><a href="{% url 'ai_assistant:api_ai_detail' draft.request_id %}">返回生成结果</a></header>
+{% if draft.questions %}<section class="api-card"><header><h2>待确认问题</h2></header><div class="api-result-body"><ul>{% for question in draft.questions %}<li>{{ question }}</li>{% endfor %}</ul></div></section>{% endif %}
+<form method="post" class="automation-edit-form">{% csrf_token %}<fieldset{% if not automation_access.can_write %} disabled{% endif %}>{% include 'ai_assistant/automation/form_sections.html' %}{% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit">保存并确认复核</button><a class="btn btn-default" href="{% url 'ai_assistant:api_ai_detail' draft.request_id %}">返回生成结果</a></div>{% endif %}</fieldset></form>
+<details class="automation-advanced"><summary>本次接口资料与业务要求</summary><pre>{{ source.documentation }}</pre><pre>{{ source.requirements }}</pre><p>可用变量：{{ source.environment_variables|join:', ' }}</p></details>
+<script src="{% static 'ai_assistant/automation_editor.js' %}" defer></script>
 {% endblock %}

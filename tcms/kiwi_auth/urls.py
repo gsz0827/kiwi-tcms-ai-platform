@@ -6,6 +6,7 @@ from django.urls import path, re_path, reverse_lazy
 from tcms.kiwi_auth import views
 
 urlpatterns = [
+    path("display-settings/", views.DisplaySettings.as_view(), name="display-settings"),
     re_path(
         r"^(?P<pk>\d+)/profile/$",
         views.Profile.as_view(),

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}个人资料{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
+{% block contents %}
+<div class="container-fluid" style="max-width: 960px; padding-top: 28px">
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>{% if can_edit %}我的资料{% else %}用户资料{% endif %}</strong></div>
+    <div class="panel-body">
+      <p class="text-muted">这里仅维护账号的基本资料。权限、用户组、账号启停和删除由系统管理员在“用户管理”中维护。</p>
+      <dl class="dl-horizontal">
+        <dt>用户名</dt><dd>{{ profile_user.username }}</dd>
+        <dt>邮箱</dt><dd>{{ profile_user.email|default:"未设置" }}</dd>
+        <dt>账号状态</dt><dd>{% if profile_user.is_active %}正常{% else %}已停用{% endif %}</dd>
+      </dl>
+      {% if can_edit %}
+      <form method="post" class="form-horizontal" novalidate>{% csrf_token %}
+        {{ form.non_field_errors }}
+        {% for field in form %}
+        <div class="form-group{% if field.errors %} has-error{% endif %}">
+          <label class="col-sm-3 control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          <div class="col-sm-7">{{ field }}{{ field.errors }}</div>
+        </div>
+        {% endfor %}
+        <div class="form-group"><div class="col-sm-offset-3 col-sm-7">
+          <button class="btn btn-primary" type="submit" name="_save">保存资料</button>
+          <a class="btn btn-default" href="{% url 'admin:password_change' %}">修改密码</a>
+          <a class="btn btn-default" href="{% url 'reset-user-email' profile_user.pk %}">更换邮箱</a>
+        </div></div>
+      </form>
+      {% else %}
+      <dl class="dl-horizontal"><dt>名字</dt><dd>{{ profile_user.first_name|default:"-" }}</dd><dt>姓氏</dt><dd>{{ profile_user.last_name|default:"-" }}</dd></dl>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

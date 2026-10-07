@@ -1,0 +1,8 @@
+{% extends "web_testing/base.html" %}
+{% block workspace %}
+{% url 'web_testing:cases' as configs_base %}{% url 'web_testing:suites' as suites_base %}
+{% url 'web_testing:ai_generate' product.pk as generate_url %}{% url 'web_testing:ai_import' batch.pk as import_url %}
+{% with product.pk|stringformat:'s' as product_id %}{% with configs_url=configs_base|add:'?product='|add:product_id suites_url=suites_base|add:'?product='|add:product_id %}
+{% include 'ai_assistant/automation/draft_workspace.html' with kind='web' %}
+{% endwith %}{% endwith %}
+{% endblock %}

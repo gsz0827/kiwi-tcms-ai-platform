@@ -7,27 +7,27 @@
 <div class="project-settings-page">
     <header>
         <h1>项目配置</h1>
-        <p>在这里创建产品，并维护各产品的 AI 测试规则。</p>
+        <p>在这里创建项目，并维护各项目的 AI 测试规则。</p>
     </header>
     {% url 'ai_assistant:project_settings' as settings_url %}
     <div class="project-settings-grid">
         <section class="project-settings-card" aria-labelledby="settings-product-title">
             <span class="fa fa-cube project-settings-icon" aria-hidden="true"></span>
-            <h2 id="settings-product-title">产品</h2>
-            <p>以产品组织需求、用例和测试运行。新建产品只需填名称与描述。</p>
+            <h2 id="settings-product-title">项目</h2>
+            <p>以项目组织需求、用例和执行任务。新建项目只需填名称与描述。</p>
             {% if perms.management.add_product %}
-            <a class="btn btn-primary" href="{% url 'ai_assistant:create_product' %}?next={{ settings_url|urlencode }}">新建产品</a>
+            <a class="btn btn-primary" href="{% url 'ai_assistant:create_product' %}?next={{ settings_url|urlencode }}">新建项目</a>
             {% else %}
-            <span class="project-settings-permission">需要新建产品权限，请联系管理员。</span>
+            <span class="project-settings-permission">需要新建项目权限，请联系管理员。</span>
             {% endif %}
         </section>
         <section class="project-settings-card" aria-labelledby="settings-rules-title">
             <span class="fa fa-book project-settings-icon" aria-hidden="true"></span>
             <h2 id="settings-rules-title">AI 规则包</h2>
-            <p>按产品维护业务术语、测试重点与验收规则。已启用的规则会用于新提交的需求任务。</p>
+            <p>按项目维护业务术语、测试重点与验收规则。已启用的规则会用于新提交的需求任务。</p>
             <a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">维护 AI 规则包</a>
         </section>
     </div>
-    <p class="project-settings-hint">首次配置：新建产品 → 按需维护 AI 规则包。</p>
+    <p class="project-settings-hint">首次配置：新建项目 → 按需维护 AI 规则包。</p>
 </div>
 {% endblock %}

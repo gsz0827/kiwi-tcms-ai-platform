@@ -1,4 +1,4 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
 
 {% block ai_contents %}
 <div class="container-fluid">
@@ -10,7 +10,7 @@
     </div>
     <p class="text-muted">所有字段均可修改。请先确认真实现象、复现步骤和证据，再关联缺陷系统中的地址。</p>
     <div class="alert alert-info">
-        当前状态：<strong>{{ draft.get_status_display }}</strong> · 严重程度：{{ draft.get_severity_display }} · 优先级：{{ draft.priority }}
+        当前状态：<strong>{{ draft.get_status_display|ui_term }}</strong> · 严重程度：{{ draft.get_severity_display }} · 优先级：{{ draft.priority }}
         {% if draft.external_status %} · 外部状态：{{ draft.external_status }}{% endif %}
         {% if draft.last_synced_at %} · 同步于 {{ draft.last_synced_at }}{% endif %}
     </div>
@@ -18,7 +18,7 @@
         {% csrf_token %}
         {% for field in form %}
             <div class="form-group{% if field.errors %} has-error{% endif %}">
-                <label class="col-sm-2 control-label">{{ field.label }}</label>
+                <label class="col-sm-2 control-label">{{ field.label|ui_term }}</label>
                 <div class="col-sm-9">{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}</div>
             </div>
         {% endfor %}
@@ -34,25 +34,26 @@
         <div class="alert alert-info">此操作只把现有缺陷地址关联到当前测试执行，不会自动创建或提交外部缺陷。</div>
         <form method="post" action="{% url 'ai_assistant:link_defect_draft' draft.pk %}" class="form-inline">
             {% csrf_token %}
-            <div class="form-group">{{ link_form.name.label_tag }} {{ link_form.name }}</div>
-            <div class="form-group">{{ link_form.url.label_tag }} {{ link_form.url }}</div>
+            <div class="form-group">{{ link_form.name.label_tag|ui_term }} {{ link_form.name }}</div>
+            <div class="form-group">{{ link_form.url.label_tag|ui_term }} {{ link_form.url }}</div>
             <button type="submit" class="btn btn-success" data-confirm="确认把此缺陷地址关联到当前测试执行？">确认关联</button>
         </form>
     {% else %}
-        <div class="alert alert-warning">你可以编辑草稿，但没有修改此测试运行的权限，不能写入缺陷关联。</div>
+        <div class="alert alert-warning">你可以编辑草稿，但没有修改此执行任务的权限，不能写入缺陷关联。</div>
     {% endif %}
 
     <hr>
     <h3>重复缺陷识别</h3>
     <p class="text-muted">系统在当前账号的未关闭缺陷中比较标题和实际结果；候选只做提醒，由你最终确认。</p>
     <table class="table table-condensed table-bordered"><thead><tr><th>相似度</th><th>候选缺陷</th><th>状态</th><th>操作</th></tr></thead><tbody>
-    {% for score, candidate in duplicate_candidates %}<tr><td>{{ score }}%</td><td>#{{ candidate.pk }} {{ candidate.title }}</td><td>{{ candidate.get_status_display }}</td><td><a class="btn btn-xs btn-default" href="{% url 'ai_assistant:edit_defect_draft' candidate.pk %}">查看</a></td></tr>{% empty %}<tr><td colspan="4" class="text-muted">未发现高相似度的未关闭缺陷。</td></tr>{% endfor %}
+    {% for score, candidate in duplicate_candidates %}<tr><td>{{ score }}%</td><td>#{{ candidate.pk }} {{ candidate.title }}</td><td>{{ candidate.get_status_display|ui_term }}</td><td><a class="btn btn-xs btn-default" href="{% url 'ai_assistant:edit_defect_draft' candidate.pk %}">查看</a></td></tr>{% empty %}<tr><td colspan="4" class="text-muted">未发现高相似度的未关闭缺陷。</td></tr>{% endfor %}
     </tbody></table>
 
     <hr>
-    <h3>从缺陷发起回归验证</h3>
-    <form method="post" action="{% url 'ai_assistant:create_defect_regression' draft.pk %}" class="form-horizontal">{% csrf_token %}{% for field in regression_form %}<div class="form-group"><label class="col-sm-2 control-label">{{ field.label }}</label><div class="col-sm-6">{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}</div></div>{% endfor %}<div class="form-group"><div class="col-sm-offset-2 col-sm-6"><button class="btn btn-success" type="submit">开始缺陷回归</button></div></div></form>
-    {% for verification in regressions %}<div class="alert {% if verification.status == 'passed' %}alert-success{% elif verification.status == 'failed' %}alert-danger{% else %}alert-warning{% endif %}"><strong>{{ verification.get_status_display }}</strong> · TR-{{ verification.regression_run_id }} · {{ verification.created }}{% if verification.notes %}<br>{{ verification.notes }}{% endif %}</div>{% empty %}<p class="text-muted">暂无缺陷回归记录。</p>{% endfor %}
+    <h3>修复后复测</h3>
+    <p><a class="btn btn-primary" href="{% url 'ai_assistant:new_regression_task' 'defect' draft.pk %}">新建手工复测任务</a>{% if web_regression_available %} <a class="btn btn-primary" href="{% url 'web_testing:regression_new' draft.pk %}">新建 Web 缺陷复测</a>{% endif %}</p>
+    <form method="post" action="{% url 'ai_assistant:create_defect_regression' draft.pk %}" class="form-horizontal">{% csrf_token %}{% for field in regression_form %}<div class="form-group"><label class="col-sm-2 control-label">{{ field.label|ui_term }}</label><div class="col-sm-6">{{ field }}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}</div></div>{% endfor %}<div class="form-group"><div class="col-sm-offset-2 col-sm-6"><button class="btn btn-success" type="submit">验证复测结果</button></div></div></form>
+    {% for verification in regressions %}<div class="alert {% if verification.status == 'passed' %}alert-success{% elif verification.status == 'failed' %}alert-danger{% else %}alert-warning{% endif %}"><strong>{{ verification.get_status_display|ui_term }}</strong> · <a href="{% url 'testruns-get' verification.regression_run_id %}">TR-{{ verification.regression_run_id }}</a>{% if verification.result.web_run_id %} · <a href="{% url 'web_testing:run' verification.result.web_run_id %}">Web 执行结果</a>{% endif %} · {{ verification.created }}{% if verification.notes %}<br>{{ verification.notes }}{% endif %}</div>{% empty %}<p class="text-muted">暂无缺陷复测记录。</p>{% endfor %}
 
     <hr>
     <h3>状态变更历史</h3>

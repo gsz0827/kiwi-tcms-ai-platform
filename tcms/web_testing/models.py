@@ -11,6 +11,8 @@ class WebCase(models.Model):
     folder = models.CharField("目录", max_length=200, blank=True, help_text="例如：登录/异常场景")
     description = models.TextField("前置条件与说明", blank=True)
     steps_encrypted = models.TextField()
+    test_case = models.ForeignKey("testcases.TestCase", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="web_configs", verbose_name="关联业务用例")
     updated = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -56,6 +58,11 @@ class WebRun(models.Model):
         ("failed", "失败"), ("error", "执行异常"), ("cancelled", "已取消"),
         ("interrupted", "执行中断"),
     )]
+    execution_mode = models.CharField(max_length=16, default="legacy", choices=[
+        ("legacy", "历史执行"), ("formal", "正式执行"), ("debug", "调试执行"),
+    ])
+    test_run = models.ForeignKey("testruns.TestRun", null=True, blank=True, related_name="web_runs", on_delete=models.PROTECT)
+    environment = models.ForeignKey(WebEnvironment, null=True, blank=True, on_delete=models.SET_NULL)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     product = models.ForeignKey("management.Product", on_delete=models.PROTECT)
@@ -96,3 +103,36 @@ class WebResult(models.Model):
     class Meta:
         ordering = ("position",)
         constraints = [models.UniqueConstraint(fields=("run", "position"), name="web_result_position_unique")]
+
+class WebAIRequest(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    product = models.ForeignKey("management.Product", on_delete=models.PROTECT)
+    title = models.CharField(max_length=200)
+    submission_token = models.UUIDField()
+    fingerprint = models.CharField(max_length=64)
+    input_encrypted = models.TextField()
+    generated = models.BooleanField(default=False)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created", "-pk")
+        constraints = [models.UniqueConstraint(fields=("owner", "submission_token"), name="web_ai_submission_unique")]
+
+
+class WebAIDraft(models.Model):
+    request = models.ForeignKey(WebAIRequest, on_delete=models.CASCADE, related_name="drafts")
+    position = models.PositiveIntegerField()
+    name = models.CharField("用例名称", max_length=200)
+    description = models.TextField("前置条件与预期结果", blank=True)
+    evidence = models.TextField("原文依据", blank=True)
+    steps = models.JSONField("操作与断言步骤", default=list)
+    questions = models.JSONField(default=list)
+    review_notes = models.TextField("确认说明", blank=True)
+    reviewed_at = models.DateTimeField(null=True)
+    revision = models.PositiveIntegerField(default=1)
+    web_case = models.ForeignKey(WebCase, null=True, on_delete=models.SET_NULL)
+    imported_at = models.DateTimeField(null=True)
+
+    class Meta:
+        ordering = ("position", "pk")
+        constraints = [models.UniqueConstraint(fields=("request", "position"), name="web_ai_draft_position_unique")]

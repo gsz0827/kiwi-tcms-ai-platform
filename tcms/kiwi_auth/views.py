@@ -147,14 +147,76 @@ class Confirm(RedirectView):  # pylint: disable=missing-permission-required
         return super().get_redirect_url(*args, **kwargs)
 
 
-class Profile(View):  # pylint: disable=missing-permission-required
-    """Show user profiles"""
+@method_decorator(login_required, name="dispatch")
+class Profile(View):
+    """Simple self-service profile; administrative permissions stay in user management."""
 
-    http_method_names = ["get"]
+    http_method_names = ["get", "post"]
+    template_name = "kiwi_auth/profile.html"
 
-    def get(self, request, pk):  # pylint: disable=no-self-use
+    @staticmethod
+    def _user(request, pk):
         user = get_object_or_404(User, pk=pk)
-        return HttpResponseRedirect(reverse("admin:auth_user_change", args=[user.pk]))
+        if user.pk != request.user.pk and not request.user.has_perm("auth.view_user"):
+            raise PermissionDenied
+        return user
+
+    def get(self, request, pk):
+        user = self._user(request, pk)
+        can_edit = user.pk == request.user.pk
+        return render(request, self.template_name, {
+            "profile_user": user,
+            "can_edit": can_edit,
+            "form": forms.ProfileForm(instance=user) if can_edit else None,
+        })
+
+    def post(self, request, pk):
+        user = self._user(request, pk)
+        if user.pk != request.user.pk:
+            raise PermissionDenied
+        form = forms.ProfileForm(request.POST, instance=user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "个人资料已保存。")
+            return HttpResponseRedirect(reverse("tcms-profile", args=[user.pk]))
+        return render(request, self.template_name, {
+            "profile_user": user, "can_edit": True, "form": form,
+        })
+
+
+@method_decorator(login_required, name="dispatch")
+class DisplaySettings(View):
+    http_method_names = ["get", "post"]
+    template_name = "kiwi_auth/display_settings.html"
+
+    @staticmethod
+    def _preference(user):
+        return forms.UserPreference.objects.get_or_create(user=user)[0]
+
+    def get(self, request):
+        return render(request, self.template_name, {
+            "form": forms.DisplaySettingsForm(instance=self._preference(request.user)),
+        })
+
+    def post(self, request):
+        preference = self._preference(request.user)
+        form = forms.DisplaySettingsForm(request.POST, instance=preference)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form})
+        preference = form.save()
+        messages.success(request, "显示设置已保存。")
+        response = HttpResponseRedirect(reverse("display-settings"))
+        response.set_cookie(
+            settings.LANGUAGE_COOKIE_NAME,
+            preference.language,
+            max_age=settings.LANGUAGE_COOKIE_AGE,
+            path=settings.LANGUAGE_COOKIE_PATH,
+            domain=settings.LANGUAGE_COOKIE_DOMAIN,
+            secure=settings.LANGUAGE_COOKIE_SECURE,
+            httponly=settings.LANGUAGE_COOKIE_HTTPONLY,
+            samesite=settings.LANGUAGE_COOKIE_SAMESITE,
+        )
+        return response
 
 
 @method_decorator(login_required, name="dispatch")

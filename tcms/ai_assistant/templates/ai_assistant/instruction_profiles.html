@@ -1,4 +1,4 @@
-{% extends "ai_assistant/base_ai.html" %}
+{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
 
 {% block ai_contents %}
 <div class="container">
@@ -16,13 +16,13 @@
         规则用于补充测试领域知识，原始需求优先。不要把 API 密钥、账号密码或其他敏感信息写入规则包。
     </div>
 
-    <h3>为产品创建规则包</h3>
+    <h3>为项目创建规则包</h3>
     <form method="post">
         {% csrf_token %}
         {{ form.non_field_errors }}
         {% for field in form %}
             <div class="form-group">
-                <label>{{ field.label }}</label>
+                <label>{{ field.label|ui_term }}</label>
                 {{ field }}
                 {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
                 {{ field.errors }}
@@ -51,7 +51,7 @@
                         <strong>{{ profile.name }}</strong>
                         {% if profile.description %}<br><span class="text-muted">{{ profile.description }}</span>{% endif %}
                     </td>
-                    <td>{% if profile.product %}{{ profile.product.name }}{% else %}所有产品{% endif %}</td>
+                    <td>{% if profile.product %}{{ profile.product.name }}{% else %}所有项目{% endif %}</td>
                     <td>V{{ profile.version }}</td>
                     <td>
                         {% if profile.is_active %}<span class="label label-success">已启用</span>
@@ -68,7 +68,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="5">还没有规则包。选择已有产品填写规则；若尚未创建产品，可从左侧“项目配置”进入“新建产品”。</td></tr>
+                <tr><td colspan="5">还没有规则包。选择已有项目填写规则；若尚未创建项目，可从左侧“项目配置”进入“新建项目”。</td></tr>
             {% endfor %}
             </tbody>
         </table>

@@ -56,6 +56,11 @@ def submit_requirement(owner, cleaned_data, operation, model_config):
         "title": cleaned_data["title"],
         "requirement": cleaned_data["requirement"],
         "category": cleaned_data["category"].pk,
+        **({'document_sections': cleaned_data.get('document_sections')} if cleaned_data.get('document_sections') else {}),
+        **({'target_version': cleaned_data['target_version'].pk} if cleaned_data.get('target_version') else {}),
+        **({'assigned_to': cleaned_data['assigned_to'].pk} if cleaned_data.get('assigned_to') else {}),
+        **({'priority': cleaned_data['priority']} if cleaned_data.get('priority', 'P3') != 'P3' else {}),
+        **({'status': cleaned_data['status']} if cleaned_data.get('status', 'draft') != 'draft' else {}),
         "operation": operation,
     })
     dedupe_key = f"submission:{token}"
@@ -83,6 +88,11 @@ def submit_requirement(owner, cleaned_data, operation, model_config):
             title=cleaned_data["title"],
             requirement=cleaned_data["requirement"],
             category=cleaned_data["category"],
+            document_sections=cleaned_data.get('document_sections', {}),
+            target_version=cleaned_data.get('target_version'),
+            assigned_to=cleaned_data.get('assigned_to'),
+            priority=cleaned_data.get('priority', 'P3'),
+            status=cleaned_data.get('status', 'draft'),
             skill_snapshot=capture_instruction_snapshot(
                 owner, cleaned_data["category"]
             ),
@@ -92,6 +102,8 @@ def submit_requirement(owner, cleaned_data, operation, model_config):
             version=ai_request.version,
             title=ai_request.title,
             requirement=ai_request.requirement,
+            document_sections=ai_request.document_sections,
+            attributes=ai_request.document_attributes,
             change_summary="创建需求",
             changed_by=owner,
         )
@@ -159,7 +171,7 @@ def _result(url, **summary):
 
 def _requirement_fingerprint(ai_request, include_drafts=False):
     context = {key: getattr(ai_request, key) for key in (
-        "version", "title", "requirement", "category_id", "skill_snapshot", "analysis",
+        "version", "title", "requirement", "category_id", "skill_snapshot", "analysis", "document_sections", "target_version_id",
     )}
     if include_drafts:
         context["coverage_analysis"] = ai_request.coverage_analysis
@@ -190,7 +202,7 @@ def _execute_requirement_analysis(job):
     _set_progress(job, 25, "正在调用模型分析需求")
     analysis, config, raw_result = analyze_requirement(
         ai_request.title,
-        ai_request.requirement,
+        ai_request.requirement_document,
         job.owner,
         model_config=job.model_config,
         skill_snapshot=ai_request.skill_snapshot,
@@ -213,41 +225,60 @@ def _execute_requirement_analysis(job):
 
 
 def _execute_test_case_generation(job):
-    ai_request = AIRequest.objects.get(
-        pk=job.payload["request_id"], created_by=job.owner
-    )
+    from . import roles
+    from .case_design_context import validate_context
+
+    ai_request = roles.visible_requests(job.owner).get(pk=job.payload["request_id"])
+    if not roles.can_generate_cases(job.owner, ai_request):
+        raise RuntimeError("当前账号已无权为该需求生成用例")
+    context = job.payload.get("design_context")
+    options = {}
+    if context:
+        validate_context(job.owner, ai_request, context)
+        options["dev_task_context"] = context["dev_tasks"]
     fingerprint = _requirement_fingerprint(ai_request)
     _set_progress(job, 25, "正在调用模型生成测试用例")
     test_cases = generate_test_cases(
-        ai_request.title,
-        ai_request.requirement,
-        job.owner,
-        analysis=ai_request.analysis or None,
-        model_config=job.model_config,
-        skill_snapshot=ai_request.skill_snapshot,
+        ai_request.title, ai_request.requirement_document, job.owner,
+        analysis=ai_request.analysis or None, model_config=job.model_config,
+        skill_snapshot=ai_request.skill_snapshot, **options,
     )
     _set_progress(job, 82, "模型已返回，正在保存用例草稿")
     with transaction.atomic():
         locked_request = _lock_unchanged_requirement(ai_request, fingerprint)
-        if locked_request.drafts.exists():
+        if not roles.can_generate_cases(job.owner, locked_request) or not roles.visible_requests(
+            job.owner
+        ).filter(pk=locked_request.pk).exists():
+            raise RuntimeError("当前账号已无权为该需求生成用例")
+        tasks = validate_context(job.owner, locked_request, context, lock=True) if context else []
+        if context:
+            if locked_request.drafts.filter(
+                source_context__fingerprint=context["fingerprint"], source_context__origin="ai"
+            ).exists():
+                raise RuntimeError("相同设计依据已生成过草稿，请查看已有用例")
+            test_cases = assign_unique_case_numbers(
+                test_cases, list(locked_request.drafts.values_list("case_number", flat=True))
+            )
+        elif locked_request.drafts.exists():
             raise RuntimeError("该请求已经生成过测试用例草稿")
-        locked_request.result = json.dumps(test_cases, ensure_ascii=False, indent=2)
-        locked_request.save(update_fields=("result",))
-        AITestCaseDraft.objects.bulk_create(
-            [
-                AITestCaseDraft(
-                    request=locked_request,
-                    requirement_version=locked_request.version,
-                    **test_case,
-                )
-                for test_case in test_cases
-            ]
-        )
-    return _result(
-        f"{reverse('ai_assistant:index')}#request-{ai_request.pk}",
-        request_id=ai_request.pk,
-        generated_count=len(test_cases),
+        if not locked_request.drafts.exists():
+            locked_request.result = json.dumps(test_cases, ensure_ascii=False, indent=2)
+            locked_request.save(update_fields=("result",))
+        drafts = AITestCaseDraft.objects.bulk_create([
+            AITestCaseDraft(
+                request=locked_request, requirement_version=locked_request.version,
+                source_context=(dict(context, origin="ai") if context else {}), **test_case,
+            ) for test_case in test_cases
+        ])
+        for draft in drafts:
+            if tasks:
+                draft.dev_tasks.set(tasks)
+    result_url = (
+        reverse("ai_assistant:case_design", args=[ai_request.pk]) + "#design-drafts"
+        if context else f"{reverse('ai_assistant:index')}#request-{ai_request.pk}"
     )
+    return _result(result_url, request_id=ai_request.pk, generated_count=len(test_cases))
+
 
 
 def _execute_dev_task_breakdown(job):
@@ -258,23 +289,24 @@ def _execute_dev_task_breakdown(job):
     _set_progress(job, 25, "正在调用模型拆分开发任务")
     dev_tasks = break_down_dev_tasks(
         ai_request.title,
-        ai_request.requirement,
+        ai_request.requirement_document,
         job.owner,
         analysis=ai_request.analysis or None,
         model_config=job.model_config,
         skill_snapshot=ai_request.skill_snapshot,
     )
-    _set_progress(job, 82, "模型已返回，正在保存开发任务单")
+    _set_progress(job, 82, "模型已返回，正在保存开发任务")
     with transaction.atomic():
         locked_request = _lock_unchanged_requirement(ai_request, fingerprint)
         if locked_request.dev_tasks.exists():
-            raise RuntimeError("该需求已经拆分过开发任务，请先删除现有任务单再重新拆分")
+            raise RuntimeError("该需求已经拆分过开发任务，请先删除现有开发任务再重新拆分")
         AIDevTask.objects.bulk_create(
             [
                 AIDevTask(
                     request=locked_request,
                     owner=job.owner,
                     requirement_version=locked_request.version,
+                    target_version=locked_request.target_version,
                     **dev_task,
                 )
                 for dev_task in dev_tasks
@@ -384,7 +416,7 @@ def _execute_test_case_review(job):
 
 def _execute_test_run_analysis(job):
     test_run = TestRun.objects.get(pk=job.payload["test_run_id"])
-    _set_progress(job, 25, "正在调用模型分析测试运行")
+    _set_progress(job, 25, "正在调用模型分析执行任务")
     result, config, raw_result, snapshot = analyze_test_run(
         test_run, job.owner, model_config=job.model_config
     )
@@ -488,7 +520,13 @@ def _execute_connection_test(job):
     return _result(reverse("ai_assistant:model_settings"), **result)
 
 
+def _execute_web_case_generation(job):
+    from tcms.web_testing.ai_generation import execute_generation as execute_web_generation
+    return execute_web_generation(job)
+
+
 HANDLERS = {
+    "web_case_generation": _execute_web_case_generation,
     "api_case_generation": execute_generation,
     "requirement_analysis": _execute_requirement_analysis,
     "test_case_generation": _execute_test_case_generation,

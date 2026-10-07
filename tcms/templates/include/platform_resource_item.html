@@ -3,7 +3,7 @@
         <a class="kiwi-resource-item-link"
            href="#kiwi-resource-modal-{{ browser.kind }}-{{ item.pk }}"
            data-toggle="modal"
-           title="点击查看详情">
+           title="点击查看详情"{% if item.can_tree_rename %} draggable="true" data-tree-drag="case" data-drag-id="{{ item.pk }}" data-drag-kind="{{ browser.kind }}" data-drag-product="{{ item.tree_product_id }}" data-case-node="{{ item.tree_kind }}:{{ item.pk }}" data-tree-name="{{ item.tree_name }}" data-tree-name-max="{% if item.tree_kind == 'manual' %}255{% else %}200{% endif %}" data-tree-rename-url="{% url 'ai_assistant:case_tree_rename' item.tree_kind item.pk %}"{% endif %}>
             <span class="fa fa-file-text-o"></span>
             {% if browser.kind == 'requirement' %}R-{{ item.pk }} {{ item.title }}{% endif %}
             {% if browser.kind == 'case' %}TC-{{ item.pk }} {{ item.summary }}{% endif %}

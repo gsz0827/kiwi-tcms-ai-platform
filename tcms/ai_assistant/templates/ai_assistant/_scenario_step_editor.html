@@ -1,0 +1,7 @@
+<tr data-step-row>
+  <th scope="row" data-step-number>{{ number }}</th>
+  <td>{{ step.action }}{{ step.action.errors }}</td>
+  <td>{{ step.data }}{{ step.data.errors }}</td>
+  <td>{{ step.expected }}{{ step.expected.errors }}</td>
+  <td class="scenario-step-controls"><span hidden>{{ step.DELETE }}</span><button type="button" class="btn btn-default btn-xs" data-step-up aria-label="上移步骤">↑</button><button type="button" class="btn btn-default btn-xs" data-step-down aria-label="下移步骤">↓</button><button type="button" class="btn btn-link text-danger" data-step-remove aria-label="删除步骤">删除</button></td>
+</tr>

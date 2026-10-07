@@ -1,0 +1,4 @@
+{% if can_write %}<div class="web-retry-actions">
+<form method="post" action="{% url 'web_testing:retry' run.pk %}">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="scope" value="all"><button class="btn btn-default">原快照重跑（调试）</button></form>
+{% if failed_count %}<form method="post" action="{% url 'web_testing:retry' run.pk %}">{% csrf_token %}<input type="hidden" name="token" value="{{ failed_token }}"><input type="hidden" name="scope" value="failed"><button class="btn btn-default" title="沿用原环境与配置快照，仅重跑有失败结果的项">失败项重跑（调试）</button></form>{% endif %}
+</div>{% if failed_count %}<p class="help-block">失败项重跑保留环境前置步骤，不包含已通过的配置；存在跨脚本依赖时请完整重跑。</p>{% endif %}{% endif %}

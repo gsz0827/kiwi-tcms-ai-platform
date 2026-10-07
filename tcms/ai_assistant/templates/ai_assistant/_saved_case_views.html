@@ -1,0 +1,49 @@
+<section class="hub-saved-views" aria-labelledby="hub-saved-title">
+  <div class="hub-saved-heading"><h2 id="hub-saved-title">我的筛选视图</h2><button type="button" class="btn btn-link" data-toggle="modal" data-target="#hub-saved-manager">管理视图（{{ saved_case_views|length }}）</button></div>
+  {% if saved_case_views %}<div class="hub-saved-links">
+    {% for view in saved_case_views|slice:':8' %}
+      <a class="hub-saved-link{% if view.matches_current %} hub-saved-active{% endif %}{% if view.invalid_reason %} hub-saved-invalid{% endif %}" href="{% url 'ai_assistant:saved_case_view_load' view.pk %}" title="{% if view.invalid_reason %}{{ view.invalid_reason }}{% else %}{{ view.filter_description }}{% endif %}">
+        <span class="fa {% if view.invalid_reason %}fa-exclamation-triangle{% else %}fa-filter{% endif %}" aria-hidden="true"></span> {{ view.name }}{% if view.invalid_reason %}（待更新）{% endif %}
+      </a>
+    {% endfor %}
+    {% if saved_case_views|length > 8 %}<button type="button" class="btn btn-link" data-toggle="modal" data-target="#hub-saved-manager">查看全部视图</button>{% endif %}
+  </div>{% endif %}
+  <form id="hub-save-view" method="post" action="{% url 'ai_assistant:saved_case_view_new' %}" class="hub-save-form">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    {% for key, value in current_case_filters.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <label for="hub-view-name" class="sr-only">筛选视图名称</label><input id="hub-view-name" class="form-control" type="text" name="name" required maxlength="80" placeholder="命名当前筛选，如：登录模块接口用例">
+    <button class="btn btn-default" type="submit"{% if current_case_filter_error %} disabled{% endif %}>保存当前筛选</button>
+    <small>仅当前账号可见；保存已查询的条件，不保存未提交的输入。</small>
+  </form>
+  {% if current_case_filter_error %}<p class="text-warning">{{ current_case_filter_error }}</p>{% endif %}
+</section>
+
+<div class="modal fade" id="hub-saved-manager" tabindex="-1" role="dialog" aria-labelledby="hub-saved-manager-title">
+  <div class="modal-dialog modal-lg" role="document"><div class="modal-content">
+    <div class="modal-header"><button class="close" type="button" data-dismiss="modal" aria-label="关闭">&times;</button><h2 class="modal-title" id="hub-saved-manager-title">管理我的筛选视图</h2></div>
+    <div class="modal-body hub-saved-manager-body">
+      <p class="text-muted">最多 {{ saved_case_view_limit }} 个。视图只保存项目、目录、类型、搜索词和每页条数；每次打开仍重新检查权限。删除视图不会删除用例。</p>
+      {% for view in saved_case_views %}
+      <section class="hub-saved-item" data-saved-view="{{ view.pk }}">
+        <p><strong>{{ view.name }}</strong> <small>{{ view.filter_description }}</small></p>
+        {% if view.invalid_reason %}<p class="text-warning">{{ view.invalid_reason }}</p>{% endif %}
+        <div class="hub-saved-item-actions">
+          <form method="post" action="{% url 'ai_assistant:saved_case_view_edit' view.pk %}" class="hub-saved-edit">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="revision" value="{{ view.revision }}">
+            {% for key, value in current_case_filters.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+            <label for="hub-view-rename-{{ view.pk }}" class="sr-only">重命名 {{ view.name }}</label><input id="hub-view-rename-{{ view.pk }}" name="name" value="{{ view.name }}" class="form-control" required maxlength="80">
+            <button class="btn btn-default" type="submit" name="action" value="rename">重命名</button>
+            <button class="btn btn-default" type="submit" name="action" value="replace"{% if current_case_filter_error %} disabled{% endif %}>用当前条件更新</button>
+          </form>
+          <a class="btn btn-link" href="{% url 'ai_assistant:saved_case_view_load' view.pk %}">打开</a>
+          <form class="hub-saved-delete" method="post" action="{% url 'ai_assistant:saved_case_view_delete' view.pk %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="revision" value="{{ view.revision }}">
+            <button type="submit" class="btn btn-link text-danger">删除视图</button>
+          </form>
+        </div>
+      </section>
+      {% empty %}<p class="api-empty">还没有保存视图。先查询需要的用例，再在用例库中命名保存。</p>{% endfor %}
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">关闭</button></div>
+  </div></div>
+</div>

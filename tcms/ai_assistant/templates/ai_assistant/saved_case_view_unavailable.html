@@ -1,0 +1,8 @@
+{% extends "ai_assistant/api/base.html" %}
+{% block title %}筛选视图需要更新{% endblock %}
+{% block api_content %}
+<header class="api-header"><div><h1>筛选视图需要更新</h1><p>{{ saved_case_view.name }}</p></div></header>
+<div class="alert alert-warning" role="alert">{{ reason }}</div>
+<p>本次没有应用筛选，也没有扩大到全部用例。原条件仍保留，可返回用例库后在“管理视图”中更新或删除。</p>
+<a class="btn btn-default" href="{% url 'ai_assistant:case_hub' %}">返回用例库</a>
+{% endblock %}

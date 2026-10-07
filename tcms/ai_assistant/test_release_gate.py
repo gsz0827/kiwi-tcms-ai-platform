@@ -1,7 +1,7 @@
-"""发布门禁：产品级规则、硬门禁审批、测试经理风险放行。
+"""发布门禁：项目级规则、硬门禁审批、测试经理风险放行。
 
 这一组测试守住三条边界：
-1. 门禁规则挂产品，一个产品一条，没配规则时明确回落到「内置默认门禁」；
+1. 门禁规则挂项目，一个项目一条，没配规则时明确回落到「内置默认门禁」；
 2. 门禁未通过时**任何人都不能直接审批通过**，报告作者也不行——否则硬门禁形同虚设；
 3. 只有测试经理能填理由做风险放行，理由与时间进版本历史，发布结论由门禁推导。
 """
@@ -37,7 +37,7 @@ class ReleaseGateTests(TestCase):
             ),
         )
         self.product = Product.objects.create(
-            name="门禁产品", classification=Classification.objects.create(name="门禁分类")
+            name="门禁项目", classification=Classification.objects.create(name="门禁分类")
         )
         version = Version.objects.create(value="1.0", product=self.product)
         build = Build.objects.create(name="门禁构建", version=version)
@@ -222,7 +222,7 @@ class ReleaseGateTests(TestCase):
         self.client.force_login(self.manager)
         page = self.client.get(reverse("ai_assistant:release_gate_settings"), secure=True)
         self.assertContains(page, "内置默认门禁")
-        self.assertContains(page, "门禁产品")
+        self.assertContains(page, "门禁项目")
 
     def test_saving_a_rule_twice_updates_the_same_row(self):
         self.client.force_login(self.manager)

@@ -1,0 +1,12 @@
+{% load static %}
+<section class="automation-preflight" aria-labelledby="automation-preflight-title"><h2 id="automation-preflight-title">执行预览</h2><dl>
+<dt>执行环境</dt><dd id="automation-environment-preview">未选择</dd>
+<dt>执行站点</dt><dd id="automation-environment-url">—</dd>
+<dt>单条超时</dt><dd id="automation-environment-timeout">—</dd>
+<dt>执行范围</dt><dd id="automation-execution-scope">—</dd>
+<dt>执行策略</dt><dd id="automation-execution-strategy">—</dd>
+<dt>结果回写</dt><dd id="automation-execution-writeback">—</dd>
+</dl></section>
+{{ environment_previews|json_script:'automation-environment-previews' }}
+<script src="{% static 'ai_assistant/automation_preflight.js' %}?v=environment-inline-1" defer></script>
+<details class="automation-source"><summary>执行与回写规则</summary><p>按脚本顺序执行，每组数据独立建立会话；缺少前置提取变量的请求会跳过。停止任务会等待当前请求结束。选择已有执行任务时，结果按所选状态回写。</p></details>

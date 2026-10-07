@@ -155,11 +155,27 @@ class SearchTestRunView(TemplateView):
     template_name = "testruns/search.html"
 
     def get_context_data(self, **kwargs):
-        form = SearchRunForm(self.request.GET)
-        form.populate(product_id=self.request.GET.get("product", -1))
-
+        from tcms.ai_assistant.workbench_scope import search_data
+        data = search_data(self.request, version_field="version")
+        form = SearchRunForm(data)
+        from tcms.ai_assistant.plan_run_directories import run_tree_context
+        from tcms.testplans.plan_library import numeric_id
+        form.populate(product_id=numeric_id(data.get("product")) or -1)
+        self.request.run_browser = run_tree_context(self.request, data)
+        clear = data.copy()
+        clear.pop("folder", None)
         return {
             "form": form,
+            "filters": data,
+            "run_advanced_open": any(
+                data.get(key) for key in ("plan", "build", "manager", "default_tester", "tag",
+                "after_start_date", "before_start_date", "after_stop_date", "before_stop_date",
+                "after_planned_start", "before_planned_start", "after_planned_stop", "before_planned_stop")
+            ),
+            "directory_invalid": self.request.run_browser["invalid_scope"],
+            "directory_folder": data.get("folder", ""),
+            "directory_product": data.get("product", ""),
+            "directory_clear_url": reverse("testruns-search") + "?" + clear.urlencode(),
         }
 
 

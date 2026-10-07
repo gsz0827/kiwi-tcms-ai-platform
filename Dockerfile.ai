@@ -48,3 +48,17 @@ RUN pip install --no-cache-dir -r requirements/ai-test.txt
 USER 1001
 
 FROM application AS runtime
+
+FROM node:24-bookworm-slim AS allure-cli
+WORKDIR /opt/allure
+RUN npm install --omit=dev --no-audit --no-fund allure@3.20.0
+
+FROM application AS allure-worker
+USER root
+COPY --from=allure-cli /usr/local/bin/node /usr/local/bin/node
+COPY --from=allure-cli /opt/allure /opt/allure
+ENV ALLURE_COMMAND=/opt/allure/node_modules/.bin/allure
+ENV NODE_OPTIONS=--max-old-space-size=384
+RUN node --version && /opt/allure/node_modules/.bin/allure --version
+USER 1001
+CMD ["python", "manage.py", "allure_worker"]

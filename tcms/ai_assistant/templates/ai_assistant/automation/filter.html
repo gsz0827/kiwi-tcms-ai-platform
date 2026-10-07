@@ -1,0 +1,14 @@
+{% load automation_ui %}{% automation_scope as scope %}
+<form method="get" class="automation-filter" role="search">
+{% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}
+{% for name,value in scope.hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+<div class="automation-filter-grid">
+<label>项目<select name="product" class="form-control">{% if not single_project %}<option value="">全部项目</option>{% endif %}{% for item in products %}<option value="{{ item.pk }}"{% if product.pk == item.pk %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
+<label>{% if request_methods %}编号、名称或路径{% else %}编号或名称{% endif %}<input type="search" name="q" class="form-control" value="{% firstof filters.q request.GET.q '' %}" placeholder="{% if request_methods %}API 编号、名称或 /接口路径{% else %}输入编号或名称{% endif %}"></label>
+{% if request_methods %}<label>请求方法<select name="method" class="form-control"><option value="">全部方法</option>{% for value,label in request_methods %}<option value="{{ value }}"{% if filters.method == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+{% if run_filter %}<label>版本<select name="version" class="form-control"><option value="">全部版本</option>{% for item in versions %}<option value="{{ item.pk }}"{% if filters.version == item.pk|stringformat:'s' %} selected{% endif %}>{{ item.value }}{% if not product %} · {{ item.product.name }}{% endif %}</option>{% endfor %}</select></label><label>状态<select name="status" class="form-control"><option value="">全部状态</option>{% for value,label in run_states %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+<div class="automation-filter-actions"><button class="btn btn-primary">查询</button><a href="{{ reset_url }}{% if not tab %}?product=&amp;version={% endif %}">重置</a></div>
+</div>
+{% if run_filter %}<details class="automation-advanced"{% if filters.after or filters.before %} open{% endif %}><summary>更多筛选</summary><div class="automation-date-grid"><label>提交日期自<input type="date" name="after" class="form-control" value="{{ filters.after|default:'' }}"></label><label>提交日期至<input type="date" name="before" class="form-control" value="{{ filters.before|default:'' }}"></label></div></details>{% endif %}
+</form>
+{% for error in filter_errors %}<p class="alert alert-warning" role="alert">{{ error }}</p>{% endfor %}

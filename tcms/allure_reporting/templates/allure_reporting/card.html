@@ -1,0 +1,8 @@
+{% load static %}<section class="api-card allure-report-card" data-status-url="{{ allure_status_url }}" data-poll="{{ allure_poll|yesno:'true,false' }}">
+<div><h3>Allure 报告</h3><p class="allure-state">{{ allure_label }}</p></div>
+<div class="allure-report-actions">
+{% if report.status == 'ready' %}<a class="btn btn-primary" href="{{ allure_url }}" target="_blank" rel="noopener">查看 Allure 报告</a>{% endif %}
+{% if allure_can_generate %}<form method="post" action="{{ allure_generate_url }}">{% csrf_token %}<button class="btn btn-default" type="submit">{% if report %}重试生成报告{% else %}生成 Allure 报告{% endif %}</button></form>{% endif %}
+</div>
+{% if report.error %}<p class="text-danger allure-error">{{ report.error }}</p>{% endif %}
+</section><script src="{% static 'allure_reporting/status.js' %}" defer></script>

@@ -1,0 +1,16 @@
+{% extends 'ai_assistant/base_ai.html' %}{% load ui_labels %}
+{% load static scenario_design %}
+{% block title %}{{ title }}{% endblock %}
+{% block ai_contents %}
+<link rel="stylesheet" href="{% static 'ai_assistant/document_ui.css' %}">
+<link rel="stylesheet" href="{% static 'ai_assistant/scenario_workflow.css' %}">
+<link rel="stylesheet" href="{% static 'ai_assistant/source_recheck.css' %}">
+<div class="document-workspace source-recheck">
+<header class="document-heading"><h1>{{ title }}</h1><a class="btn btn-default" href="{{ back_url }}">返回详情</a></header>
+<section class="document-paper"><h2 class="document-section-title">当前需求 · V{{ source.version }}</h2><p><a href="{% url 'ai_assistant:requirement_trace' source.pk %}" target="_blank" rel="noopener noreferrer">R-{{ source.pk }} · {{ source.title }}</a></p>{% include 'ai_assistant/_document_sections.html' with document=source %}</section>
+{% if task %}<section class="document-paper"><h2 class="document-section-title">开发任务 · {{ task.title }}</h2>{% include 'ai_assistant/_document_sections.html' with document=task %}</section>{% endif %}
+{% for item in tasks %}<section class="document-paper"><h2 class="document-section-title">参考开发文档</h2><p><a href="{% url 'ai_assistant:dev_task_detail' item.pk %}" target="_blank" rel="noopener noreferrer">{{ item.task_number|default:item.pk }} · {{ item.title }}</a>{% if item.needs_update %}<span class="text-warning">（待复核）</span>{% endif %}</p>{% include 'ai_assistant/_document_sections.html' with document=item %}</section>{% endfor %}
+{% if case %}<section class="document-paper"><h2 class="document-section-title">TC-{{ case.pk }} · {{ case.summary }}</h2>{% scenario_design case show_metadata=False %}</section>{% endif %}
+<form method="post" class="document-paper">{% csrf_token %}{{ form.baseline }}{{ form.non_field_errors }}<p><label>{{ form.confirmed }} {{ form.confirmed.label|ui_term }}</label>{{ form.confirmed.errors }}</p><div class="document-actions"><button class="btn btn-primary" type="submit">确认复核完成</button><a class="btn btn-default" href="{{ back_url }}">取消</a></div></form>
+</div>
+{% endblock %}

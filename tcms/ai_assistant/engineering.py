@@ -3,12 +3,10 @@ import json
 import re
 from difflib import SequenceMatcher
 
-from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
 from tcms.testcases.models import BugSystem
-from tcms.testruns.models import TestExecution
 
 from .models import (
     AIDefectDraft,
@@ -25,7 +23,7 @@ OPEN_DEFECT_STATUSES = (
     "pending_verification",
 )
 
-# 没有产品规则时使用的内置默认门禁。名字会写进报告，让「你现在用的是内置默认」
+# 没有项目规则时使用的内置默认门禁。名字会写进报告，让「你现在用的是内置默认」
 # 这件事在界面上可见——否则没人配规则时门禁看起来像不存在。
 BUILTIN_GATE_NAME = "内置默认门禁"
 BUILTIN_GATE = {
@@ -37,7 +35,7 @@ BUILTIN_GATE = {
 
 
 def gate_rule_for(product):
-    """产品当前生效的门禁规则；没有则返回 None（调用方套用内置默认）。"""
+    """项目当前生效的门禁规则；没有则返回 None（调用方套用内置默认）。"""
     if product is None:
         return None
     return AIReleaseGateRule.objects.filter(product=product, is_active=True).first()
@@ -184,7 +182,7 @@ def report_snapshot(report):
 
 
 def evaluate_release_gate(product, metrics_snapshot, test_run_ids):
-    """按产品级规则判定发布门禁。
+    """按项目级规则判定发布门禁。
 
     缺陷口径是「这批运行里登记的未关闭缺陷」，**不按登记人过滤**：同事登记的 P1
     同样阻断发布，否则同一批运行里别人提的阻断缺陷会被门禁忽略而假通过。
@@ -251,31 +249,17 @@ def build_iteration_snapshot(runs):
 
 
 def verify_defect_regression(defect, regression_run):
-    executions = list(
-        TestExecution.objects.filter(
-            run=regression_run, case_id=defect.execution.case_id
-        ).select_related("status", "case")
-    )
-    if not executions:
-        status, outcome = "incomplete", "missing"
-    elif any(item.status.weight < 0 for item in executions):
-        status, outcome = "failed", "failed"
-    elif all(item.status.weight > 0 for item in executions):
-        status, outcome = "passed", "passed"
-    else:
-        status, outcome = "incomplete", "pending"
+    from tcms.web_testing.regression import validate_verification
+    validate_verification(defect, regression_run)
+    from .regression_checks import evaluate_execution
+    outcome, executions, identity = evaluate_execution(defect.execution, regression_run)
+    status = {"passed": "passed", "failed": "failed"}.get(outcome, "incomplete")
     return status, {
-        "defect_id": defect.pk,
-        "source_execution_id": defect.execution_id,
-        "case_id": defect.execution.case_id,
-        "regression_run_id": regression_run.pk,
-        "outcome": outcome,
+        "defect_id": defect.pk, "source_execution_id": defect.execution_id,
+        "case_id": defect.execution.case_id, "business_case_id": identity,
+        "regression_run_id": regression_run.pk, "outcome": outcome,
         "regression_executions": [
-            {
-                "execution_id": item.pk,
-                "status": item.status.name,
-                "status_weight": item.status.weight,
-            }
+            {"execution_id": item.pk, "status": item.status.name, "status_weight": item.status.weight}
             for item in executions
         ],
     }
@@ -286,7 +270,7 @@ def render_report_lines(report):
     lines = [
         report.title,
         f"报告版本：V{report.version}",
-        f"测试运行：TR-{report.test_run_id} {report.test_run.summary}",
+        f"执行任务：TR-{report.test_run_id} {report.test_run.summary}",
         f"生成时间：{report.created:%Y-%m-%d %H:%M:%S}",
         f"审批状态：{report.get_approval_status_display()}",
         "",

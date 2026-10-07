@@ -1,0 +1,6 @@
+{% load ui_labels %}{% load automation_ui %}{% automation_sections form as sections %}
+{{ form.non_field_errors }}{% for field in form.hidden_fields %}{{ field }}{{ field.errors }}{% endfor %}
+{% for section in sections %}<section class="automation-form-section"><h2>{{ section.title }}</h2><div class="automation-form-grid">
+{% for field in section.fields %}<div class="form-group{% if field.errors %} has-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} automation-checkbox{% endif %}" data-field="{{ field.name }}"{% if field.name == 'steps' %} id="web-steps-field"{% endif %}>
+{{ field.label_tag|ui_term }}{% if field.name == 'environment' and environment_create_url %}{% include 'ai_assistant/automation/environment_control.html' %}{% else %}{{ field }}{% endif %}{% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}{{ field.errors }}
+</div>{% endfor %}</div></section>{% endfor %}

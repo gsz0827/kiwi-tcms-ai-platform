@@ -1,0 +1,29 @@
+{% extends 'ai_assistant/base_ai.html' %}{% load ui_labels %}
+{% load static extra_filters tz %}
+{% block title %}开发任务详情 · {{ task.title }}{% endblock %}
+{% block ai_contents %}
+{% with display_time_zone=UI_PREFERENCES.time_zone|default:'Asia/Shanghai' %}
+{% timezone display_time_zone %}
+<link rel="stylesheet" href="{% static 'ai_assistant/document_ui.css' %}">
+<div class="document-workspace" data-task-detail>
+    <header class="document-heading"><div><p class="document-kicker">开发任务详情 · {{ task.task_number|default:task.pk }}</p><h1>{{ task.title }}</h1></div><div class="document-actions">{% if can_design %}<a class="btn btn-primary" href="{% url 'ai_assistant:case_design' task.request_id %}?task={{ task.pk }}">设计测试用例</a>{% endif %}{% if can_edit %}<a class="btn btn-default" href="{% url 'ai_assistant:edit_dev_task' task.pk %}">编辑开发任务</a>{% endif %}<a class="btn btn-default" href="{% url 'ai_assistant:dev_task_list' %}">返回开发任务</a></div></header>
+    {% if source_outdated %}<div class="alert alert-warning">来源需求已变更，该开发文档需要复核更新。{% if can_recheck %} <a href="{% url 'ai_assistant:dev_task_recheck' task.pk %}">核对并确认复核</a>{% endif %}</div>{% endif %}
+    {% if latest_recheck %}<p class="text-muted">最近来源复核：V{{ latest_recheck.requirement_version }} · {{ latest_recheck.reviewed_by.username|default:'已删除账号' }} · {{ latest_recheck.created|date:'Y-m-d H:i' }}</p>{% endif %}
+    <div class="document-grid">
+        <main class="document-main">
+            <ul class="document-tabs" role="tablist" aria-label="开发任务内容" data-document-tabs><li role="presentation"><a href="#task-document" role="tab" id="task-document-tab" aria-controls="task-document" aria-selected="true" data-document-tab>详情</a></li><li role="presentation"><a href="#task-related" role="tab" id="task-related-tab" aria-controls="task-related" aria-selected="false" tabindex="-1" data-document-tab>关联开发任务</a></li></ul>
+            <section class="document-paper" id="task-document" role="tabpanel" aria-labelledby="task-document-tab" data-document-panel>
+                {% include 'ai_assistant/_document_sections.html' with document=task %}
+            </section>
+            <section class="document-paper" id="task-related" role="tabpanel" aria-labelledby="task-related-tab" data-document-panel hidden><h2 class="document-section-title">关联开发任务</h2>{% include 'ai_assistant/_linked_dev_tasks.html' with linked_tasks=related_tasks %}</section>
+        </main>
+        <aside class="document-properties" aria-label="开发任务属性"><h2>开发任务属性</h2><dl>
+            <div><dt>状态</dt><dd>{{ task.get_status_display|ui_term }}</dd></div><div><dt>优先级</dt><dd>{{ task.priority }}</dd></div><div><dt>涉及模块</dt><dd>{{ task.module|default:'—' }}</dd></div><div><dt>负责人</dt><dd>{{ task.assignee.username|default:'未指派' }}</dd></div><div><dt>预估工时</dt><dd>{% if task.estimate_hours != None %}{{ task.estimate_hours }} 小时{% else %}—{% endif %}</dd></div><div><dt>目标项目版本</dt><dd>{% if task.target_version_id %}{{ task.target_version.value }}{% elif related_requirement.target_version_id %}{{ related_requirement.target_version.value }}{% else %}未指定{% endif %}</dd></div><div><dt>来源需求修订</dt><dd>V{{ task.requirement_version }}</dd></div><div><dt>更新时间</dt><dd>{{ task.updated|timezone:display_time_zone|date:'Y-m-d H:i' }}</dd></div>
+            <div><dt>关联需求</dt><dd data-linked-requirement>{% if related_requirement %}<a href="{% url 'ai_assistant:requirement_trace' related_requirement.pk %}" target="_blank" rel="noopener noreferrer">R-{{ related_requirement.pk }} · {{ related_requirement.title }}</a>{% else %}<span class="text-muted">无权限查看关联需求</span>{% endif %}</dd></div>
+        </dl>{% if can_assign %}<form method="post" action="{% url 'ai_assistant:assign_dev_task' task.pk %}">{% csrf_token %}<label for="task-assignee" class="sr-only">指派负责人</label><select id="task-assignee" name="assignee" class="form-control input-sm"><option value="">未指派</option>{% for person in assignee_choices %}<option value="{{ person.pk }}"{% if task.assignee_id == person.pk %} selected{% endif %}>{{ person.username }}</option>{% endfor %}</select><button class="btn btn-default btn-sm" type="submit">指派负责人</button></form>{% endif %}</aside>
+    </div>
+</div>
+<script src="{% static 'ai_assistant/document_tabs.js' %}"></script>
+{% endtimezone %}
+{% endwith %}
+{% endblock %}

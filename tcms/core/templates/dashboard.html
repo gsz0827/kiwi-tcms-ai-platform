@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}工作台{% endblock %}
+{% block related_widget_scripts %}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{% static 'ai_assistant/workbench.css' %}">
 {% endblock %}
@@ -16,11 +17,12 @@
         <a class="btn btn-primary" href="{% url 'ai_assistant:index' %}"><span class="fa fa-plus" aria-hidden="true"></span> 新增测试需求</a>
     </header>
 
+    <p class="workbench-scope">{% if workbench_invalid_scope %}当前项目已不存在，请在右上角重新选择项目。{% else %}统计范围：{% if workbench_product %}{{ workbench_product.name }}{% else %}全部项目{% endif %} · 我的工作{% if workbench_version %} · 计划和运行版本：{{ workbench_version.value }}{% endif %}。需求与草稿按项目统计；AI 任务按账号统计。{% endif %}</p>
     <div class="workbench-metrics" aria-label="个人工作概览">
         <a class="workbench-metric" href="{% url 'ai_assistant:index' %}"><span>我的需求</span><strong>{{ requirement_count }}</strong><small>已提交的需求记录</small></a>
-        <a class="workbench-metric" href="{% url 'ai_assistant:index' %}"><span>待复核草稿</span><strong>{{ pending_draft_count }}</strong><small>尚未导入的测试用例</small></a>
+        <a class="workbench-metric" href="{% url 'ai_assistant:index' %}"><span>待处理手工草稿</span><strong>{{ pending_draft_count }}</strong><small>尚未导入的测试用例</small></a>
         <a class="workbench-metric" href="#workbench-runs"><span>未结束的测试运行</span><strong>{{ test_runs_count }}</strong><small>我负责或参与的运行</small></a>
-        <a class="workbench-metric" href="{% url 'ai_assistant:job_list' %}"><span>处理中的 AI 任务</span><strong>{{ active_job_count }}</strong><small>包含排队、执行与取消中</small></a>
+        <a class="workbench-metric" href="{% url 'ai_assistant:job_list' %}"><span>处理中的 AI 任务</span><strong>{{ active_job_count }}</strong><small>账号范围 · 排队、执行与取消中</small></a>
     </div>
 
     <div class="workbench-columns">
@@ -36,10 +38,16 @@
                 {% if pending_draft_count %}
                 <a class="workbench-task" href="{% url 'ai_assistant:index' %}"><span class="workbench-task-icon fa fa-check-square-o" aria-hidden="true"></span><div><strong>复核 {{ pending_draft_count }} 条用例草稿</strong><p>确认步骤和预期结果，再导入正式测试用例。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
                 {% endif %}
+                {% if web_draft_count %}
+                <div class="workbench-task"><span class="workbench-task-icon fa fa-desktop" aria-hidden="true"></span><div><strong>{{ web_draft_count }} 条 Web 草稿待处理</strong><p>{% for draft in recent_web_drafts %}<a href="{% url 'web_testing:ai_review' draft.pk %}">{{ draft.name }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p></div></div>
+                {% endif %}
+                {% if api_draft_count %}
+                <div class="workbench-task"><span class="workbench-task-icon fa fa-exchange" aria-hidden="true"></span><div><strong>{{ api_draft_count }} 条接口草稿待处理</strong><p>{% for draft in recent_api_drafts %}<a href="{% url 'ai_assistant:api_ai_review' draft.pk %}">{{ draft.name }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p></div></div>
+                {% endif %}
                 {% if test_runs_count %}
                 <a class="workbench-task" href="#workbench-runs"><span class="workbench-task-icon fa fa-play-circle-o" aria-hidden="true"></span><div><strong>继续 {{ test_runs_count }} 个测试运行</strong><p>记录执行结果，跟进失败和阻塞项。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
                 {% endif %}
-                {% if not pending_draft_count and not test_runs_count and not failed_job_count %}
+                {% if not pending_draft_count and not web_draft_count and not api_draft_count and not test_runs_count and not failed_job_count %}
                 <a class="workbench-task" href="{% url 'ai_assistant:index' %}"><span class="workbench-task-icon fa fa-lightbulb-o" aria-hidden="true"></span><div><strong>{% if requirement_count %}继续整理需求{% else %}从第一条需求开始{% endif %}</strong><p>选择产品，描述业务规则和验收标准，开始需求分析。</p></div><span class="fa fa-angle-right" aria-hidden="true"></span></a>
                 {% endif %}
             </div>
@@ -47,10 +55,10 @@
         <section class="workbench-card" aria-labelledby="workbench-shortcuts-title">
             <div class="workbench-card-heading"><h2 id="workbench-shortcuts-title">常用入口</h2></div>
             <div class="workbench-shortcuts">
-                <a href="{% url 'ai_assistant:case_library' %}"><span class="fa fa-list-alt" aria-hidden="true"></span><strong>测试用例</strong><small>手工与自动化用例库</small></a>
+                <a href="{% url 'ai_assistant:scenario_library' %}"><span class="fa fa-list-alt" aria-hidden="true"></span><strong>测试用例</strong><small>业务场景、自动化配置与执行追踪</small></a>
                 <a href="{% url 'plans-search' %}"><span class="fa fa-map-o" aria-hidden="true"></span><strong>测试计划</strong><small>组织测试范围</small></a>
                 <a href="{% url 'bugs-search' %}"><span class="fa fa-bug" aria-hidden="true"></span><strong>缺陷列表</strong><small>跟进问题处理</small></a>
-                <a href="{% url 'ai_assistant:dashboard' %}"><span class="fa fa-bar-chart" aria-hidden="true"></span><strong>质量看板</strong><small>查看测试闭环进展</small></a>
+                <a href="{% url 'ai_assistant:dashboard' %}"><span class="fa fa-bar-chart" aria-hidden="true"></span><strong>质量看板</strong><small>查看项目质量与风险</small></a>
             </div>
             <p class="workbench-footnote">产品与 AI 规则包，统一在左侧“项目配置”中维护。</p>
         </section>
@@ -68,7 +76,7 @@
             </ul>
         </section>
         <section class="workbench-card" aria-labelledby="workbench-jobs-title">
-            <div class="workbench-card-heading"><h2 id="workbench-jobs-title">最近 AI 任务</h2><a href="{% url 'ai_assistant:job_list' %}">任务中心</a></div>
+            <div class="workbench-card-heading"><h2 id="workbench-jobs-title">最近 AI 任务（账号范围）</h2><a href="{% url 'ai_assistant:job_list' %}">任务中心</a></div>
             <ul class="workbench-records">
                 {% for job in recent_jobs %}
                 <li><div class="workbench-record-main"><a href="{% url 'ai_assistant:job_detail' job.pk %}">{{ job.get_operation_display }}</a><small>{{ job.created|date:"m-d H:i" }} · {% if job.stage %}{{ job.stage }}{% else %}打开查看任务详情{% endif %}</small></div><span class="workbench-status {% if job.status == 'failed' %}workbench-status-failed{% elif job.status == 'completed' %}workbench-status-done{% endif %}">{{ job.get_status_display }}</span></li>

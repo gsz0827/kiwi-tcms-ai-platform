@@ -3,6 +3,8 @@
 import datetime
 import secrets
 
+from .preferences_model import UserPreference
+
 from django.conf import settings
 from django.db import models
 

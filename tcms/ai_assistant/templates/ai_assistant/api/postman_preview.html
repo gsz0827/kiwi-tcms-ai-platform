@@ -1,0 +1,11 @@
+{% extends 'ai_assistant/api/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block api_content %}
+<header class="api-header automation-page-header"><h1>{{ title }}</h1><a href="{{ back_url }}">返回脚本列表</a></header>
+<p>{{ product.name }} / {{ batch.title }} · 预览有效期 20 分钟</p>
+<form method="post">{% csrf_token %}{{ form.non_field_errors }}{{ form.selected.errors }}
+<section class="api-card automation-table-card"><div class="automation-table-scroll"><table class="table automation-table"><thead><tr><th>选择</th><th>请求名称</th><th>方法 / 路径</th><th>业务目录</th><th>转换结果</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{% if not row.error %}<input type="checkbox" name="selected" value="{{ row.index }}" aria-label="选择 {{ row.name }}"{% if row.selected %} checked{% endif %}>{% else %}—{% endif %}</td><td>{{ row.name }}</td><td>{{ row.method }} {{ row.path }}</td><td>{{ row.directory }}</td><td>{% if row.error %}<span class="text-danger">不支持：{{ row.error }}</span>{% else %}<span>可导入 · 待复核</span><ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></section>
+<section class="api-card api-edit-form automation-edit-form">{{ form.confirmed.errors }}<label>{{ form.confirmed }} {{ form.confirmed.label }}</label><div class="automation-form-actions"><button class="btn btn-primary">导入选中请求</button><a class="btn btn-default" href="{% url 'ai_assistant:postman_upload' product.pk %}">重新上传</a></div></section></form>
+{% endblock %}

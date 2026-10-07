@@ -1,0 +1,42 @@
+{% load ui_labels %}{% load static %}
+<section class="api-card execution-results" data-execution-results>
+  <header><h2>用例结果</h2></header>
+  <div class="api-table-scroll">
+    <table class="table execution-result-table">
+      <thead><tr><th class="execution-number">序号</th><th>用例名称</th><th class="execution-status-column">结果</th><th class="execution-duration">耗时</th><th class="execution-action">操作</th></tr></thead>
+      <tbody>
+      {% for row in execution_rows %}
+        <tr class="execution-result-row" data-result-state="{{ row.state }}">
+          <td>{{ row.number }}</td>
+          <td><span class="execution-case-name">{{ row.name }}</span></td>
+          <td><span class="execution-state execution-state-{{ row.state }}">{{ row.label|ui_term }}</span></td>
+          <td>{% if row.result.elapsed_ms != None %}{{ row.result.elapsed_ms }} ms{% else %}—{% endif %}</td>
+          <td>{% if row.result %}<button class="execution-diagnostic-toggle" type="button" aria-expanded="false" aria-controls="{{ row.diagnostic_id }}">原始诊断</button>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        </tr>
+        {% if row.result %}
+        <tr class="execution-diagnostic-row" id="{{ row.diagnostic_id }}" hidden>
+          <td colspan="5"><div class="execution-diagnostic-body">
+            {% if row.result.error %}<p class="text-danger">{{ row.result.error }}</p>{% endif %}
+            {% if execution_kind == 'web' %}
+              {% if row.result.steps %}<table class="table execution-step-table"><thead><tr><th>步骤</th><th>操作</th><th>结果</th></tr></thead><tbody>{% for step in row.result.steps %}<tr><td>{{ forloop.counter }}</td><td>{{ step.action }}</td><td>{% if step.status == 'passed' %}通过{% elif step.status == 'failed' %}失败{% else %}状态未知{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+              {% if row.result.has_screenshot %}<p><a href="{% url 'web_testing:screenshot' row.result.pk %}" target="_blank" rel="noopener">查看失败截图</a></p>{% elif row.result.error %}<p class="text-muted">本次失败未能获取截图。</p>{% endif %}
+              {% if not row.result.steps and not row.result.error %}<p class="text-muted">没有可用的步骤诊断信息。</p>{% endif %}
+            {% else %}
+              {% if row.result.status_code %}<p>HTTP {{ row.result.status_code }}</p>{% endif %}
+              {% if row.result.writeback %}<p>{{ row.result.writeback }}</p>{% endif %}
+              {% if row.result.checks %}<table class="table execution-step-table"><thead><tr><th>断言</th><th>预期</th><th>实际</th><th>结果</th></tr></thead><tbody>{% for check in row.result.checks %}<tr><td>{{ check.label|ui_term }}</td><td>{{ check.expected }}</td><td>{{ check.actual }}</td><td>{% if check.passed %}通过{% else %}<span class="text-danger">失败</span>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+              {% if row.result.request_summary %}<details><summary>请求信息</summary><pre>{{ row.result.request_display }}</pre></details>{% endif %}
+              {% if row.result.response_summary %}<details><summary>响应摘要</summary><pre>{{ row.result.response_summary }}</pre></details>{% endif %}
+              {% if not row.result.checks and not row.result.error and not row.result.request_summary and not row.result.response_summary %}<p class="text-muted">暂无原始请求结果。</p>{% endif %}
+            {% endif %}
+          </div></td>
+        </tr>
+        {% endif %}
+      {% empty %}
+        <tr><td colspan="5" class="api-empty">{% if run.is_terminal or run.terminal %}暂无可展示的用例结果{% else %}任务尚未产生用例结果{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<script src="{% static 'ai_assistant/execution_results.js' %}" defer></script>

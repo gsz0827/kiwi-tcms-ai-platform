@@ -104,3 +104,15 @@ make ai-test-missing-migrations    # 校验模型改动都有对应迁移
 ## 上游与许可
 
 上游项目：[kiwitcms/Kiwi](https://github.com/kiwitcms/Kiwi)。原始说明见 [README.rst](README.rst)，许可证见 [LICENSE](LICENSE)。本项目为个人二次开发实践，不是 Kiwi TCMS 官方版本。
+
+## Allure 报告
+
+Web/API 执行结束后自动生成独立的 Allure 报告，在任务详情查看并下载 HTML；只允许任务所属账号访问，不自动审批、归档或关闭缺陷。详情见 [Allure 自动化执行报告](docs/allure-reporting.md)。
+
+## Postman 集合导入
+
+在「接口自动化测试 → 自动化脚本」选择项目后，点击「导入 Postman」。支持 Collection v2/v2.1 JSON 的请求预览与选择导入；集合目录映射到现有业务目录，不覆盖原脚本。导入脚本先处于待复核状态，确认请求、预期状态码、断言与变量提取后才能执行。
+
+服务地址及认证由执行环境维护；Postman JavaScript 不执行、不自动转换，暂不包含 Newman 执行或云端同步。完整范围和限制见 [Postman 导入指南](docs/postman-import.md)。
+
+界面统一使用「项目」「前置执行脚本」。质量看板的「阶段记录完整度」只反映阶段记录是否齐全，不代表测试进度、需求覆盖率或发布质量。

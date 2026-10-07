@@ -1,0 +1,1 @@
+{% extends "web_testing/base.html" %}{% block workspace %}<section class="api-card web-form"><h2>暂时无法发起 Web 缺陷复测</h2><div class="alert alert-warning">{{ error }}</div><a class="btn btn-default" href="{% url 'ai_assistant:edit_defect_draft' defect.pk %}">返回缺陷</a></section>{% endblock %}
