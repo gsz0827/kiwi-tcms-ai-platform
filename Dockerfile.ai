@@ -1,5 +1,5 @@
 # Build this repository, including its AI extension and frontend assets.
-FROM node:24-bookworm-slim AS frontend
+FROM node:25-bookworm-slim AS frontend
 WORKDIR /build
 COPY tcms/package.json tcms/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -49,7 +49,7 @@ USER 1001
 
 FROM application AS runtime
 
-FROM node:24-bookworm-slim AS allure-cli
+FROM node:25-bookworm-slim AS allure-cli
 WORKDIR /opt/allure
 RUN npm install --omit=dev --no-audit --no-fund allure@3.20.0
 

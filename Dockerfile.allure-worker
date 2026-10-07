@@ -1,5 +1,5 @@
 ARG KIWI_BASE=kiwitcms/kiwi:latest
-FROM node:24-bookworm-slim AS allure
+FROM node:25-bookworm-slim AS allure
 WORKDIR /opt/allure
 RUN npm install --omit=dev --no-audit --no-fund allure@3.20.0
 
