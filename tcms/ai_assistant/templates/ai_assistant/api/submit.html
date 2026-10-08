@@ -1,0 +1,17 @@
+{% extends "ai_assistant/api/base.html" %}{% load static %}
+{% block api_content %}
+<header class="api-header automation-page-header"><h1>执行测试套件</h1><a class="btn btn-default" href="{{ back_url }}">返回套件</a></header>
+<section class="automation-edit-form">
+<h2>{{ suite.name }}</h2>
+{% if unlinked %}<div class="alert alert-warning" role="alert">以下脚本尚未关联业务用例，当前只能调试：{% for config in unlinked %}<a href="{% url 'ai_assistant:api_case_edit' product.pk config.pk %}">API-{{ config.pk }} · {{ config.name }}</a>{% if not forloop.last %}、{% endif %}{% endfor %}</div>{% endif %}
+<form method="post" id="api-suite-submit-form"><fieldset{% if not automation_access.can_write %} disabled{% endif %}>{% csrf_token %}{{ form.token }}{{ form.non_field_errors }}
+<div class="automation-submit-grid">{% for field in form %}{% if not field.is_hidden %}<div class="form-group" data-submit-field="{{ field.name }}">{{ field.label_tag }}{% if field.name == 'environment' %}{% url 'ai_assistant:api_environment_new' product.pk as environment_create_url %}{% include 'ai_assistant/automation/environment_control.html' %}{% else %}{{ field }}{% endif %}{{ field.errors }}</div>{% endif %}{% endfor %}</div>
+<section class="automation-preflight"><h2>执行预览</h2><dl><dt>服务地址</dt><dd id="api-suite-effective-url">{{ preview.base_url }}</dd><dt>单条请求超时</dt><dd id="api-suite-effective-timeout">{{ preview.timeout }} 秒</dd><dt>执行范围</dt><dd>{{ configs|length }} 条脚本{% if dataset_count %} · {{ dataset_count }} 组数据 · {{ execution_count }} 条执行记录{% else %} · 数据配置无效，请重新编辑套件{% endif %}{% if suite.stop_on_failure %} · 失败后停止{% endif %}{% if suite.share_cookies %} · Cookie 共享{% endif %}</dd></dl></section>
+<div class="automation-table-scroll"><table class="table automation-table"><thead><tr><th>顺序</th><th>接口脚本</th><th>请求方法</th><th>接口路径</th><th>关联业务用例</th></tr></thead><tbody>{% for config in configs %}<tr><td>{{ forloop.counter }}</td><td>{{ config.name }}</td><td>{{ config.method }}</td><td>{{ config.path }}</td><td>{% if config.test_case_id %}TC-{{ config.test_case_id }} · {{ config.test_case.summary }}{% else %}未关联{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="automation-empty">没有可执行的脚本，请重新编辑套件。</td></tr>{% endfor %}</tbody></table></div>
+<p class="help-block" id="api-suite-formal-hint">正式执行会创建所选计划下的执行任务，冻结构建、环境和业务用例版本；结果确认后回写。</p>
+<p class="help-block" id="api-suite-debug-hint" hidden>调试不创建正式执行任务，也不进入报告或发布门禁。请求可能修改数据，请使用测试环境。</p>
+{% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit">确认执行</button><a class="btn btn-default" href="{{ back_url }}">取消</a></div>{% endif %}
+</fieldset></form></section>
+{{ plan_versions|json_script:"api-suite-plan-versions" }}{{ build_versions|json_script:"api-suite-build-versions" }}{{ environment_previews|json_script:"api-suite-environment-previews" }}
+<script src="{% static 'ai_assistant/api_suite_submit.js' %}" defer></script>
+{% endblock %}

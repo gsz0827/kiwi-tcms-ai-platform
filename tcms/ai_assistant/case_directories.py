@@ -24,12 +24,14 @@ def folder_types(kind):
 def visible_folders(user):
     query = ProjectResourceFolder.objects.all()
     if user.is_superuser or user.has_perm("testcases.view_testcase") or user.has_perm("testcases.change_testcase"):
-        return query
+        return query.filter(~Q(resource_type="requirement") |
+                            Q(product__in=roles.member_products(user)))
     products = Product.objects.filter(Q(pk__in=roles.member_products(user)) |
         Q(pk__in=WebCase.objects.filter(owner=user).values("product_id")) |
         Q(pk__in=APICase.objects.filter(owner=user).values("product_id")) |
         Q(pk__in=visible_cases(user).values("category__product_id")))
-    return query.filter(~Q(resource_type=COMMON) | Q(product__in=products))
+    return query.filter(~Q(resource_type=COMMON) | Q(product__in=products)).filter(
+        ~Q(resource_type="requirement") | Q(product__in=roles.member_products(user)))
 
 
 def can_manage_common(user, product):
@@ -43,8 +45,10 @@ def can_manage_common(user, product):
 
 
 def can_manage_folder(user, folder):
-    if roles.is_read_only(user):
+    if not user.is_authenticated or not user.is_active or roles.is_read_only(user):
         return False
+    if folder.resource_type == "requirement":
+        return roles.can_manage_requirement_directories(user, folder.product)
     if folder.resource_type == COMMON:
         return can_manage_common(user, folder.product)
     if folder.resource_type == "case":

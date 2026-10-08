@@ -1,33 +1,9 @@
-{% extends "base.html" %}
+{% extends 'ai_assistant/api/base.html' %}
 {% load static %}
-{% block title %}项目配置{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'ai_assistant/project_settings.css' %}">{% endblock %}
-{% block related_widget_scripts %}{% endblock %}
-{% block contents %}
-<div class="project-settings-page">
-    <header>
-        <h1>项目配置</h1>
-        <p>在这里创建项目，并维护各项目的 AI 测试规则。</p>
-    </header>
-    {% url 'ai_assistant:project_settings' as settings_url %}
-    <div class="project-settings-grid">
-        <section class="project-settings-card" aria-labelledby="settings-product-title">
-            <span class="fa fa-cube project-settings-icon" aria-hidden="true"></span>
-            <h2 id="settings-product-title">项目</h2>
-            <p>以项目组织需求、用例和执行任务。新建项目只需填名称与描述。</p>
-            {% if perms.management.add_product %}
-            <a class="btn btn-primary" href="{% url 'ai_assistant:create_product' %}?next={{ settings_url|urlencode }}">新建项目</a>
-            {% else %}
-            <span class="project-settings-permission">需要新建项目权限，请联系管理员。</span>
-            {% endif %}
-        </section>
-        <section class="project-settings-card" aria-labelledby="settings-rules-title">
-            <span class="fa fa-book project-settings-icon" aria-hidden="true"></span>
-            <h2 id="settings-rules-title">AI 规则包</h2>
-            <p>按项目维护业务术语、测试重点与验收规则。已启用的规则会用于新提交的需求任务。</p>
-            <a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">维护 AI 规则包</a>
-        </section>
-    </div>
-    <p class="project-settings-hint">首次配置：新建项目 → 按需维护 AI 规则包。</p>
-</div>
+{% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/project_admin.css' %}">{% endblock %}
+{% block title %}项目管理{% endblock %}
+{% block api_content %}
+<header class="api-header"><h1>项目管理</h1>{% if can_create %}<a class="btn btn-primary" href="{% url 'ai_assistant:create_product' %}">新建项目</a>{% endif %}</header>
+<form method="get" class="api-filter-bar"><div class="form-group"><label for="project-query">项目名称</label><input id="project-query" class="form-control" name="q" value="{{ query }}" maxlength="255"></div><button class="btn btn-primary" type="submit">查询</button><a href="{% url 'ai_assistant:project_settings' %}">重置</a></form>
+<section class="api-card"><div class="api-table-scroll"><table class="table"><thead><tr><th>项目名称</th><th>项目说明</th><th>版本</th><th>操作</th></tr></thead><tbody>{% for project in projects %}<tr><td><a href="{% url 'ai_assistant:project_detail' project.pk %}">{{ project.name }}</a></td><td>{{ project.description|default:'—'|truncatechars:120 }}</td><td>{% for version in project.version.all %}{{ version.value }}{% if not forloop.last %}、{% endif %}{% empty %}—{% endfor %}</td><td><a href="{% url 'ai_assistant:project_detail' project.pk %}">查看项目</a></td></tr>{% empty %}<tr><td colspan="4" class="text-center text-muted">暂无可访问的项目</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}

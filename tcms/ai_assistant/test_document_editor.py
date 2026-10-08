@@ -64,13 +64,13 @@ class DocumentEditorTests(TestCase):
         self.assertContains(page, "新建开发任务")
         self.assertContains(page, self.url("dev_task_list"))
 
-    def test_new_requirement_editor_keeps_ai_submission_actions_and_token(self):
-        page = self.get("index")
+    def test_new_requirement_editor_keeps_save_action_and_token(self):
+        page = self.get("requirement_new")
         self.assertContains(page, "data-document-editor")
         for name in ("submission_token", "title", "requirement"):
             self.assertContains(page, f'name="{name}"', count=1)
-        self.assertContains(page, 'name="action" value="analyze"')
-        self.assertContains(page, 'name="action" value="generate"')
+        self.assertContains(page, 'name="action" value="save"')
+        self.assertNotContains(page, 'name="action" value="generate"')
 
     def test_invalid_requirement_preserves_document_input_and_does_not_increment_revision(self):
         page = self.client.post(

@@ -41,12 +41,12 @@ class DocumentLayoutTests(TestCase):
 
     def test_index_has_compact_table_and_collapsed_creation_form(self):
         page = self.get("index")
-        self.assertContains(page, 'id="new-requirement">')
+        self.assertContains(page, reverse("ai_assistant:requirement_new"))
         self.assertContains(page, "data-requirement-list")
         self.assertContains(page, 'scope="col">需求名称')
-        self.assertContains(page, 'id="generation-form"')
-        self.assertContains(page, 'id="analyze-button"')
-        self.assertContains(page, 'id="generate-button"')
+        self.assertNotContains(page, 'id="generation-form"')
+        self.assertNotContains(page, 'id="analyze-button"')
+        self.assertNotContains(page, 'id="generate-button"')
         self.assertNotContains(page, "<h3>历史请求</h3>")
         self.assertContains(page, "data-legacy-detail-url=")
 
@@ -63,7 +63,7 @@ class DocumentLayoutTests(TestCase):
             },
             secure=True,
         )
-        self.assertContains(page, 'id="new-requirement" open')
+        self.assertTemplateUsed(page, "ai_assistant/requirement_new.html")
         self.assertContains(page, "保留输入")
         submit.assert_not_called()
         self.assertFalse(AIJob.objects.exists())

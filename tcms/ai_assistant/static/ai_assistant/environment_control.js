@@ -49,7 +49,7 @@
         const value = select.value;
         // Never clear a user's choice if the environment disappeared while editing.
         if (value && ![...fresh.options].some(option => option.value === value)) return;
-        const previews = ['automation-environment-previews', 'web-environment-previews', 'web-debug-environments'];
+        const previews = ['automation-environment-previews', 'web-environment-previews', 'api-suite-environment-previews', 'web-debug-environments'];
         const updates = previews.map(id => [document.getElementById(id), doc.getElementById(id)]).filter(([current]) => current);
         if (updates.some(([, freshSource]) => !freshSource)) return;
         updates.forEach(([, freshSource]) => JSON.parse(freshSource.textContent));

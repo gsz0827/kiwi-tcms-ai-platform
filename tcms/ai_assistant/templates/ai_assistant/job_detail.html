@@ -8,6 +8,7 @@
         <div class="btn-group pull-right" style="margin-top:20px"><a class="btn btn-default" href="{% url 'ai_assistant:job_list' %}">全部后台任务</a><a class="btn btn-default" href="{% url 'ai_assistant:index' %}">AI 测试助手</a></div>
     </div>
     <p class="text-muted">任务编号：{{ job.pk }} · 提交时间：{{ job.created }} · 第 {{ job.attempts }} 次尝试</p>
+    {% if has_rules_snapshot %}<p class="text-muted">本次采用的测试规则：{% for rule in rules_used %}{{ rule.name }}{% if rule.scope != "task" %} V{{ rule.version }}{% endif %}{% if not forloop.last %}、{% endif %}{% empty %}未配置{% endfor %}</p>{% endif %}
     <div id="job-panel" data-status-url="{% url 'ai_assistant:job_status' job.pk %}" class="panel {% if job.status == 'completed' %}panel-success{% elif job.status == 'failed' %}panel-danger{% elif job.status == 'interrupted' %}panel-warning{% else %}panel-info{% endif %}">
         <div class="panel-heading"><strong id="job-status-label">{{ job.get_status_display|ui_term }}</strong></div>
         <div class="panel-body">

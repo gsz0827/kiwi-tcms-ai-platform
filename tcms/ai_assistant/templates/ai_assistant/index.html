@@ -4,18 +4,7 @@
 {% block ai_contents %}
 <link rel="stylesheet" href="{% static 'ai_assistant/document_ui.css' %}">
 <div class="document-workspace document-list" data-requirement-list data-legacy-detail-url="{% url 'ai_assistant:requirement_trace' 0 %}">
-    {% if can_submit %}
-    <details class="document-new" id="new-requirement"{% if form.errors %} open{% endif %}>
-        <summary>新建需求</summary>
-        <form method="post" id="generation-form" class="document-structured-form" data-document-form data-document-options-url="{% url 'ai_assistant:document_options' %}">
-            {% csrf_token %}{{ form.submission_token }}{{ form.submission_token.errors }}{{ form.non_field_errors }}
-            <p class="document-form-model">{% if active_config %}当前模型：{{ active_config.name }} · {{ active_config.model }}{% else %}使用 AI 前请先配置自己的默认模型{% endif %} · <a href="{% url 'ai_assistant:model_settings' %}">模型设置</a></p>
-            <div class="document-grid"><section class="document-paper document-form-main">{% include 'ai_assistant/_document_form_sections.html' %}</section><aside class="document-properties document-form-properties" aria-label="需求属性"><h2>需求属性</h2>{% for field in form.document_attribute_fields %}{% include 'ai_assistant/_document_field.html' %}{% endfor %}</aside></div>
-            <div class="document-actions"><button type="submit" name="action" value="analyze" id="analyze-button" class="btn btn-primary"{% if not active_config %} disabled{% endif %}>分析需求</button><button type="submit" name="action" value="generate" id="generate-button" class="btn btn-default"{% if not active_config %} disabled{% endif %}>生成测试用例</button></div>
-        </form>
-    </details>
-    {% endif %}
-    <div id="generation-progress" class="alert alert-info" role="status" style="display:none">正在提交任务……</div>
+    <header class="automation-page-header"><h1>需求管理</h1>{% if can_submit %}<a class="btn btn-primary" href="{% url 'ai_assistant:requirement_new' %}">新建需求</a>{% endif %}</header>
     <div class="document-toolbar"><p>共 {{ ai_requests.paginator.count }} 条需求</p></div>
     <div class="table-responsive"><table class="table document-table">
         <thead><tr><th scope="col">编号</th><th scope="col">需求名称</th><th scope="col">项目 / 模块</th><th scope="col">需求分析</th><th scope="col">开发任务</th><th scope="col">用例</th><th scope="col">操作</th></tr></thead>

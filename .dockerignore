@@ -12,3 +12,16 @@ uploads/
 tcms/node_modules/
 tests/ai_assistant/node_modules/
 tcms/settings/local_settings.py
+.workbuddy/
+.frontend-fix/
+.frontend-fix-backups/
+**/jenkins-secrets/
+**/*.key
+tcms/ai_assistant/.wt*
+tcms/ai_assistant/.wtest
+tcms/ai_assistant/.stage_admin.py
+tcms/ai_assistant/*.py.o??????
+tcms/templates/_t.txt
+tcms/templates/_wtest.txt
+.github/workflows/_append_test.txt
+.github/workflows/_test.txt

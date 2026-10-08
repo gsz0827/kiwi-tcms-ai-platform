@@ -25,6 +25,7 @@ from .api_validation import validate_destination
 from .automation_ui import home_url, return_url, write_guard
 from .crypto import decrypt_api_key
 from .models import APICase, APIRun, APISuite
+from .run_outcomes import annotate_outcomes
 
 
 @login_required
@@ -78,7 +79,7 @@ def suite_context(suite):
     steps = [{"position": index + 1, "case": by_id.get(pk), "case_id": pk}
              for index, pk in enumerate(suite.case_ids)]
     return dict(suite_steps=steps, suite=suite, product=suite.product, back_url=home_url(suite.product, 'suites'),
-                runs=suite.runs.all()[:20], timezone_name=timezone.get_current_timezone_name(),
+                runs=annotate_outcomes(suite.runs.all())[:20], timezone_name=timezone.get_current_timezone_name(),
                 submission_token=uuid.uuid4())
 
 
@@ -96,13 +97,7 @@ def suite_detail(request, pk):
 def suite_action(request, pk, action):
     suite = get_object_or_404(APISuite, pk=pk, owner=request.user)
     if action == "execute":
-        try:
-            key = str(uuid.UUID(request.POST.get("submission_token", "")))
-            run = queue_suite(suite.pk, request.user.pk, key=key)
-        except (ValueError, ObjectDoesNotExist) as exc:
-            messages.error(request, str(exc) if isinstance(exc, ValueError) else "套件配置已变化，请重新保存。")
-        else:
-            return redirect("ai_assistant:api_report", pk=run.pk)
+        return redirect("ai_assistant:api_suite_submit", pk=suite.pk)
     elif action in ("rotate-token", "revoke-token", "pause"):
         with transaction.atomic():
             get_user_model().objects.select_for_update().get(pk=request.user.pk)

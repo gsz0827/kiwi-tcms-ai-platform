@@ -193,6 +193,10 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                     },
                     "passed_status": data["passed_status"].pk if target else None,
                     "failed_status": data["failed_status"].pk if target else None}
+        if source_run and source_run.execution_mode in ("formal", "debug"):
+            if target:
+                raise ValueError("历史执行重跑仅用于调试，请从套件发起正式执行。")
+            snapshot.update(execution_mode="debug", writeback_mode="confirmation")
         run = APIRun.objects.create(
             owner=owner, product=product, environment_name=environment.name,
             submission_token=data["submission_token"], test_run=target,
@@ -353,6 +357,8 @@ def secrets_for(case, environment):
 
 
 def writeback_result(run, result, snapshot, case):
+    if snapshot.get("writeback_mode") == "confirmation":
+        return "待确认后归档回写" if run.test_run_id else "调试执行，不回写正式任务"
     if not case.get("execution_id"):
         return "未关联执行任务"
     if result.status not in ("passed", "failed"):

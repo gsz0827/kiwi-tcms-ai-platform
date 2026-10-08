@@ -13,12 +13,13 @@
   function jsonEditor(textarea,kind){
     let data;
     try{data=JSON.parse(textarea.value|| (kind==='assertions'?'[]':'{}'));}catch(_){return;}
-    const array=kind==='assertions';
+    const array=kind==='assertions', extract=kind==='extracts';
+    if(extract && data && Object.values(data).some(value=>typeof value!=='string'))return;
     if(array ? !Array.isArray(data)||data.some(v=>!v||typeof v!=='object'||Array.isArray(v)) : !data||typeof data!=='object'||Array.isArray(data))return;
     const host=make('div',undefined,'automation-json-editor');
     const actions=make('div',undefined,'automation-json-actions');
     const table=make('table',undefined,'table');const header=make('thead');const head=make('tr');
-    for(const title of array?['字段路径','比较方式','预期值','数据类型','操作']:['名称','值','数据类型','操作'])head.append(make('th',title));
+    for(const title of array?['字段路径','比较方式','预期值','数据类型','操作']:extract?['变量名','响应字段路径','操作']:['名称','值','数据类型','操作'])head.append(make('th',title));
     header.append(head);table.append(header);const tbody=make('tbody');table.append(tbody);
     const error=make('p','','automation-json-error');error.setAttribute('role','alert');error.hidden=true;
     let raw=false,dirty=false;
@@ -27,11 +28,11 @@
     function changed(){dirty=true;serialize();}
     function row(key,value,meta){
       const tr=make('tr');tr.meta=meta||{};
-      const keyInput=input(key,array?'字段路径':'名称');tr.keyInput=keyInput;
+      const keyInput=input(key,array?'字段路径':extract?'变量名':'名称');tr.keyInput=keyInput;
       const op=array?options(['equals','exists'],meta?.operator||'equals','比较方式'):null;tr.op=op;
-      const valueInput=input(encode(value),'值');tr.valueInput=valueInput;
+      const valueInput=input(encode(value),extract?'响应字段路径':'值');tr.valueInput=valueInput;
       const type=options(['string','number','boolean','null','object','array'],typeOf(value),'数据类型');tr.typeInput=type;
-      for(const node of [keyInput,...(op?[op]:[]),valueInput,type]){const td=make('td');td.append(node);tr.append(td);node.addEventListener('input',changed);node.addEventListener('change',changed);}
+      for(const node of [keyInput,...(op?[op]:[]),valueInput,...(extract?[]:[type])]){const td=make('td');td.append(node);tr.append(td);node.addEventListener('input',changed);node.addEventListener('change',changed);}
       const td=make('td');td.append(button('删除',()=>{tr.remove();changed();}));tr.append(td);tbody.append(tr);
       function toggleExpected(){valueInput.disabled=!!op&&op.value==='exists';type.disabled=valueInput.disabled;}
       if(op)op.addEventListener('change',toggleExpected);toggleExpected();
@@ -57,7 +58,7 @@
     });
     const add=button('添加一行',()=>{row('',array?'':'');changed();});actions.append(add,mode);
     host.append(table,actions,error);textarea.after(host);textarea.hidden=true;draw();
-    textarea.form?.addEventListener('submit',event=>{if(!serialize()){event.preventDefault();event.stopImmediatePropagation();error.scrollIntoView({block:'center'});}},true);
+    textarea.form?.addEventListener('submit',event=>{if(!serialize()){event.preventDefault();event.stopImmediatePropagation();textarea.dispatchEvent(new CustomEvent('automation:reveal',{bubbles:true}));error.scrollIntoView({block:'center'});}},true);
   }
   function orderedPicker(field, orderInput) {
     const select=field.querySelector('select[multiple]');

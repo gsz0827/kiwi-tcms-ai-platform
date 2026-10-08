@@ -62,17 +62,17 @@ class CaseHubTests(TestCase):
         group = html[html.index('id="kiwi-nav-testing"'):html.index('id="kiwi-nav-web"')]
         self.assertIn(f'href="{url}" aria-current="page"', group)
 
-    def test_project_switch_keeps_current_page_and_clears_stale_filters(self):
+    def test_project_switch_opens_workbench_and_clears_stale_filters(self):
         next_url = reverse("ai_assistant:api_home") + "?tab=cases&folder=99&page=3&q=登录"
         response = self.client.post(reverse("ai_assistant:set_project_context"), {
             "product": self.other_product.pk, "next": next_url,
         }, secure=True)
         target = urlsplit(response.url)
-        self.assertEqual(target.path, reverse("ai_assistant:api_home"))
+        self.assertEqual(target.path, reverse("core-views-index"))
         params = parse_qs(target.query)
         self.assertEqual(params["product"], [str(self.other_product.pk)])
-        self.assertEqual(params["tab"], ["cases"])
-        self.assertEqual(params["q"], ["登录"])
+        self.assertNotIn("tab", params)
+        self.assertNotIn("q", params)
         self.assertNotIn("folder", params)
         self.assertNotIn("page", params)
 

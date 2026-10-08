@@ -2,7 +2,12 @@ ARG KIWI_BASE=kiwitcms/kiwi:latest
 FROM ${KIWI_BASE}
 USER root
 COPY requirements/web.txt /tmp/kiwi-web-requirements.txt
-RUN /venv/bin/python -m pip install --no-cache-dir -r /tmp/kiwi-web-requirements.txt
+ARG PIP_DEFAULT_TIMEOUT=120
+ARG PIP_RETRIES=5
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /venv/bin/python -m pip install --timeout ${PIP_DEFAULT_TIMEOUT} --retries ${PIP_RETRIES} \
+    --index-url ${PIP_INDEX_URL} -r /tmp/kiwi-web-requirements.txt
 USER 1001
 WORKDIR /Kiwi
 CMD ["/venv/bin/python", "/Kiwi/manage.py", "web_worker"]

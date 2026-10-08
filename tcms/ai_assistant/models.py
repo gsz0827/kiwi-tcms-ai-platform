@@ -2,6 +2,8 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from tcms.core.history import KiwiHistoricalRecords
+from .audit_models import AIAuditLog
 from .source_review_models import DocumentSourceReview
 from .postman_models import PostmanImport
 
@@ -86,6 +88,18 @@ class APIRun(models.Model):
             models.Index(fields=("status", "created"), name="api_run_queue"),
             models.Index(fields=("status", "heartbeat"), name="api_run_heartbeat"),
         ]
+
+    @property
+    def execution_mode(self):
+        # New submissions persist mode inside the immutable encrypted snapshot;
+        # absent metadata retains compatibility with historical/CI submissions.
+        import json
+        from .crypto import decrypt_api_key
+        try:
+            mode = json.loads(decrypt_api_key(self.snapshot_encrypted)).get("execution_mode", "legacy")
+        except (ValueError, TypeError, AttributeError, RuntimeError):
+            return "invalid"
+        return mode if mode in ("formal", "debug", "legacy") else "invalid"
 
     @property
     def is_terminal(self):
@@ -191,6 +205,9 @@ class APIAIDraft(models.Model):
         constraints = [models.UniqueConstraint(fields=("request", "position"), name="unique_api_ai_position")]
 
 
+from .project_rule_models import AIInstructionRevision, ProjectAIRuleBinding
+
+
 class AIInstructionProfile(models.Model):
     """Versioned, user-owned guidance injected into new AI requirement jobs."""
 
@@ -223,6 +240,7 @@ class AIInstructionProfile(models.Model):
         default="all",
         verbose_name="适用任务",
     )
+    sections = models.JSONField(default=dict, blank=True)
     instructions = models.TextField(verbose_name="测试规则")
     version = models.PositiveIntegerField(default=1, verbose_name="版本")
     is_active = models.BooleanField(default=True, verbose_name="已启用")
@@ -1080,6 +1098,7 @@ class AITestReportRevision(models.Model):
 
 
 class AIReleaseGateRule(models.Model):
+    history = KiwiHistoricalRecords()
     """产品级发布门禁规则：一个产品一条，由测试经理维护。
 
     规则不挂在账号上：门禁是产品的发布政策，不是某个人的偏好。挂账号时

@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load display_time %}
 {% load static i18n tz %}
 {% block title %}测试计划{% endblock %}
 {% block page_id %}page-plan-library{% endblock %}
@@ -37,7 +37,7 @@
             <td class="plan-nowrap">TP-{{ plan.pk }}</td><td><a class="plan-name" href="{% url 'test_plan_url' plan.pk %}">{{ plan.name }}</a><span class="plan-secondary">{{ plan.type.name }}</span></td>
             <td>{{ plan.product.name }}<span class="plan-secondary">{{ plan.product_version.value }}</span></td>
             <td><span class="plan-status {% if plan.is_active %}plan-status-active{% endif %}">{% if plan.is_active %}启用{% else %}停用{% endif %}</span></td>
-            <td>{{ plan.case_total }}</td><td>{{ plan.run_total }}</td><td>{{ plan.author.username }}<span class="plan-secondary">{{ plan.display_created|date:'Y-m-d' }}</span></td>
+            <td>{{ plan.case_total }}</td><td>{{ plan.run_total }}</td><td>{{ plan.author.username }}<span class="plan-secondary">{{ plan.display_created|in_display_zone:UI_PREFERENCES.time_zone|date:'Y-m-d' }}</span></td>
             <td class="plan-row-actions"><a href="{% url 'test_plan_url' plan.pk %}">查看</a><a href="{% url 'test_plan_url' plan.pk %}#hierarchy">汇总</a>{% if perms.testplans.add_testplan %}<a href="{% url 'plans-clone' plan.pk %}">复用</a>{% endif %}</td>
         </tr>{% empty %}<tr><td colspan="8" class="plan-empty">没有符合条件的测试计划</td></tr>{% endfor %}</tbody>
     </table></div>

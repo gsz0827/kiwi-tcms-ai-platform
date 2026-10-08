@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% load static automation_ui %}
 {% block title %}接口自动化测试{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'ai_assistant/api_testing.css' %}"><link rel="stylesheet" href="{% static 'ai_assistant/automation_ui.css' %}?v=terminology-environment-1"><script src="{% static 'ai_assistant/environment_control.js' %}?v=terminology-environment-1" defer></script>{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'ai_assistant/api_testing.css' %}"><link rel="stylesheet" href="{% static 'ai_assistant/automation_ui.css' %}?v=api-workflow-2"><script src="{% static 'ai_assistant/environment_control.js' %}?v=api-workflow-2" defer></script>{% endblock %}
 {% block related_widget_scripts %}{% endblock %}{% block external_head_scripts %}{% endblock %}{% block external_footer_scripts %}{% endblock %}
 {% block contents %}{% automation_access as automation_access %}<div class="api-workspace">{% block api_content %}{% endblock %}<script src="{% static 'ai_assistant/api_submit_once.js' %}"></script>{% block api_scripts %}{% endblock %}</div>{% endblock %}

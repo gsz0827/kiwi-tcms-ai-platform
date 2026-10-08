@@ -91,9 +91,29 @@ def is_read_only(user):
     return roles_of(user) == {ROLE_VIEWER}
 
 
+def can_manage_requirement_directories(user, product):
+    """Shared folders are writable only within an active account's project scope."""
+    if (not user.is_authenticated or not user.is_active
+            or is_read_only(user) or product is None):
+        return False
+    return bool(user.is_superuser or is_product_member(user, product))
+
+
+def requirement_directory_products(user):
+    """Visible product roots; own requirements do not grant shared-folder rights."""
+    if not user.is_authenticated or not user.is_active:
+        return Product.objects.none()
+    if user.is_superuser:
+        return Product.objects.all()
+    return Product.objects.filter(
+        Q(pk__in=member_products(user))
+        | Q(pk__in=AIRequest.objects.filter(created_by=user).values("category__product_id"))
+    ).distinct()
+
+
 def can_submit_requirement(user):
     """能不能提交/分析需求。未分配角色的用户与今天行为一致（允许）。"""
-    return user.is_authenticated and not is_read_only(user)
+    return user.is_authenticated and user.is_active and not is_read_only(user)
 
 
 def can_split_dev_tasks(user, ai_request=None):
@@ -180,7 +200,8 @@ def can_approve_report(user, report=None):
 
 def can_manage_members(user):
     """能不能维护项目成员与角色分配。"""
-    return user.has_perm(PERM_MANAGE_MEMBERS) or user.is_staff
+    return bool(user.is_authenticated and user.is_active and not is_read_only(user)
+                and (user.has_perm(PERM_MANAGE_MEMBERS) or user.is_staff))
 
 
 def can_manage_release_gate(user):
@@ -190,7 +211,7 @@ def can_manage_release_gate(user):
     不留「本人」后路**：报告作者不能给自己放行，否则硬门禁等于没有。单人部署时
     管理员是 superuser/staff，仍然进得去。
     """
-    if not user.is_authenticated:
+    if not user.is_authenticated or not user.is_active or is_read_only(user):
         return False
     return user.has_perm(PERM_APPROVE_REPORT) or user.is_staff
 

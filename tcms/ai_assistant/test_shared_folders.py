@@ -150,7 +150,7 @@ class RequirementSharedFolderTests(TestCase):
         )
         self.assertEqual(assignment.folder_id, self.folder.pk)
 
-    def test_every_logged_in_account_can_create_a_requirement_folder(self):
+    def test_project_outsider_cannot_create_a_requirement_folder(self):
         self.client.force_login(self.outsider)
 
         response = self.client.post(
@@ -165,8 +165,8 @@ class RequirementSharedFolderTests(TestCase):
             secure=True,
         )
 
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
             ProjectResourceFolder.objects.filter(
                 product=self.product, resource_type="requirement", name="临时目录"
             ).exists()

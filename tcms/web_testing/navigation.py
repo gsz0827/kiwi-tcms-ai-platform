@@ -2,7 +2,7 @@
 TEST_NAV_SECTIONS = (
     {"key": "requirements", "label": "需求与开发任务", "icon": "fa-lightbulb-o", "items": (
         {"label": "需求管理", "icon": "fa-lightbulb-o", "url": "ai_assistant:index", "names": (
-            "ai_assistant:index", "ai_assistant:case_design", "ai_assistant:edit_requirement", "ai_assistant:requirement_trace", "ai_assistant:edit_draft", "ai_assistant:review_case", "ai_assistant:apply_review", "ai_assistant:generate_from_analysis", "ai_assistant:analyze_coverage", "ai_assistant:supplement_from_coverage", "ai_assistant:import",
+            "ai_assistant:index", "ai_assistant:requirement_new", "ai_assistant:case_design", "ai_assistant:edit_requirement", "ai_assistant:requirement_trace", "ai_assistant:edit_draft", "ai_assistant:review_case", "ai_assistant:apply_review", "ai_assistant:generate_from_analysis", "ai_assistant:analyze_coverage", "ai_assistant:supplement_from_coverage", "ai_assistant:import",
         )},
         {"label": "开发任务", "icon": "fa-tasks", "url": "ai_assistant:dev_task_list", "names": (
             "ai_assistant:dev_task_list", "ai_assistant:dev_task_detail", "ai_assistant:dev_task_create", "ai_assistant:edit_dev_task", "ai_assistant:delete_dev_task", "ai_assistant:generate_dev_tasks",
@@ -23,6 +23,6 @@ TEST_NAV_SECTIONS = (
         {"label": "测试环境", "icon": "fa-server", "url": "ai_assistant:api_home", "query": "tab=environments", "names": ("ai_assistant:api_home", "ai_assistant:api_environment_new", "ai_assistant:api_environment_edit")},
         {"label": "自动化脚本", "icon": "fa-list", "url": "ai_assistant:api_home", "query": "tab=cases", "names": ("ai_assistant:api_case_new", "ai_assistant:api_case_edit", "ai_assistant:api_ai_generate", "ai_assistant:api_ai_detail", "ai_assistant:api_ai_review", "ai_assistant:postman_upload", "ai_assistant:postman_preview")},
         {"label": "测试套件", "icon": "fa-cubes", "url": "ai_assistant:api_home", "query": "tab=suites", "names": ("ai_assistant:api_suite_new", "ai_assistant:api_suite_edit", "ai_assistant:api_suite", "ai_assistant:api_suite_action")},
-        {"label": "执行任务", "icon": "fa-play", "url": "ai_assistant:api_home", "query": "tab=runs", "names": ("ai_assistant:api_submit", "ai_assistant:api_report", "ai_assistant:api_rerun", "ai_assistant:api_cancel", "ai_assistant:api_export")},
+        {"label": "执行任务", "icon": "fa-play", "url": "ai_assistant:api_home", "query": "tab=runs", "names": ("ai_assistant:api_suite_submit", "ai_assistant:api_submit", "ai_assistant:api_report", "ai_assistant:api_rerun", "ai_assistant:api_cancel", "ai_assistant:api_export")},
     )},
 )

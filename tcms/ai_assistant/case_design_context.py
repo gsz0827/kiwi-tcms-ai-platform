@@ -10,6 +10,7 @@ from .models import AIDevTask
 
 
 class DesignContextForm(forms.Form):
+    additional_instructions = forms.CharField(label="本次补充要求", required=False, max_length=4000, widget=forms.Textarea(attrs={"rows": 3, "class": "form-control", "maxlength": 4000}))
     dev_tasks = forms.ModelMultipleChoiceField(
         queryset=AIDevTask.objects.none(),
         required=False,

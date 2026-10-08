@@ -278,13 +278,14 @@ def capture_instruction_snapshot(user, category=None):
     product_id = category.product_id if category is not None else None
     if product_id is None:
         return _empty_skill_snapshot()
-    profiles = AIInstructionProfile.objects.filter(
-        owner=user,
-        is_active=True,
-        product_id=product_id,
-    ).order_by(
-        "operation", "product_id", "name"
-    )
+    from .models import ProjectAIRuleBinding
+    from .roles import is_product_member
+    binding = ProjectAIRuleBinding.objects.select_related("profile", "product").filter(product_id=product_id).first()
+    if binding:
+        profiles = [binding.profile] if binding.profile.is_active and is_product_member(user, binding.product) else []
+    else:
+        # Preserve old personal rules only until a project explicitly publishes one.
+        profiles = AIInstructionProfile.objects.filter(owner=user, is_active=True, product_id=product_id).order_by("operation", "product_id", "name")
     snapshot = _empty_skill_snapshot()
     for profile in profiles:
         item = {
@@ -295,6 +296,7 @@ def capture_instruction_snapshot(user, category=None):
             "operation": profile.operation,
             "product_id": profile.product_id,
             "instructions": profile.instructions,
+            "scope": "project" if binding else "personal",
         }
         operations = snapshot if profile.operation == "all" else {profile.operation: []}
         for operation in operations:

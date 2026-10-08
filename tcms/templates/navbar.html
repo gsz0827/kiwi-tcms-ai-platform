@@ -76,6 +76,8 @@
                         <li>
                             <a href="{% url "display-settings" %}" target="_parent">显示设置</a>
                         </li>
+                        <li><a href="{% url 'ai_assistant:model_settings' %}" target="_parent">AI 模型配置</a></li>
+                        <li><a href="{% url 'ai_assistant:usage_logs' %}" target="_parent">AI 调用记录</a></li>
 
                         <li>
                             <a href="{% url "admin:password_change" %}" target="_parent">{% trans "Change password" %}</a>

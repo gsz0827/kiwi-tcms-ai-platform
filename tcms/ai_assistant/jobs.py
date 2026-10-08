@@ -50,7 +50,7 @@ class JobCancelled(RuntimeError):
 
 
 def submit_requirement(owner, cleaned_data, operation, model_config):
-    """Commit a form submission and its job together; replay the original result."""
+    """Save a requirement, optionally enqueue AI, and replay identical submissions."""
     token = cleaned_data["submission_token"]
     fingerprint = canonical_hash({
         "title": cleaned_data["title"],
@@ -74,6 +74,8 @@ def submit_requirement(owner, cleaned_data, operation, model_config):
         if existing:
             if existing.submission_fingerprint != fingerprint:
                 raise ValueError("这份表单已提交过其他内容，请刷新页面后重新提交。")
+            if operation == "save":
+                return existing, False
             job = AIJob.objects.filter(
                 owner=owner, dedupe_key=dedupe_key
             ).order_by("created").first()
@@ -107,6 +109,8 @@ def submit_requirement(owner, cleaned_data, operation, model_config):
             change_summary="创建需求",
             changed_by=owner,
         )
+        if operation == "save":
+            return ai_request, True
         return enqueue_ai_job(
             owner, operation, {"request_id": ai_request.pk},
             model_config=model_config, dedupe_key=dedupe_key,
@@ -136,7 +140,11 @@ def enqueue_ai_job(
                 status__in=AIJob.ACTIVE_STATUSES,
             ).first()
             if existing:
+                if str(existing.payload.get("additional_instructions") or "").strip() != str(payload.get("additional_instructions") or "").strip():
+                    raise ValueError("已有同一需求的任务正在处理，请等待完成后再修改补充要求。")
                 return existing, False
+        from .job_rules import prepare_payload
+        payload = prepare_payload(owner, operation, payload)
         job = AIJob.objects.create(
             owner=owner,
             model_config=config,
@@ -195,9 +203,12 @@ def _lock_unchanged_requirement(ai_request, fingerprint, include_drafts=False):
 
 
 def _execute_requirement_analysis(job):
-    ai_request = AIRequest.objects.get(
-        pk=job.payload["request_id"], created_by=job.owner
-    )
+    from . import roles
+    ai_request = roles.visible_requests(job.owner).get(pk=job.payload["request_id"])
+    if not job.owner.is_active or not roles.can_generate_cases(job.owner, ai_request):
+        raise RuntimeError("当前账号已无权分析该需求")
+    if job.payload.get("source_version") and job.payload["source_version"] != ai_request.version:
+        raise RuntimeError("需求已变更，请基于最新修订重新分析。")
     fingerprint = _requirement_fingerprint(ai_request)
     _set_progress(job, 25, "正在调用模型分析需求")
     analysis, config, raw_result = analyze_requirement(
@@ -205,7 +216,7 @@ def _execute_requirement_analysis(job):
         ai_request.requirement_document,
         job.owner,
         model_config=job.model_config,
-        skill_snapshot=ai_request.skill_snapshot,
+        skill_snapshot=job.payload.get("rules_snapshot", ai_request.skill_snapshot),
     )
     _set_progress(job, 82, "模型已返回，正在保存需求分析")
     with transaction.atomic():
@@ -241,7 +252,7 @@ def _execute_test_case_generation(job):
     test_cases = generate_test_cases(
         ai_request.title, ai_request.requirement_document, job.owner,
         analysis=ai_request.analysis or None, model_config=job.model_config,
-        skill_snapshot=ai_request.skill_snapshot, **options,
+        skill_snapshot=job.payload.get("rules_snapshot", ai_request.skill_snapshot), **options,
     )
     _set_progress(job, 82, "模型已返回，正在保存用例草稿")
     with transaction.atomic():
@@ -282,9 +293,12 @@ def _execute_test_case_generation(job):
 
 
 def _execute_dev_task_breakdown(job):
-    ai_request = AIRequest.objects.get(
-        pk=job.payload["request_id"], created_by=job.owner
-    )
+    from . import roles
+    ai_request = roles.visible_requests(job.owner).get(pk=job.payload["request_id"])
+    if not job.owner.is_active or not roles.can_generate_cases(job.owner, ai_request):
+        raise RuntimeError("当前账号已无权分析该需求")
+    if job.payload.get("source_version") and job.payload["source_version"] != ai_request.version:
+        raise RuntimeError("需求已变更，请基于最新修订重新分析。")
     fingerprint = _requirement_fingerprint(ai_request)
     _set_progress(job, 25, "正在调用模型拆分开发任务")
     dev_tasks = break_down_dev_tasks(
@@ -293,7 +307,7 @@ def _execute_dev_task_breakdown(job):
         job.owner,
         analysis=ai_request.analysis or None,
         model_config=job.model_config,
-        skill_snapshot=ai_request.skill_snapshot,
+        skill_snapshot=job.payload.get("rules_snapshot", ai_request.skill_snapshot),
     )
     _set_progress(job, 82, "模型已返回，正在保存开发任务")
     with transaction.atomic():

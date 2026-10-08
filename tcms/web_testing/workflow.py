@@ -60,6 +60,8 @@ def list_context(request, model, key):
     versions = Version.objects.filter(product=product) if product else Version.objects.all()
     versions = versions.select_related('product').order_by('value', 'pk')
     if model is WebRun:
+        from tcms.ai_assistant.run_outcomes import annotate_outcomes
+        items = annotate_outcomes(items)
         items = items.select_related('test_run__plan', 'test_run__build', 'environment')
         if 'version' not in data:
             value = request.session.get('ai_version_id', '')
@@ -121,6 +123,15 @@ class SubmitForm(forms.Form):
         self.fields['build'].queryset = Build.objects.filter(version__product=suite.product, is_active=True).select_related('version')
         self.fields['environment'].queryset = WebEnvironment.objects.filter(owner=owner, product=suite.product)
         self.initial.setdefault('environment', suite.environment_id)
+        if not self.is_bound and 'execution_mode' not in self.initial:
+            configs = WebCase.objects.filter(owner=owner, product=suite.product, pk__in=suite.case_ids)
+            can_formal = (owner.has_perms(FORMAL_PERMISSIONS) and not is_read_only(owner)
+                          and self.fields['plan'].queryset.exists()
+                          and self.fields['build'].queryset.exists()
+                          and suite.environment_id is not None
+                          and bool(suite.case_ids) and configs.count() == len(suite.case_ids)
+                          and not configs.filter(test_case__isnull=True).exists())
+            self.initial['execution_mode'] = 'formal' if can_formal else 'debug'
         for field in self.fields.values():
             if not field.widget.is_hidden:
                 field.widget.attrs['class'] = 'form-control'

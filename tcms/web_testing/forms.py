@@ -4,6 +4,7 @@ from tcms.ai_assistant.crypto import decrypt_api_key, encrypt_api_key
 from tcms.management.models import Product
 from .models import WebCase, WebSuite, WebEnvironment
 from tcms.ai_assistant.automation_data import DatasetField
+from tcms.ai_assistant.api_ordering import clean_case_order
 
 from .validation import validate_steps, validate_url
 
@@ -13,7 +14,7 @@ class StyledForm(forms.ModelForm):
         self.owner = owner
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            if not isinstance(field.widget, forms.CheckboxInput):
+            if not isinstance(field.widget, (forms.CheckboxInput, forms.CheckboxSelectMultiple, forms.RadioSelect, forms.HiddenInput)):
                 field.widget.attrs["class"] = "form-control"
 
 
@@ -69,7 +70,9 @@ class CaseForm(StyledForm):
 
 class SuiteForm(StyledForm):
     datasets = DatasetField()
-    cases = forms.ModelMultipleChoiceField(label="包含脚本（按脚本编号执行）", queryset=WebCase.objects.none(), widget=forms.SelectMultiple(attrs={"size": 10}))
+    ordered_case_ids = forms.JSONField(required=False, widget=forms.HiddenInput)
+    cases = forms.ModelMultipleChoiceField(label="执行脚本", queryset=WebCase.objects.none(),
+        widget=forms.CheckboxSelectMultiple(attrs={"data-ordered-picker": "true"}))
 
     class Meta:
         model = WebSuite
@@ -87,6 +90,7 @@ class SuiteForm(StyledForm):
             self.initial["datasets"] = json.loads(decrypt_api_key(self.instance.datasets_encrypted) or "[]")
         if self.instance.pk:
             self.initial["cases"] = self.instance.case_ids
+            self.initial["ordered_case_ids"] = self.instance.case_ids
 
     def clean_environment(self):
         environment = self.cleaned_data["environment"]
@@ -109,14 +113,14 @@ class SuiteForm(StyledForm):
                 self.add_error("cases", "每个套件最多 20 条用例。")
             if data.get("product") and cases.exclude(product=data["product"]).exists():
                 self.add_error("cases", "所有用例必须属于所选项目。")
-        return data
+        return clean_case_order(self, data)
 
     def save(self, commit=True):
         self.instance.owner = self.owner
         # Keep legacy storage for old snapshots/integrations, never as an editable override.
         self.instance.base_url = self.cleaned_data["environment"].base_url
         self.instance.ignore_https_errors = self.cleaned_data["environment"].ignore_https_errors
-        self.instance.case_ids = list(self.cleaned_data["cases"].order_by("pk").values_list("pk", flat=True))
+        self.instance.case_ids = [case.pk for case in self.cleaned_data["cases"]]
         self.instance.datasets_encrypted = encrypt_api_key(json.dumps(self.cleaned_data.get("datasets") or []))
         if commit and self.instance.pk:
             # Do not overwrite a CI token rotated since this form was loaded.

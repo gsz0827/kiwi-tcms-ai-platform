@@ -8,8 +8,8 @@
 3. **审计不可篡改。** 记录只增不改不删，账号被删掉之后仍能靠用户名快照追溯；
 4. **审计不能反过来搞坏业务。** 写审计失败时审批该成功还是成功。
 
-来源 IP 只认 ``X-Real-IP`` / ``REMOTE_ADDR``：``etc/nginx.conf`` 只设前者，
-``X-Forwarded-For`` 若出现必是客户端伪造，专门有一条用例钉住这个口径。
+来源 IP 只使用服务器提供的 ``REMOTE_ADDR``，不信任客户端可伪造的
+``X-Real-IP`` / ``X-Forwarded-For``，专门有测试守住这个边界。
 """
 from unittest import mock
 
@@ -75,16 +75,16 @@ class AuditModelTests(TestCase):
 
 
 class ClientIpTests(TestCase):
-    """来源 IP 口径：只信反向代理覆盖过的 X-Real-IP 与 REMOTE_ADDR。"""
+    """来源 IP 口径：只使用服务器连接地址，不采信转发请求头。"""
 
     def setUp(self):
         self.factory = RequestFactory()
 
-    def test_uses_real_ip_set_by_our_proxy(self):
+    def test_ignores_untrusted_real_ip_header(self):
         request = self.factory.post(
             "/ai/x/", REMOTE_ADDR="10.1.2.3", HTTP_X_REAL_IP="203.0.113.9"
         )
-        self.assertEqual(audit.client_ip(request), "203.0.113.9")
+        self.assertEqual(audit.client_ip(request), "10.1.2.3")
 
     def test_forged_forwarded_for_is_ignored(self):
         """nginx 不设 X-Forwarded-For，出现即伪造，绝不能被写进审计。"""
@@ -164,6 +164,10 @@ class ReleaseGateAuditTests(TestCase):
                 assignee=self.author,
                 tested_by=self.author,
             )
+        self.manager.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="ai_assistant", codename="manage_members"))
+        self.manager.user_permissions.add(Permission.objects.get(
+            content_type__app_label="testcases", codename="change_testcase"))
         roles.add_product_member(self.manager, self.product, granted_by=self.author)
         self.report = AITestReport.objects.create(
             owner=self.author,
@@ -218,6 +222,11 @@ class ReleaseGateAuditTests(TestCase):
         self.assertEqual(entry.product, self.product)
 
     def test_plain_approval_is_recorded(self):
+        # Normal approval needs a passing report, unlike the blocked-approval test.
+        passed = TestExecutionStatus.objects.filter(weight__gt=0).first()
+        self.test_run.executions.update(status=passed)
+        self.report.metrics_snapshot = build_test_run_snapshot(self.test_run)
+        self.report.save(update_fields=("metrics_snapshot",))
         self.approve(self.author)
 
         entry = self.latest("report_approve")

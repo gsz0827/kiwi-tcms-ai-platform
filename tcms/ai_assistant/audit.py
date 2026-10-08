@@ -27,8 +27,9 @@
 """
 
 import logging
+import uuid
 
-from django.db import DatabaseError
+from django.db import transaction
 
 from .models import AIAuditLog
 
@@ -61,16 +62,14 @@ def _target_parts(target):
 def client_ip(request):
     """取请求来源 IP。
 
-    只信任 ``X-Real-IP`` 和 ``REMOTE_ADDR``：
-
-    * ``etc/nginx.conf`` 用 ``proxy_set_header X-Real-IP $remote_addr;`` 无条件
-      **覆盖**该头，所以经反向代理进来的请求里它是可信的；
-    * 同一份配置**不设置** ``X-Forwarded-For``，因此请求里若出现这个头，一定是
-      客户端自己伪造的，绝不能拿它当来源写进审计。
+    只使用服务器提供的 ``REMOTE_ADDR``。当前 Nginx 通过 uWSGI 参数传递
+    连接来源地址；忽略客户端可伪造的 ``X-Real-IP`` / ``X-Forwarded-For``。
+    若以后增加反向代理，需先明确可信代理边界，不能直接信任任意请求头。
     """
     if request is None:
         return None
-    value = request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR") or ""
+    # uWSGI REMOTE_ADDR is set by Nginx; client-supplied forwarding headers are not trusted.
+    value = request.META.get("REMOTE_ADDR") or ""
     value = value.strip()
     return value[:45] or None
 
@@ -169,26 +168,33 @@ def record(
     if not is_known_action(action):
         logger.warning("audit action %s is not registered in AIAuditLog.ACTION_CHOICES", action)
 
+    request_id = getattr(request, "request_id", "") if request else ""
+    if request is not None and not request_id:
+        request_id = uuid.uuid4().hex
+        request.request_id = request_id
     kind, pk, label = _target_parts(target)
     if target_repr:
         label = str(target_repr)[:255]
 
     try:
-        AIAuditLog.objects.create(
-            actor=actor,
-            actor_username=getattr(actor, "username", "") if actor else "",
-            actor_role=roles_snapshot(actor),
-            action=action,
-            result=result,
-            target_kind=kind,
-            target_id=pk,
-            target_repr=label,
-            reason=(reason or "")[:2000],
-            detail=dict(detail) if detail else {},
-            product=product,
-            ip=client_ip(request),
-            request_id=getattr(request, "request_id", "") if request else "",
-        )
-    except DatabaseError:
+        # A nested savepoint keeps a failed journal insert from poisoning an outer transaction.
+        with transaction.atomic():
+            AIAuditLog.objects.create(
+                actor=actor,
+                actor_username=getattr(actor, "username", "") if actor else "",
+                actor_role=roles_snapshot(actor),
+                action=action,
+                result=result,
+                target_kind=kind,
+                target_id=pk,
+                target_repr=label,
+                reason=(reason or "")[:2000],
+                detail=dict(detail) if detail else {},
+                product=product,
+                ip=client_ip(request),
+                request_id=request_id,
+            )
+        logger.info("audit action=%s target=%s:%s request_id=%s", action, kind, pk, request_id)
+    except Exception:  # pylint: disable=broad-except
         # 审计写不进去不能改变业务结果；日志带 request_id，事后可按 id 补录。
-        logger.exception("audit write failed action=%s target=%s:%s", action, kind, pk)
+        logger.exception("audit write failed action=%s target=%s:%s request_id=%s", action, kind, pk, request_id)

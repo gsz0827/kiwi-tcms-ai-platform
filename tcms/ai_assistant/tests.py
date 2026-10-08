@@ -1885,7 +1885,9 @@ class TestRunAnalysisTests(TestCase):
         self.assertContains(plan_page, f'href="/plan/{self.test_run.plan_id}/"')
 
     def test_project_resource_folders_are_shared_and_permission_protected(self):
+        from .roles import add_product_member
         product = self.test_run.plan.product
+        add_product_member(self.owner, product)
         own_request = AIRequest.objects.create(
             created_by=self.owner,
             category=product.category.get(name="--default--"),
@@ -1950,17 +1952,17 @@ class TestRunAnalysisTests(TestCase):
 
         self.client.force_login(self.other_user)
         member_page = self.client.get(reverse("ai_assistant:index"), secure=True)
-        self.assertContains(member_page, "登录模块")
-        self.assertContains(member_page, "验证码登录")
+        self.assertNotContains(member_page, "登录模块")
+        self.assertNotContains(member_page, "验证码登录")
         self.assertNotContains(member_page, own_request.title)
         rename_response = self.client.post(
             reverse("ai_assistant:rename_resource_folder", args=[child.pk]),
             {"name": "短信验证码", "next": reverse("ai_assistant:index")},
             secure=True,
         )
-        self.assertEqual(rename_response.status_code, 302)
+        self.assertEqual(rename_response.status_code, 403)
         child.refresh_from_db()
-        self.assertEqual(child.name, "短信验证码")
+        self.assertEqual(child.name, "验证码登录")
 
         change_case = Permission.objects.get(
             content_type__app_label="testcases", codename="change_testcase"

@@ -1,4 +1,4 @@
-{% extends "web_testing/base.html" %}{% load static tz %}
+{% extends "web_testing/base.html" %}{% load static tz %}{% load display_time %}
 {% block workspace %}
 {% if not has_models %}<div class="alert alert-warning automation-model-alert">当前账号尚未配置 AI 模型，请先<a href="{% url 'ai_assistant:model_settings' %}">配置自己的模型</a>。不会使用服务器默认模型。</div>{% endif %}
 <form method="post" class="automation-edit-form">{% csrf_token %}<fieldset{% if not automation_access.can_write %} disabled{% endif %}>{% include 'ai_assistant/automation/form_sections.html' %}{% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit"{% if not has_models %} disabled{% endif %}>生成测试用例</button><a class="btn btn-default" href="{% url 'web_testing:cases' %}?product={{ product.pk }}">返回列表</a></div>{% endif %}</fieldset></form>

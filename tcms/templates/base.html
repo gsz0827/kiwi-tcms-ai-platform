@@ -33,6 +33,7 @@
     {% endblock %}
     {% include 'patternfly.html' %}
     {% include 'include/platform_navigation_styles.html' %}
+    <style>.editor-statusbar .autosave { display:none; }</style>
     {% block head %}{% endblock %}
 </head>
 <body id="{% block page_id %}{% endblock %}" class="{% block body_class %}{% endblock %}">
@@ -88,8 +89,7 @@
     <script src="{% static 'typeahead.js/dist/typeahead.jquery.min.js' %}"></script>
 
     {% block related_widget_scripts %}
-    <script src="{% static 'grappelli/jquery/jquery.min.js' %}"></script>
-    <script src="{% static 'grappelli/js/grappelli.min.js' %}"></script>
+    <script src="{% static 'js/related_namespace.js' %}"></script>
     <script src="{% static 'admin/js/admin/RelatedObjectLookups.js' %}"></script>
     {% endblock %}
 

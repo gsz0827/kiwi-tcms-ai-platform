@@ -79,3 +79,19 @@
 .scenario-library-header .btn{flex-shrink:0;white-space:nowrap}
 .scenario-library-total{font-size:13px;color:#66798c;vertical-align:middle;background:#edf2f7;border-radius:12px;padding:3px 9px;margin-left:6px;font-weight:400}
 @media(max-width:767px){.scenario-library-header{align-items:flex-start}.scenario-library-header h1{font-size:22px}}
+
+/* Compact repository columns; keep identifying and action columns visible. */
+.scenario-library .scenario-table { table-layout:fixed; min-width:820px; width:100%; }
+.scenario-library .scenario-table col.case-number { width:74px; }
+.scenario-library .scenario-table col.case-project { width:94px; }
+.scenario-library .scenario-table col.case-category { width:82px; }
+.scenario-library .scenario-table col.case-priority { width:56px; }
+.scenario-library .scenario-table col.case-automation { width:88px; }
+.scenario-library .scenario-table col.case-path { width:120px; }
+.scenario-library .scenario-table col.case-actions { width:104px; }
+.scenario-library .scenario-table .case-project-label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.scenario-library .scenario-table .scenario-path { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.scenario-library .scenario-table .scenario-row-actions { white-space:normal; }
+.scenario-library .scenario-row-actions a { display:block; margin:3px 0; white-space:nowrap; }
+.scenario-library .scenario-table td:last-child, .scenario-library .scenario-table th:last-child { position:sticky; right:0; background:#fff; box-shadow:-1px 0 #e4eaf1; z-index:2; }
+.scenario-library .scenario-table th:last-child { background:#f5f8fc; }

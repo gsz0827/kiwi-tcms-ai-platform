@@ -95,8 +95,10 @@ def publish(user,kind,pk,data):
             raise ValueError('请先确认共享归档摘要。')
         if not (source.terminal if kind=='web' else source.is_terminal):
             raise ValueError('任务尚未结束，不能归档。')
-        if kind == "web":
+        if kind == "web" or source.execution_mode in ("formal", "debug", "invalid"):
             from tcms.web_testing.workflow import validate_archive_binding
+            if source.execution_mode == "invalid":
+                raise ValueError("无法确认执行方式，不能归档。")
             data = validate_archive_binding(source, data)
         plan = get_object_or_404(get_objects_for_user(user,'testplans.change_testplan',klass=TestPlan).select_for_update(),pk=data['plan'].pk,product=source.product,is_active=True)
         build = get_object_or_404(Build,pk=data['build'].pk,version_id=plan.product_version_id,is_active=True)
@@ -166,9 +168,9 @@ def archive(request,kind,pk):
     if existing: return redirect('ai_assistant:edit_report',pk=existing.report_id)
     require_archive_permission(request.user)
     rows=source_rows(source,kind)
-    if kind == "web" and source.execution_mode == "debug":
+    if source.execution_mode in ("debug", "invalid"):
         return HttpResponse("调试执行不进入正式报告，请发起正式执行。", status=409)
-    form=ArchiveForm(request.POST if request.method=='POST' else None,owner=request.user,product=source.product,rows=rows,source=source if kind == "web" else None)
+    form=ArchiveForm(request.POST if request.method=='POST' else None,owner=request.user,product=source.product,rows=rows,source=source)
     if request.method=='POST' and form.is_valid():
         try: saved=publish(request.user,kind,pk,form.cleaned_data)
         except ValueError as exc: form.add_error(None,str(exc))

@@ -1,4 +1,4 @@
-{% extends "ai_assistant/api/base.html" %}{% load ui_labels %}
+{% extends "ai_assistant/api/base.html" %}{% load ui_labels %}{% load display_time %}
 {% load static tz allure_reports %}
 {% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/execution_results.css' %}">{% endblock %}
 {% block api_content %}
@@ -11,8 +11,10 @@
   </div>
   {% if run.error %}<p class="text-danger">{{ run.error }}</p>{% endif %}
   <div class="execution-metadata"><span>提交：{{ run.created|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i:s' }}</span>{% if run.started %}<span>开始：{{ run.started|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i:s' }}</span>{% endif %}{% if run.completed %}<span>结束：{{ run.completed|timezone:UI_PREFERENCES.time_zone|date:'Y-m-d H:i:s' }}</span>{% endif %}<span>触发：{{ run.get_trigger_display }}</span>{% if run.suite_id %}<a href="{% url 'ai_assistant:api_suite' run.suite_id %}">{{ run.suite.name }}</a>{% endif %}</div>
-  {% if run.is_terminal %}<div class="api-report-actions">{% if can_write %}<a class="btn btn-default" href="{% url 'ai_assistant:automation_archive' 'api' run.pk %}">归档报告 / 创建缺陷草稿</a><a class="btn btn-default" href="{% url 'ai_assistant:api_rerun' run.pk %}">重新执行…</a>{% endif %}<a href="{% url 'ai_assistant:api_export' run.pk %}">导出原始结果 JSON</a></div>{% endif %}
+  {% if run.is_terminal %}<div class="api-report-actions">{% if can_write %}{% if can_publish %}<a class="btn btn-default" href="{% url 'ai_assistant:automation_archive' 'api' run.pk %}">归档报告 / 创建缺陷草稿</a>{% endif %}<a class="btn btn-default" href="{% url 'ai_assistant:api_rerun' run.pk %}">{% if run.execution_mode == "legacy" %}重新执行…{% else %}重新执行（调试）{% endif %}</a>{% endif %}<a href="{% url 'ai_assistant:api_export' run.pk %}">导出原始结果 JSON</a></div>{% endif %}
   {% if run.source_run_id %}<p><a href="{% url 'ai_assistant:api_report' run.source_run_id %}">原执行记录</a></p>{% endif %}
+  <p>执行方式：{{ execution_mode_label }}{% if frozen_context.plan_name %} · {{ frozen_context.plan_name }} · {{ frozen_context.version_name }} · 构建 {{ frozen_context.build_name }}{% endif %}</p>
+  {% if run.execution_mode == "debug" %}<p class="text-muted">调试结果不进入正式报告或发布门禁。</p>{% endif %}
   {% if run.test_run %}<p>关联任务：<a href="{% url 'testruns-get' run.test_run_id %}">{{ run.test_run.summary }}</a></p>{% endif %}
   {% if reruns %}<details><summary>后续执行</summary><p>{% for item in reruns %}<a href="{% url 'ai_assistant:api_report' item.pk %}">{{ item.created|timezone:UI_PREFERENCES.time_zone|date:'m-d H:i:s' }}（{{ item.get_status_display|ui_term }}）</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p></details>{% endif %}
 </section>

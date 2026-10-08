@@ -1,0 +1,8 @@
+{% extends 'ai_assistant/api/base.html' %}
+{% load static %}
+{% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/project_admin.css' %}">{% endblock %}
+{% block title %}规则版本历史{% endblock %}
+{% block api_content %}
+<header class="api-header"><div><h1>{{ profile.name }} · 版本历史</h1><p>{{ profile.product.name|default:'未指定项目' }}</p></div><a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">返回规则列表</a></header>
+{% for revision in revisions %}<section class="api-card"><header><h2>V{{ revision.version }} · {{ revision.snapshot.name }}</h2><span>{{ revision.created }} · {{ revision.changed_by.username|default:'原账号已删除' }}</span></header><div class="api-result-body"><p>{% if revision.snapshot.is_active %}启用{% else %}停用{% endif %} · {{ revision.snapshot.operation }}</p>{% if revision.snapshot.sections %}{% for label, content in revision.sections %}<h3>{{ label }}</h3><p>{{ content|default:'未填写'|linebreaksbr }}</p>{% endfor %}{% if revision.snapshot.sections.legacy %}<h3>原有规则内容</h3><p>{{ revision.snapshot.sections.legacy|linebreaksbr }}</p>{% endif %}{% else %}<p>{{ revision.snapshot.instructions|linebreaksbr }}</p>{% endif %}</div></section>{% empty %}<p class="text-muted">暂无版本历史</p>{% endfor %}
+{% endblock %}

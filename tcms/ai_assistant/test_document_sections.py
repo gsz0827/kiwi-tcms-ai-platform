@@ -56,7 +56,7 @@ class DocumentSectionsTests(TestCase):
         }
 
     def test_new_and_edit_forms_group_every_field_once(self):
-        for route, pk in [("index", None), ("edit_requirement", self.requirement.pk)]:
+        for route, pk in [("requirement_new", None), ("edit_requirement", self.requirement.pk)]:
             page = self.client.get(self.url(route, pk), secure=True)
             for name in [
                 "background",

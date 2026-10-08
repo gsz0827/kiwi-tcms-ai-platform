@@ -1,0 +1,18 @@
+{% extends 'ai_assistant/base_ai.html' %}
+{% load static %}
+{% block title %}新建需求{% endblock %}
+{% block ai_contents %}
+<link rel="stylesheet" href="{% static 'ai_assistant/document_ui.css' %}">
+<div class="document-workspace">
+<header class="automation-page-header"><h1>新建需求</h1><a class="btn btn-default" href="{% url 'ai_assistant:index' %}">返回需求列表</a></header>
+<form method="post" id="generation-form" class="document-structured-form" data-document-form data-document-options-url="{% url 'ai_assistant:document_options' %}">
+{% csrf_token %}{{ form.submission_token }}{{ form.submission_token.errors }}{{ form.non_field_errors }}
+<div class="document-grid"><section class="document-paper document-form-main">{% include 'ai_assistant/_document_form_sections.html' %}</section><aside class="document-properties document-form-properties" aria-label="需求属性"><h2>需求属性</h2>{% for field in form.document_attribute_fields %}{% include 'ai_assistant/_document_field.html' %}{% endfor %}</aside></div>
+<div class="document-actions"><button type="submit" name="action" value="save" id="save-button" class="btn btn-primary">保存需求</button><a class="btn btn-default" href="{% url 'ai_assistant:index' %}">取消</a></div>
+</form>
+<div id="generation-progress" class="alert alert-info" role="status" style="display:none"></div>
+</div>
+<script src="{% static 'ai_assistant/document_attributes.js' %}" defer></script>
+<script src="{% static 'ai_assistant/requirement_form.js' %}"></script>
+<script src="{% static 'ai_assistant/document_editor.js' %}" defer></script>
+{% endblock %}

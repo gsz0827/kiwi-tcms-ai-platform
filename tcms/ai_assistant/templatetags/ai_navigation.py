@@ -101,12 +101,12 @@ def _build_resource_browser(
             unfiled_items.append(item)
 
     folder_nodes = _folder_tree(folders, folder_items)
-    if resource_type in {"case", "web_case", "api_case"}:
+    if resource_type in {"requirement", "case", "web_case", "api_case"}:
         from tcms.ai_assistant.case_directories import can_manage_folder
         managed_folder_nodes = [node for node in folder_nodes if can_manage_folder(request.user, node)]
     else:
         managed_folder_nodes = folder_nodes
-    can_manage = (resource_type in {"web_case", "api_case"} and not roles.is_read_only(request.user)) or resource_type == "requirement" or (resource_type not in {"web_case", "api_case"} and request.user.has_perm(
+    can_manage = (resource_type in {"web_case", "api_case"} and not roles.is_read_only(request.user)) or (resource_type == "requirement" and request.user.is_active and roles.member_products(request.user).exists() and not roles.is_read_only(request.user)) or (resource_type not in {"requirement", "web_case", "api_case"} and request.user.has_perm(
         {
             "case": "testcases.change_testcase",
             "plan": "testplans.change_testplan",
@@ -146,7 +146,8 @@ def _build_resource_browser(
         "folder_nodes": folder_nodes,
         "managed_folder_nodes": managed_folder_nodes,
         "folders": folders,
-        "products": Product.objects.order_by("name"),
+        "products": (roles.requirement_directory_products(request.user) if resource_type == "requirement"
+                     else Product.objects.all()).order_by("name"),
         "can_manage": can_manage,
         "default_product_id": folder_product.pk if folder_product is not None else None,
         "total": total,
@@ -341,7 +342,7 @@ NAV_SECTIONS = TEST_NAV_SECTIONS + (
                 ),
             },
             {
-                "label": "质量趋势",
+                "label": "报告趋势",
                 "icon": "fa-line-chart",
                 "url": "ai_assistant:report_trends",
                 "names": ("ai_assistant:report_trends",),
@@ -355,9 +356,9 @@ NAV_SECTIONS = TEST_NAV_SECTIONS + (
             {
                 "label": "缺陷与复测",
                 "icon": "fa-refresh",
-                "url": "ai_assistant:dashboard",
-                "anchor": "defect-management",
+                "url": "ai_assistant:defect_workspace",
                 "names": (
+                    "ai_assistant:defect_workspace",
                     "ai_assistant:execution_defect",
                     "ai_assistant:edit_defect_draft",
                     "ai_assistant:link_defect_draft",
@@ -417,37 +418,24 @@ NAV_SECTIONS = TEST_NAV_SECTIONS + (
         "icon": "fa-cog",
         "items": (
             {
-                "label": "项目配置",
+                "label": "项目管理",
                 "icon": "fa-cog",
                 "url": "ai_assistant:project_settings",
                 "names": (
                     "ai_assistant:project_settings",
+                    "ai_assistant:project_detail",
                     "ai_assistant:create_product",
                 ),
             },
             {
-                "label": "AI 模型配置",
-                "icon": "fa-key",
-                "url": "ai_assistant:model_settings",
-                "names": (
-                    "ai_assistant:model_settings",
-                    "ai_assistant:edit_model_config",
-                    "ai_assistant:activate_model_config",
-                    "ai_assistant:test_model_config",
-                ),
-            },
-            {
-                "label": "AI 调用记录",
-                "icon": "fa-list-alt",
-                "url": "ai_assistant:usage_logs",
-                "names": ("ai_assistant:usage_logs",),
-            },
-            {
-                "label": "AI 规则包",
+                "label": "AI 测试规则",
                 "icon": "fa-file-text-o",
                 "url": "ai_assistant:instruction_profiles",
                 "names": (
                     "ai_assistant:instruction_profiles",
+                    "ai_assistant:instruction_profile_new",
+                    "ai_assistant:instruction_profile_history",
+                    "ai_assistant:instruction_profile_publish",
                     "ai_assistant:edit_instruction_profile",
                     "ai_assistant:toggle_instruction_profile",
                 ),

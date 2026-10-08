@@ -105,6 +105,10 @@ def submit(request, product_id=None, pk=None):
         request.POST if request.method == "POST" else None, owner=request.user, product=product,
         initial=initial,
     )
+    is_debug_rerun = source is not None and source.execution_mode in ("formal", "debug")
+    if is_debug_rerun:
+        for field in ("test_run", "passed_status", "failed_status"):
+            form.fields.pop(field, None)
     if request.method == "POST" and form.is_valid():
         try:
             run = submit_run(request.user, product, form.cleaned_data, source_run=source)
@@ -114,7 +118,7 @@ def submit(request, product_id=None, pk=None):
             return redirect("ai_assistant:api_report", pk=run.pk)
     return render(request, "ai_assistant/api/form.html", {
         "form": form, "product": product, "back_url": return_url(request, home_url(product, 'runs')),
-        "title": "重新执行接口测试" if source else "执行接口测试", "is_execution": True,
+        "title": "重新执行接口测试（调试）" if is_debug_rerun else ("重新执行接口测试" if source else "执行接口测试"), "is_execution": True,
         "source_run": source,
         "environment_previews": {str(env.pk): {"name": env.name, "base_url": env.base_url, "timeout": env.timeout}
                                  for env in form.fields["environment"].queryset},
@@ -132,7 +136,13 @@ def report(request, pk):
         result.request_display = json.dumps(result.request_summary, ensure_ascii=False, indent=2)
     from .execution_results import result_context
     from .roles import is_read_only
+    frozen = json.loads(decrypt_api_key(run.snapshot_encrypted))
+    mode = run.execution_mode
+    can_publish = mode in ("formal", "legacy") and bool(frozen.get("cases")) and all(
+        row.get("test_case_id") for row in frozen.get("cases", []))
     return render(request, "ai_assistant/api/report.html", {
+        "frozen_context": frozen.get("execution_context", {}), "can_publish": can_publish,
+        "execution_mode_label": {"formal": "正式执行", "debug": "调试执行", "legacy": "历史／集成执行"}.get(mode, "方式未知"),
         **result_context('api', run, results), "can_write": not is_read_only(request.user),
         "run": run, "results": results, "counts": counts,
         "finished": len(results) - counts["pending"], "total": len(results),

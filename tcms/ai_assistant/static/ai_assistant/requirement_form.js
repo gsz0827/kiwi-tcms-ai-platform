@@ -22,7 +22,11 @@
         submittedForm.querySelectorAll('button[type="submit"]').forEach(function (button) {
             button.disabled = true;
         });
-        document.getElementById("generation-progress").style.display = "block";
+        var progress = document.getElementById("generation-progress");
+        if (progress) {
+            progress.textContent = action === "save" ? "正在保存需求……" : "正在提交任务……";
+            progress.style.display = "block";
+        }
     }
 
     window.addEventListener("pageshow", function (event) {
@@ -31,8 +35,8 @@
 
     if (form) {
         form.addEventListener("submit", function (event) {
-            var clickedButton = event.submitter || generateButton;
-            showProgress(event, clickedButton.value || "generate");
+            var clickedButton = event.submitter || document.getElementById("save-button") || generateButton;
+            showProgress(event, clickedButton ? clickedButton.value : "save");
         });
     }
     var analysisForms = document.querySelectorAll(".analysis-generation-form");

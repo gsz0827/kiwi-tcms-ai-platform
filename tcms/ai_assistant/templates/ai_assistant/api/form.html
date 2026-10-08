@@ -8,4 +8,5 @@
 {% if is_execution %}{% include 'ai_assistant/automation/api_preflight.html' %}{% endif %}
 {% if automation_access.can_write %}<div class="automation-form-actions"><button class="btn btn-primary" type="submit">{% if is_execution %}确认执行{% else %}保存{% endif %}</button><a class="btn btn-default" href="{{ back_url }}">取消</a></div>{% endif %}
 </fieldset></form>{% if environment_summary %}{{ environment_previews|json_script:'automation-environment-previews' }}{% endif %}<script src="{% static 'ai_assistant/automation_editor.js' %}" defer></script>
+<script src="{% static 'ai_assistant/request_tabs.js' %}" defer></script>
 {% endblock %}

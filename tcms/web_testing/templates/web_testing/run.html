@@ -1,4 +1,4 @@
-{% extends "web_testing/base.html" %}{% load ui_labels %}{% load static tz allure_reports %}
+{% extends "web_testing/base.html" %}{% load ui_labels %}{% load static tz allure_reports %}{% load display_time %}
 {% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/execution_results.css' %}">{% endblock %}
 {% block workspace %}
 <section class="api-card execution-overview">

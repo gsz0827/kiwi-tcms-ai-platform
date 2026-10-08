@@ -34,7 +34,7 @@ class LibraryEditActionTests(TestCase):
         self.assertNotContains(page, "AI 生成测试用例")
         self.assertContains(page, 'class="scenario-list-toolbar"')
         self.assertContains(
-            self.client.get(reverse("ai_assistant:index"), secure=True), "生成测试用例"
+            self.client.get(reverse("ai_assistant:index"), secure=True), "新建需求"
         )
 
     def test_edit_links_are_in_table_modal_and_offpage_preview(self):

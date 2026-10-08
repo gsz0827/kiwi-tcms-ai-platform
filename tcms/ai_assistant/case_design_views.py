@@ -77,14 +77,19 @@ def design(request, pk):
                                 reverse("ai_assistant:case_design", args=[source.pk])
                                 + "#design-drafts"
                             )
-                        job, _created = enqueue_ai_job(
-                            request.user,
-                            "test_case_generation",
-                            {"request_id": source.pk, "design_context": context},
-                            model_config=config,
-                            dedupe_key=f"design:{source.pk}:{context['fingerprint']}",
-                        )
-                        return redirect("ai_assistant:job_detail", pk=job.pk)
+                        try:
+                            job, _created = enqueue_ai_job(
+                                request.user,
+                                "test_case_generation",
+                                {"request_id": source.pk, "design_context": context,
+                                 "additional_instructions": form.cleaned_data["additional_instructions"]},
+                                model_config=config,
+                                dedupe_key=f"design:{source.pk}:{context['fingerprint']}",
+                            )
+                        except ValueError as exc:
+                            form.add_error(None, str(exc))
+                        else:
+                            return redirect("ai_assistant:job_detail", pk=job.pk)
             else:
                 form.add_error(None, "请选择生成或人工编写用例。")
     return render(

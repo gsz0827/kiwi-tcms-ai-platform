@@ -10,7 +10,12 @@ FROM python:3.12-bookworm AS python-deps
 RUN python -m venv /venv
 ENV PATH=/venv/bin:$PATH
 COPY requirements /requirements
-RUN pip install --no-cache-dir -r /requirements/mariadb.txt
+ARG PIP_DEFAULT_TIMEOUT=120
+ARG PIP_RETRIES=5
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --timeout ${PIP_DEFAULT_TIMEOUT} --retries ${PIP_RETRIES} \
+    --index-url ${PIP_INDEX_URL} -r /requirements/mariadb.txt
 
 FROM python:3.12-slim-bookworm AS application
 ARG DEBIAN_MIRROR=https://deb.debian.org
@@ -44,7 +49,12 @@ CMD ["bash", "/Kiwi/deployment/start-web.sh"]
 FROM application AS test
 ENV LANG=en_US.UTF-8
 USER root
-RUN pip install --no-cache-dir -r requirements/ai-test.txt
+ARG PIP_DEFAULT_TIMEOUT=120
+ARG PIP_RETRIES=5
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --timeout ${PIP_DEFAULT_TIMEOUT} --retries ${PIP_RETRIES} \
+    --index-url ${PIP_INDEX_URL} -r requirements/ai-test.txt
 USER 1001
 
 FROM application AS runtime

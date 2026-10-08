@@ -1,3 +1,4 @@
+{% load static %}
 {% if show_switcher %}
 <li class="dropdown">
     <a href="#" class="dropdown-toggle" data-toggle="dropdown" id="ai-project-menu">
@@ -8,11 +9,11 @@
     </a>
     <ul class="dropdown-menu" aria-labelledby="ai-project-menu" style="width:320px;padding:15px">
         <li>
-            <form method="post" action="{% url 'ai_assistant:set_project_context' %}">
+            <form id="project-switch-form" method="post" action="{% url 'ai_assistant:set_project_context' %}">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <div class="form-group">
-                    <label for="ai-project-product">项目（项目）</label>
+                    <label for="ai-project-product">项目</label>
                     <select id="ai-project-product" name="product" class="form-control">
                         <option value="">全部项目</option>
                         {% for product in products %}
@@ -34,4 +35,5 @@
         </li>
     </ul>
 </li>
+<script src="{% static 'ai_assistant/project_switch_guard.js' %}?v=1" defer></script>
 {% endif %}

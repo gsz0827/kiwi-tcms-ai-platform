@@ -1,11 +1,11 @@
 from django.urls import path
-from . import regression_tasks
+from . import regression_tasks, defect_workspace, requirement_actions, project_rule_views, project_management
 
 from . import views, scenario_workflow, scenario_adoption, case_design_views, task_details
 from . import task_assignee_views, document_options, source_review_views
 from . import api_views
 from . import api_ai_views, case_hub, case_hub_actions, saved_case_views, case_tree_actions
-from . import api_suite_views, case_library, automation_archive, case_directories
+from . import api_suite_views, case_library, automation_archive, case_directories, api_workflow
 
 
 from . import postman_views
@@ -43,6 +43,7 @@ urlpatterns = [
     path("api-testing/products/<int:product_id>/suites/new/", api_suite_views.suite_edit, name="api_suite_new"),
     path("api-testing/products/<int:product_id>/suites/<int:pk>/edit/", api_suite_views.suite_edit, name="api_suite_edit"),
     path("api-testing/suites/<int:pk>/", api_suite_views.suite_detail, name="api_suite"),
+    path("api-testing/suites/<int:pk>/execute/", api_workflow.submit, name="api_suite_submit"),
     path("api-testing/suites/<int:pk>/actions/<str:action>/", api_suite_views.suite_action, name="api_suite_action"),
     path("api-testing/ci/suites/<int:pk>/runs/", api_suite_views.ci_runs, name="api_ci_submit"),
     path("api-testing/ci/suites/<int:pk>/runs/<uuid:run_id>/", api_suite_views.ci_runs, name="api_ci_run"),
@@ -54,7 +55,11 @@ urlpatterns = [
     path("api-testing/ai-requests/<int:pk>/", api_ai_views.detail, name="api_ai_detail"),
     path("api-testing/ai-requests/<int:pk>/import/", api_ai_views.import_selected, name="api_ai_import"),
     path("api-testing/ai-drafts/<int:pk>/review/", api_ai_views.review, name="api_ai_review"),
-    path("project-settings/", views.project_settings, name="project_settings"),
+    path("project-settings/", project_management.listing, name="project_settings"),
+    path("project-settings/<int:pk>/", project_management.detail, name="project_detail"),
+    path("instruction-profiles/new/", project_rule_views.edit, name="instruction_profile_new"),
+    path("instruction-profiles/<int:pk>/history/", project_rule_views.history, name="instruction_profile_history"),
+    path("instruction-profiles/<int:pk>/publish/", project_rule_views.publish, name="instruction_profile_publish"),
     path("api-testing/", api_views.home, name="api_home"),
     path("api-testing/products/<int:product_id>/environments/new/", api_views.environment_edit, name="api_environment_new"),
     path("api-testing/products/<int:product_id>/environments/<int:pk>/", api_views.environment_edit, name="api_environment_edit"),
@@ -68,8 +73,11 @@ urlpatterns = [
     path("api-testing/reports/<uuid:pk>/cancel/", api_views.cancel, name="api_cancel"),
     path("api-testing/reports/<uuid:pk>/rerun/", api_views.submit, name="api_rerun"),
     path("api-testing/reports/<uuid:pk>/export/", api_views.export_report, name="api_export"),
+    path("requests/new/", views.index, name="requirement_new"),
+    path("requests/<int:pk>/analyze/", requirement_actions.analyze, name="analyze_saved_requirement"),
     path("", views.index, name="index"),
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("defects/", defect_workspace.index, name="defect_workspace"),
     path(
         "project-context/",
         views.set_project_context,
@@ -150,15 +158,15 @@ urlpatterns = [
     path("reviews/<int:pk>/apply/", views.apply_review, name="apply_review"),
     path("models/", views.model_settings, name="model_settings"),
     path("products/create/", views.create_product, name="create_product"),
-    path("instruction-profiles/", views.instruction_profiles, name="instruction_profiles"),
+    path("instruction-profiles/", project_rule_views.index, name="instruction_profiles"),
     path(
         "instruction-profiles/<int:pk>/edit/",
-        views.edit_instruction_profile,
+        project_rule_views.edit,
         name="edit_instruction_profile",
     ),
     path(
         "instruction-profiles/<int:pk>/toggle/",
-        views.toggle_instruction_profile,
+        project_rule_views.toggle,
         name="toggle_instruction_profile",
     ),
     path("usage/", views.usage_logs, name="usage_logs"),

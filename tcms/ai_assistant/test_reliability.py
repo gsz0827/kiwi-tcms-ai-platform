@@ -44,8 +44,8 @@ class SubmissionFixtures:
 
 class RequirementSubmissionTests(SubmissionFixtures, TestCase):
     def test_page_supplies_a_new_token_and_external_script(self):
-        first = self.client.get(reverse("ai_assistant:index"), secure=True)
-        second = self.client.get(reverse("ai_assistant:index"), secure=True)
+        first = self.client.get(reverse("ai_assistant:requirement_new"), secure=True)
+        second = self.client.get(reverse("ai_assistant:requirement_new"), secure=True)
         self.assertNotEqual(
             first.context["form"]["submission_token"].value(),
             second.context["form"]["submission_token"].value(),

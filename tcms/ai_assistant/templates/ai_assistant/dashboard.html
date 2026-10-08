@@ -8,9 +8,9 @@
 {% block ai_contents %}
 <div class="container-fluid">
     <div class="clearfix">
-        <h1 class="pull-left">AI 测试质量看板</h1>
+        <h1 class="pull-left">测试质量看板</h1>
     </div>
-    <p class="text-muted">汇总项目内成员互相可见的 AI 需求、分析、缺陷草稿、测试报告和缺陷复测记录。</p>
+    <p class="text-muted">正式执行结果与 AI 分析分别统计，调试执行不计入发布质量。</p>
 
     <form method="get" class="well form-inline">
         <strong>项目筛选：</strong>
@@ -36,8 +36,19 @@
         <a class="btn btn-link" href="{% url 'ai_assistant:dashboard' %}?scope=all">清除</a>
     </form>
 
-    {# 阶段记录完整度 #}
-    <div class="panel panel-primary">
+    <h2>正式执行</h2>
+    <div class="dash-metrics">
+        <div class="dash-metric"><small>执行任务</small><strong>{{ execution_metrics.tasks }}</strong></div>
+        <div class="dash-metric"><small>执行项</small><strong>{{ execution_metrics.total }}</strong></div>
+        <div class="dash-metric"><small>通过</small><strong>{{ execution_metrics.passed }}</strong></div>
+        <div class="dash-metric"><small>失败</small><strong>{{ execution_metrics.failed }}</strong></div>
+        <div class="dash-metric"><small>未执行</small><strong>{{ execution_metrics.pending }}</strong></div>
+        <div class="dash-metric"><small>已执行项通过率</small><strong>{% if execution_metrics.pass_rate is not None %}{{ execution_metrics.pass_rate }}%{% else %}—{% endif %}</strong></div>
+    </div>
+    <p class="text-muted">按当前可见的正式执行记录统计，自动化结果确认回写后计入。未执行项不计通过。{% if not selected_version and not selected_plan %}我的独立自动化调试任务：{{ execution_metrics.diagnostic_tasks }}。{% endif %}</p>
+    <details class="panel panel-default">
+    <summary class="panel-heading">阶段记录完整度</summary>
+    <div>
         <div class="panel-heading"><strong>阶段记录完整度：{{ closed_loop_score }}%</strong></div>
         <div class="panel-body">
             <div class="progress" style="margin-bottom:15px">
@@ -65,6 +76,7 @@
         </div>
     </div>
 
+    </details>
     {# 缺陷三项统计 #}
     <div class="dash-defect-cards">
         <div class="dash-card">
@@ -93,12 +105,13 @@
         </div>
     </div>
 
+    <h2>需求与 AI 辅助记录</h2>
     {# 核心指标卡 #}
     <div class="dash-metrics">
         <div class="dash-metric"><small>需求</small><strong>{{ metrics.requirements }}</strong></div>
         <div class="dash-metric"><small>用例草稿 / 已导入</small><strong>{{ metrics.drafts }} / {{ metrics.imported }}</strong></div>
         <div class="dash-metric"><small>已分析运行</small><strong>{{ metrics.runs }}</strong></div>
-        <div class="dash-metric"><small>失败执行</small><strong>{{ metrics.failures }}</strong></div>
+        <div class="dash-metric"><small>AI 分析快照中的失败项</small><strong>{{ metrics.failures }}</strong></div>
         <div class="dash-metric"><small>缺陷草稿 / 已关联</small><strong>{{ metrics.defect_drafts }} / {{ metrics.linked_defects }}</strong></div>
         <div class="dash-metric"><small>报告 / 复测</small><strong>{{ metrics.reports }} / {{ metrics.regressions }}</strong></div>
     </div>
@@ -130,7 +143,7 @@
                     <p><span class="label label-danger">失败</span> {{ regression_counts.failed }} 次</p>
                     <p><span class="label label-warning">未完成</span> {{ regression_counts.incomplete }} 次</p>
                     <hr>
-                    <p>AI 调用：<strong>{{ metrics.calls }}</strong> 次</p>
+                    <p class="text-muted">以下为当前账号累计调用，不受项目筛选影响。</p><p>AI 调用：<strong>{{ metrics.calls }}</strong> 次</p>
                     <p>累计 Token：<strong>{{ metrics.tokens }}</strong></p>
                 </div>
             </div>

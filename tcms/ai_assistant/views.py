@@ -55,7 +55,7 @@ from .models import (
     ProjectResourceAssignment,
     ProjectResourceFolder,
 )
-from . import roles
+from . import roles, audit
 from .edit_safety import guard_edit, valid_edit
 from .source_review_views import task_content, mark_task_cases
 from .project_context import return_url as project_return_url
@@ -135,6 +135,8 @@ def _resource_browser_redirect(request, resource_type=None):
 
 
 def _require_folder_management_permission(user, resource_type, product=None):
+    if not user.is_authenticated or not user.is_active:
+        raise PermissionDenied
     if resource_type in {"case", "case_group", "web_case", "api_case", "plan", "run"} and roles.is_read_only(user):
         raise PermissionDenied
     if resource_type == "case_group":
@@ -147,6 +149,8 @@ def _require_folder_management_permission(user, resource_type, product=None):
             raise PermissionDenied
         return
     if resource_type == "requirement":
+        if not roles.can_manage_requirement_directories(user, product):
+            raise PermissionDenied
         return
     permission = RESOURCE_FOLDER_PERMISSIONS.get(resource_type)
     if permission is None or not user.has_perm(permission):
@@ -170,6 +174,7 @@ def _resource_for_assignment(user, resource_type, object_id):
             pk=object_id,
         )
         product = resource.category.product if resource.category_id else None
+        _require_folder_management_permission(user, resource_type, product)
         return resource, product
 
     if resource_type == "case":
@@ -287,7 +292,11 @@ def delete_resource_folder(request, pk):
     folder = get_object_or_404(ProjectResourceFolder, pk=pk)
     resource_type = folder.resource_type
     _require_folder_management_permission(request.user, resource_type, folder.product)
+    deleted_target = ("ai_assistant.ProjectResourceFolder", folder.pk)
+    detail = {"name": folder.name, "resource_type": folder.resource_type}
+    product = folder.product
     folder.delete()
+    audit.record(request, "folder_delete", target=deleted_target, product=product, detail=detail)
     messages.success(
         request,
         "共享目录已删除，用例已回到所属项目根目录。"
@@ -363,7 +372,9 @@ def job_detail(request, pk):
     job = get_object_or_404(
         AIJob.objects.select_related("model_config"), pk=pk, owner=request.user
     )
-    return render(request, "ai_assistant/job_detail.html", {"job": job})
+    return render(request, "ai_assistant/job_detail.html", {"job": job,
+        "rules_used": job.payload.get("rules_snapshot", {}).get(job.operation, []),
+        "has_rules_snapshot": "rules_snapshot" in job.payload})
 
 
 @login_required
@@ -444,10 +455,10 @@ def retry_job(request, pk):
 def set_project_context(request):
     product_id = request.POST.get("product", "")
     version_id = request.POST.get("version", "")
-    product = Product.objects.filter(pk=product_id).first() if product_id.isdigit() else None
+    product = Product.objects.filter(pk=product_id).first() if product_id.isdecimal() and len(product_id) <= 18 else None
     version = (
         Version.objects.select_related("product").filter(pk=version_id).first()
-        if version_id.isdigit()
+        if version_id.isdecimal() and len(version_id) <= 18
         else None
     )
     if product_id and product is None:
@@ -469,7 +480,7 @@ def set_project_context(request):
         request.session["ai_version_id"] = version.pk
     else:
         request.session.pop("ai_version_id", None)
-    messages.success(request, "项目视图已切换。")
+    messages.success(request, f"已进入“{product.name}”工作台。" if product else "已进入全部项目工作台。")
     return redirect(project_return_url(request, product, version, update_filters=True))
 
 
@@ -512,6 +523,12 @@ def dashboard(request):
     request_query = roles.visible_requests(request.user)
     if product_id:
         request_query = request_query.filter(category__product_id=product_id)
+    if version_id:
+        request_query = request_query.filter(target_version_id=version_id)
+    if plan_id:
+        request_query = request_query.filter(
+            drafts__imported_case_id__in=TestPlan.objects.filter(pk=plan_id).values("cases")
+        ).distinct()
     ai_requests = list(
         request_query
         .select_related("category", "category__product")
@@ -584,6 +601,16 @@ def dashboard(request):
         verification_query = verification_query.filter(
             Q(source_report__test_run__plan__product_id=product_id)
             | Q(defect_draft__execution__run__plan__product_id=product_id)
+        )
+    if version_id:
+        verification_query = verification_query.filter(
+            Q(source_report__test_run__build__version_id=version_id)
+            | Q(defect_draft__execution__run__build__version_id=version_id)
+        )
+    if plan_id:
+        verification_query = verification_query.filter(
+            Q(source_report__test_run__plan_id=plan_id)
+            | Q(defect_draft__execution__run__plan_id=plan_id)
         )
     verifications = list(
         verification_query
@@ -761,6 +788,8 @@ def dashboard(request):
         for name, complete in zip(stage_names, stage_flags)
     ]
     closed_loop_score = round(sum(stage_flags) * 100 / len(stage_flags))
+    from .quality_metrics import execution_metrics
+    actual_metrics = execution_metrics(request.user, product_id, version_id, plan_id)
 
     return render(
         request,
@@ -773,6 +802,7 @@ def dashboard(request):
             "pending_actions": pending_actions[:50],
             "stages": stages,
             "closed_loop_score": closed_loop_score,
+            "execution_metrics": actual_metrics,
             "metrics": {
                 "requirements": len(ai_requests),
                 "drafts": draft_total,
@@ -1123,18 +1153,20 @@ def index(request):
         owner=request.user, is_active=True
     ).first()
 
+    is_new = request.resolver_match.url_name == "requirement_new"
     if request.method == "POST":
-        if active_config is None:
+        if not roles.can_submit_requirement(request.user):
+            raise PermissionDenied
+        if active_config is None and request.POST.get("action", "save" if is_new else "generate") != "save":
             messages.warning(request, "请先配置一个 AI 模型并设为默认，再使用 AI 助手。")
             return redirect("ai_assistant:model_settings")
 
         form = AIRequestForm(request.POST, user=request.user)
         if form.is_valid():
-            action = request.POST.get("action", "generate")
-            operation = (
-                "requirement_analysis" if action == "analyze" else "test_case_generation"
-            )
-            if action not in {"analyze", "generate"}:
+            action = request.POST.get("action", "save" if is_new else "generate")
+            operation = {"save": "save", "analyze": "requirement_analysis",
+                         "generate": "test_case_generation"}.get(action)
+            if action not in {"save", "analyze", "generate"}:
                 form.add_error(None, "不支持的需求处理操作。")
             else:
                 try:
@@ -1144,6 +1176,9 @@ def index(request):
                 except (ValueError, RuntimeError) as exc:
                     form.add_error(None, str(exc))
                 else:
+                    if action == "save":
+                        messages.success(request, "需求已保存。" if created else "需求已保存，已打开原记录。")
+                        return redirect("ai_assistant:requirement_trace", pk=job.pk)
                     if created:
                         messages.success(request, "AI 任务已提交到后台，可安全离开或刷新页面。")
                     else:
@@ -1151,6 +1186,13 @@ def index(request):
                     return redirect("ai_assistant:job_detail", pk=job.pk)
     else:
         form = AIRequestForm(user=request.user)
+
+    if is_new or (request.method == "POST" and form.errors):
+        if not roles.can_submit_requirement(request.user):
+            raise PermissionDenied
+        return render(request, "ai_assistant/requirement_new.html", {
+            "form": form, "active_config": active_config, "can_submit": True,
+        })
 
     ai_requests = (
         roles.visible_requests(request.user)
@@ -1524,6 +1566,8 @@ def add_product_member(request):
         roles.set_user_roles(
             member, set(roles.roles_of(member)) | {role_name}
         )
+    audit.record(request, "member_add", target=member, product=product,
+        detail={"member": member.username, "role": role_name})
     messages.success(request, f"已把 {member.username} 加入「{product.name}」。")
     return redirect(target)
 
@@ -1544,6 +1588,7 @@ def remove_product_member(request, pk):
         messages.warning(request, "不能把自己移出项目，请让其他管理员操作。")
         return redirect(target)
     roles.remove_product_member(member, product)
+    audit.record(request, "member_remove", target=member, product=product, detail={"member": member.username})
     if not roles.member_products(member).exists():
         roles.set_user_roles(member, set())
     messages.success(request, f"已把 {member.username} 移出「{product.name}」。")
@@ -1566,7 +1611,10 @@ def set_member_roles(request, pk):
     if not roles.is_product_member(member, product):
         messages.error(request, "该账号不是这个项目的成员，请先添加成员。")
         return redirect(target)
+    before = sorted(roles.roles_of(member))
     roles.set_user_roles(member, selected)
+    audit.record(request, "role_change", target=member, product=product,
+        detail={"member": member.username, "before": before, "after": sorted(selected)})
     if selected:
         messages.success(
             request, f"{member.username} 的角色已更新为：{'、'.join(sorted(selected))}。"
@@ -1585,6 +1633,8 @@ def model_settings(request):
         if first_config:
             config.is_active = True
         config.save()
+        audit.record(request, "credential_update", target=config,
+            detail={"has_key_after": bool(config.api_key_encrypted)}, reason="新增个人模型配置")
         messages.success(request, f"模型配置“{config.name}”已保存。")
         return redirect("ai_assistant:model_settings")
 
@@ -1649,15 +1699,14 @@ def create_product(request):
         product = form.save(commit=False)
         product.classification = _default_classification()
         product.save()
+        roles.add_product_member(request.user, product)
         messages.success(
             request,
             f"项目“{product.name}”已创建，并已自动生成默认用例分类、版本和构建。",
         )
         if next_url:
             return redirect(next_url)
-        return redirect(
-            f"{reverse('ai_assistant:instruction_profiles')}?product={product.pk}"
-        )
+        return redirect("ai_assistant:project_detail", pk=product.pk)
     return render(
         request,
         "ai_assistant/create_product.html",
@@ -1704,6 +1753,8 @@ def edit_model_config(request, pk):
     )
     if request.method == "POST" and form.is_valid():
         config = form.save()
+        audit.record(request, "credential_update", target=config,
+            detail={"has_key_after": bool(config.api_key_encrypted)}, reason="更新个人模型配置")
         messages.success(request, f"模型配置“{config.name}”已更新。")
         return redirect("ai_assistant:model_settings")
     return render(
@@ -2207,6 +2258,7 @@ def approve_report(request, pk):
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
     if not roles.can_approve_report(request.user, report):
+        audit.denied(request, "report_approve", "没有报告审批权限", target=report, product=report.test_run.plan.product)
         raise PermissionDenied
     form = ReportApprovalForm(request.POST)
     if not form.is_valid():
@@ -2225,6 +2277,8 @@ def approve_report(request, pk):
     waived = False
     if decision == "approved" and not gate_result["passed"]:
         if not roles.can_manage_release_gate(request.user):
+            audit.record(request, "report_approve", target=report, product=report.test_run.plan.product,
+                result=audit.RESULT_DENIED, reason="发布门禁未通过，审批被拒绝")
             messages.error(
                 request,
                 "发布门禁未通过，不能直接批准。请修复阻断项，或由测试经理填写理由做风险放行。",
@@ -2234,6 +2288,8 @@ def approve_report(request, pk):
             return redirect("ai_assistant:edit_report", pk=report.pk)
         reason = (form.cleaned_data.get("waive_reason") or "").strip()
         if not reason:
+            audit.record(request, "report_gate_waive", target=report, product=report.test_run.plan.product,
+                result=audit.RESULT_FAILED, reason="风险放行必须填写理由")
             messages.error(request, "发布门禁未通过：风险放行必须填写理由。")
             report.release_decision = derived_release_decision(gate_result, "pending")
             report.save(update_fields=("gate_result", "release_decision", "updated"))
@@ -2281,6 +2337,10 @@ def approve_report(request, pk):
             )[:255],
             edited_by=request.user,
         )
+    audit.record(request, "report_gate_waive" if waived else "report_approve", target=report,
+        product=report.test_run.plan.product, reason=report.gate_waive_reason if waived else report.approval_comment,
+        detail={"decision": decision, "waived": waived, "report_version": report.version,
+                "snapshot_hash": report.snapshot_hash})
     if waived:
         messages.warning(request, f"已由测试经理风险放行并{report.get_approval_status_display()}。")
     else:
@@ -2310,6 +2370,8 @@ def evaluate_report_gate(request, pk):
         waived=report.gate_waived_at is not None,
     )
     report.save(update_fields=("gate_result", "release_decision", "updated"))
+    audit.record(request, "report_gate_evaluate", target=report, product=report.test_run.plan.product,
+        detail={"passed": report.gate_result["passed"]})
     messages.success(request, "发布门禁已按当前项目规则重新评估。")
     return redirect("ai_assistant:edit_report", pk=report.pk)
 
@@ -2323,6 +2385,7 @@ def export_report_html(request, pk):
         pk=pk,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
+    audit.record(request, "report_export", target=report, product=report.test_run.plan.product, detail={"format": "html", "version": report.version})
     response = render(request, "ai_assistant/report_export.html", {"report": report})
     response["Content-Disposition"] = f'attachment; filename="test-report-{report.pk}-v{report.version}.html"'
     return response
@@ -2337,6 +2400,7 @@ def export_report_pdf(request, pk):
         pk=pk,
     )
     _require_run_permission(request.user, "testruns.view_testrun", report.test_run)
+    audit.record(request, "report_export", target=report, product=report.test_run.plan.product, detail={"format": "pdf", "version": report.version})
     response = HttpResponse(make_chinese_pdf(render_report_lines(report)), content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="test-report-{report.pk}-v{report.version}.pdf"'
     return response
@@ -2346,8 +2410,9 @@ def export_report_pdf(request, pk):
 def release_gate_settings(request):
     """项目级发布门禁规则：一个项目一条，只有测试经理能维护。"""
     if not roles.can_manage_release_gate(request.user):
+        audit.denied(request, "release_gate_update", "没有维护门禁规则的权限")
         raise PermissionDenied
-    products = Product.objects.order_by("name")
+    products = roles.member_products(request.user).order_by("name")
     if request.method == "POST":
         # 一个项目一条规则：把已存在的那条作为 instance 交给表单。否则 ModelForm 的唯一性
         # 校验会把「这个项目已经有规则」判成重复，第二次保存会被静默拦成表单错误。
@@ -2356,10 +2421,15 @@ def release_gate_settings(request):
         if posted_product and str(posted_product).isdigit():
             existing = AIReleaseGateRule.objects.filter(product_id=int(posted_product)).first()
         form = AIReleaseGateRuleForm(request.POST, instance=existing)
+        form.fields["product"].queryset = products
+        before = {key: getattr(existing, key) for key in form._meta.fields} if existing else None
         if form.is_valid():
             rule = form.save(commit=False)
             rule.updated_by = request.user
             rule.save()
+            after = {key: getattr(rule, key) for key in form._meta.fields}
+            audit.record(request, "release_gate_update", target=rule, product=rule.product,
+                detail={"created": before is None, "changes": audit.changed_mapping(before, after)})
             messages.success(
                 request, f"“{rule.product.name}”的发布门禁规则已保存。"
             )
@@ -2380,9 +2450,10 @@ def release_gate_settings(request):
                     "is_active": existing.is_active,
                 }
         form = AIReleaseGateRuleForm(initial=initial)
+        form.fields["product"].queryset = products
     rules = {
         rule.product_id: rule
-        for rule in AIReleaseGateRule.objects.select_related("product", "updated_by")
+        for rule in AIReleaseGateRule.objects.filter(product__in=products).select_related("product", "updated_by")
     }
     return render(
         request,

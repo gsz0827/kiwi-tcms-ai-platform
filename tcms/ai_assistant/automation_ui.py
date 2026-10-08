@@ -91,6 +91,8 @@ def api_list_context(request):
     if tab == "cases":
         items = automation_cases(request.user, "api_case", product, data).select_related("test_case")
     elif tab == "runs":
+        from .run_outcomes import annotate_outcomes
+        items = annotate_outcomes(items)
         items = items.select_related("suite", "test_run__plan", "test_run__build__version").annotate(
             result_total=Count("results"),
             result_finished=Count("results", filter=~Q(results__status="pending")),

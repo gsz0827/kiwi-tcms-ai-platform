@@ -106,3 +106,7 @@
 .document-form-extra > div { margin-top:20px; }
 .document-form-properties .form-group:last-child { margin-bottom:0; }
 .document-prose li { margin:6px 0; line-height:1.8; }
+
+/* Keep the independent requirement form aligned with the other create pages. */
+.document-workspace > .automation-page-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+.document-workspace > .automation-page-header h1 { margin:0; font-size:28px; font-weight:600; }

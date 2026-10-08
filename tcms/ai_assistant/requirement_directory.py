@@ -55,6 +55,8 @@ def requirement_browser(request, queryset, selected_product):
 
     nodes = []
     writable = request.user.is_active and not roles.is_read_only(request.user)
+    manageable_products = {product.pk for product in products
+                           if roles.can_manage_requirement_directories(request.user, product)}
 
     def append_items(product_id, folder_id, ancestors, path):
         for item in grouped.get((product_id, folder_id), ()):
@@ -72,7 +74,7 @@ def requirement_browser(request, queryset, selected_product):
                     "search": full_path,
                     "path": full_path,
                     "product_id": product_id,
-                    "can_move": writable and product_id is not None,
+                    "can_move": writable and product_id in manageable_products,
                 }
             )
 
@@ -91,7 +93,7 @@ def requirement_browser(request, queryset, selected_product):
                 "path": product.name,
                 "search": product.name,
                 "has_children": has_children,
-                "can_create": writable,
+                "can_create": product.pk in manageable_products,
                 "url": reverse("ai_assistant:index") + f"?product={product.pk}",
             }
         )

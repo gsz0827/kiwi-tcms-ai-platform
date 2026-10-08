@@ -1,23 +1,12 @@
-{% extends "ai_assistant/base_ai.html" %}{% load ui_labels %}
-
-{% block ai_contents %}
-<div class="container">
-    <p><a href="{% url 'ai_assistant:project_settings' %}">返回项目配置</a></p>
-    <h1>编辑 AI 规则包</h1>
-    <p class="text-muted">{{ profile.name }} 当前为 V{{ profile.version }}。修改内容后会自动递增版本。</p>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.non_field_errors }}
-        {% for field in form %}
-            <div class="form-group">
-                <label>{{ field.label|ui_term }}</label>
-                {{ field }}
-                {% if field.help_text %}<p class="help-block">{{ field.help_text }}</p>{% endif %}
-                {{ field.errors }}
-            </div>
-        {% endfor %}
-        <button type="submit" class="btn btn-primary">保存新版本</button>
-        <a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">取消</a>
-    </form>
-</div>
+{% extends 'ai_assistant/api/base.html' %}
+{% load static %}
+{% block head %}{{ block.super }}<link rel="stylesheet" href="{% static 'ai_assistant/project_admin.css' %}">{% endblock %}
+{% block title %}{% if profile %}查看与编辑{% else %}新建{% endif %} AI 测试规则{% endblock %}
+{% block api_content %}
+<header class="api-header"><div><h1>{% if profile %}{{ profile.name }}{% else %}新建 AI 测试规则{% endif %}</h1>{% if profile %}<p>V{{ profile.version }} · {% if published %}项目共享{% else %}保留的旧规则{% endif %}</p>{% endif %}</div><a class="btn btn-default" href="{% url 'ai_assistant:instruction_profiles' %}">返回规则列表</a></header>
+<form method="post">{% csrf_token %}{{ form.version }}{{ form.non_field_errors }}
+<section class="api-card"><header><h2>基本信息</h2></header><div class="api-result-body"><div class="form-group">{{ form.product.label_tag }}{{ form.product }}{{ form.product.errors }}</div><div class="form-group">{{ form.name.label_tag }}{{ form.name }}{{ form.name.errors }}</div><div class="form-group">{{ form.description.label_tag }}{{ form.description }}{{ form.description.errors }}</div><div class="form-group">{{ form.operation.label_tag }}{{ form.operation }}</div><label>{{ form.is_active }} 启用规则</label></div></section>
+<section class="api-card"><header><h2>测试规则</h2></header><div class="api-result-body rules-fields"><div class="form-group">{{ form.glossary.label_tag }}{{ form.glossary }}{{ form.glossary.errors }}</div><div class="form-group">{{ form.focus.label_tag }}{{ form.focus }}{{ form.focus.errors }}</div><div class="form-group">{{ form.conventions.label_tag }}{{ form.conventions }}{{ form.conventions.errors }}</div><div class="form-group">{{ form.boundaries.label_tag }}{{ form.boundaries }}{{ form.boundaries.errors }}</div>{% if form.show_legacy %}<details open><summary>原有规则内容</summary>{{ form.legacy }}{{ form.legacy.errors }}</details>{% endif %}</div></section>
+{% if editable %}<button class="btn btn-primary" type="submit">保存规则</button>{% endif %}{% if profile %} <a href="{% url 'ai_assistant:instruction_profile_history' profile.pk %}">版本历史</a>{% endif %}
+</form>
 {% endblock %}

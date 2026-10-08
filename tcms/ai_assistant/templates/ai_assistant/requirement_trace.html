@@ -1,4 +1,4 @@
-{% extends 'ai_assistant/base_ai.html' %}{% load ui_labels %}
+{% extends 'ai_assistant/base_ai.html' %}{% load ui_labels %}{% load display_time %}
 {% load static extra_filters tz %}
 {% block title %}需求详情 · {{ ai_request.title }}{% endblock %}
 {% block ai_contents %}
@@ -29,7 +29,8 @@
             <section class="document-paper" id="requirement-history" role="tabpanel" aria-labelledby="requirement-history-tab" data-document-panel hidden><h2 class="document-section-title">变更记录</h2><div class="table-responsive"><table class="table document-table"><thead><tr><th>需求修订</th><th>变更说明</th><th>修改人</th><th>时间</th></tr></thead><tbody>{% for version in ai_request.versions.all %}<tr><td>V{{ version.version }}</td><td>{{ version.change_summary }}<details class="document-history-snapshot"><summary>内容快照</summary><p>目标项目版本：{{ version.attributes.target_version|default:'未指定' }} · 需求状态：{% if version.attributes.status == 'draft' %}草稿{% elif version.attributes.status == 'confirmed' %}已确认{% elif version.attributes.status == 'doing' %}进行中{% elif version.attributes.status == 'done' %}已完成{% else %}—{% endif %}</p>{% include 'ai_assistant/_document_sections.html' with document=version %}</details></td><td>{{ version.changed_by|default:'—' }}</td><td>{{ version.created|timezone:display_time_zone|date:'Y-m-d H:i' }}</td></tr>{% empty %}<tr><td colspan="4" class="document-empty">暂无变更记录</td></tr>{% endfor %}</tbody></table></div></section>
             <section class="document-paper" id="analysis" role="tabpanel" aria-labelledby="analysis-tab" data-document-panel hidden>
                 <div id="generation-progress" class="alert alert-info" role="status" style="display:none">正在提交任务……</div>
-                {% if ai_request.skill_snapshot.requirement_analysis %}<details><summary>AI 规则包</summary>{% for profile in ai_request.skill_snapshot.requirement_analysis %}{{ profile.name }} v{{ profile.version }}{% if not forloop.last %}、{% endif %}{% endfor %}</details>{% endif %}
+                {% if can_design %}<form method="post" action="{% url 'ai_assistant:analyze_saved_requirement' ai_request.pk %}">{% csrf_token %}<input type="hidden" name="source_version" value="{{ ai_request.version }}"><details><summary>本次补充要求（可选）</summary><textarea name="additional_instructions" class="form-control" rows="3" maxlength="4000" aria-label="本次补充要求"></textarea></details><button type="submit" class="btn btn-primary"{% if not active_config %} disabled{% endif %}>{% if ai_request.analysis %}重新分析需求{% else %}分析需求{% endif %}</button>{% if not active_config %} <a href="{% url 'ai_assistant:model_settings' %}">配置 AI 模型</a>{% endif %}</form>{% endif %}
+                {% if ai_request.skill_snapshot.requirement_analysis %}<details><summary>需求保存时的规则</summary>{% for profile in ai_request.skill_snapshot.requirement_analysis %}{{ profile.name }} v{{ profile.version }}{% if not forloop.last %}、{% endif %}{% endfor %}</details>{% endif %}
                 {% include 'ai_assistant/_requirement_ai_result.html' with item=ai_request %}
             </section>
         </main>
