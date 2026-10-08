@@ -124,7 +124,8 @@ class APIAIGenerationTests(TestCase):
     def test_generate_page_renders_for_authorised_owner(self):
         response = self.client.get(self.generate_url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "接口资料")
+        self.assertContains(response, "接口文档")
+        self.assertContains(response, 'name="documentation"')
 
     def test_generate_page_denies_anonymous_and_unauthorised_users(self):
         self.client.logout()
@@ -180,7 +181,8 @@ class APIAIGenerationTests(TestCase):
 
         review = self.client.get(reverse("ai_assistant:api_ai_review", args=[draft.pk]))
         self.assertEqual(review.status_code, 200)
-        self.assertContains(review, "复核要求")
+        self.assertContains(review, "复核确认")
+        self.assertContains(review, 'name="confirmed"')
 
     def test_import_creates_case_and_api_configuration_after_review(self):
         batch, _url, _summary = self.generate_drafts()

@@ -92,7 +92,8 @@ def submit(request, product_id=None, pk=None):
         original = json.loads(decrypt_api_key(source.snapshot_encrypted))
         initial = {
             "environment": original["selection"]["environment_id"],
-            "cases": original["selection"]["case_ids"],
+            "cases": list(dict.fromkeys(case["case_id"] for case in original["cases"])),
+            "ordered_case_ids": list(dict.fromkeys(case["case_id"] for case in original["cases"])),
             "stop_on_failure": original.get("stop_on_failure", False),
             "share_cookies": original.get("share_cookies", False),
             "datasets": original.get("selection", {}).get("datasets", []),

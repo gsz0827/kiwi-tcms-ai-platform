@@ -24,6 +24,7 @@ from .crypto import decrypt_api_key, encrypt_api_key
 from .leases import WorkerHeartbeat, heartbeat_run
 from .execution_identity import capture_version
 from .models import APICase, APIEnvironment, APIResult, APIRun
+from .api_ordering import ordered_cases
 
 CASE_FIELDS = ("name", "method", "path", "headers", "query", "body", "send_body",
                "expected_status", "assertions", "max_elapsed_ms", "test_case_id", "extracts", "sequence")
@@ -66,6 +67,9 @@ def required_variables(case, environment):
 def submit_run(owner, product, data, source_run=None, suite=None, trigger="manual"):
     from .automation_data import datasets
     rows = datasets(data.get("datasets"))
+    requested_order = data.get("ordered_case_ids")
+    if requested_order is not None:
+        ordered_cases(data["cases"], requested_order)
     with transaction.atomic():
         get_user_model().objects.select_for_update().get(pk=owner.pk)
         existing = APIRun.objects.filter(owner=owner, submission_token=data["submission_token"]).first()
@@ -84,6 +88,9 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                 "datasets": rows,
             }
             original_selection = dict(original["selection"])
+            if "ordered_case_ids" in original_selection:
+                selected["ordered_case_ids"] = (requested_order if requested_order is not None
+                    else [case.pk for case in sorted(data["cases"], key=lambda case: (case.sequence, case.pk))])
             original_selection.setdefault("stop_on_failure", False)
             original_selection.setdefault("source_run_id", None)
             original_selection.setdefault("share_cookies", False)
@@ -110,6 +117,8 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
         ).order_by("sequence", "pk"))
         if not cases or len(cases) != len(data["cases"]) or len(cases) > 20:
             raise ValueError("用例已发生变化，请重新选择，最多 20 条。")
+        if requested_order is not None:
+            cases = ordered_cases(cases, requested_order)
         if any(case.import_review_required for case in cases):
             raise ValueError('所选脚本含待复核的 Postman 请求，请先编辑并确认断言后执行。')
         target = data.get("test_run")
@@ -131,7 +140,7 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                            or not source_run.is_terminal):
             raise ValueError("只能重新执行自己已结束的同项目任务。")
         from .api_dataset_support import validate_dataset_cases
-        validate_dataset_cases(cases, env, rows)
+        validate_dataset_cases(cases, env, rows, preserve_order=True)
         if target and len(rows) > 1:
             raise ValueError("多组数据不能覆盖同一测试执行，请取消回写选择；结束后可归档独立报告。")
         for dataset_index, row in enumerate(rows or [{}]):
@@ -172,6 +181,7 @@ def submit_run(owner, product, data, source_run=None, suite=None, trigger="manua
                     "selection": {
                         "environment_id": environment.pk,
                         "case_ids": sorted(case.pk for case in cases),
+                        "ordered_case_ids": [case.pk for case in cases],
                         "test_run_id": target.pk if target else None,
                         "passed_status": data["passed_status"].pk if data.get("passed_status") else None,
                         "failed_status": data["failed_status"].pk if data.get("failed_status") else None,

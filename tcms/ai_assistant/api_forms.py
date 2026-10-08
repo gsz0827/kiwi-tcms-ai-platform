@@ -13,6 +13,7 @@ from .api_validation import validate_case, validate_destination, validate_header
 from .crypto import encrypt_api_key, decrypt_api_key
 from .automation_data import DatasetField
 from .models import APICase, APIEnvironment, APISuite
+from .api_ordering import clean_case_order
 
 
 class StyledForm:
@@ -89,10 +90,9 @@ class APICaseForm(StyledForm, forms.ModelForm):
     class Meta:
         model = APICase
         labels = {"name": "接口脚本名称"}
-        fields = ("name", "sequence", "method", "path", "query", "headers", "send_body", "body",
+        fields = ("name", "method", "path", "query", "headers", "send_body", "body",
                   "expected_status", "assertions", "extracts", "max_elapsed_ms", "test_case")
         help_texts = {
-            "sequence": "数值越小越先执行，相同时按创建顺序。登录等前置请求应排在前面。",
             "extracts": '例如 {"access_token":"token"}；后续请求头可填写 {"Authorization":"Bearer {{access_token}}"}。仅本次运行有效，提取值不展示。',
             "path": "例如 /users/{{user_id}}。只填写路径，服务地址来自执行环境。",
             "query": '例如 {"page":1}，不需要时填写 {}。',
@@ -139,11 +139,12 @@ class APICaseForm(StyledForm, forms.ModelForm):
 
 
 class APISubmitForm(StyledForm, forms.Form):
+    ordered_case_ids = forms.JSONField(required=False, widget=forms.HiddenInput)
     datasets = DatasetField()
     submission_token = forms.UUIDField(initial=uuid.uuid4, widget=forms.HiddenInput)
     environment = forms.ModelChoiceField(queryset=APIEnvironment.objects.none(), label="执行环境")
     cases = forms.ModelMultipleChoiceField(
-        queryset=APICase.objects.none(), label="执行脚本（最多 20 条，按执行顺序）",
+        queryset=APICase.objects.none(), label="执行脚本（最多 20 条）",
         widget=forms.CheckboxSelectMultiple,
     )
     stop_on_failure = forms.BooleanField(
@@ -170,16 +171,18 @@ class APISubmitForm(StyledForm, forms.Form):
     def __init__(self, *args, owner, product, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["environment"].queryset = APIEnvironment.objects.filter(owner=owner, product=product)
-        self.fields["cases"].queryset = APICase.objects.filter(owner=owner, product=product).order_by("sequence", "pk")
-        self.fields["cases"].label_from_instance = lambda case: f'API-{case.pk} · {case.name}（顺序 {case.sequence}）' + (' · 待复核' if case.import_review_required else '')
+        self.fields["cases"].queryset = APICase.objects.filter(owner=owner, product=product).order_by("pk")
+        self.fields["cases"].label_from_instance = lambda case: f'API-{case.pk} · {case.name}' + (' · 待复核' if case.import_review_required else '')
         if owner.has_perm("testruns.change_testexecution"):
             self.fields["test_run"].queryset = get_objects_for_user(
                 owner, "testruns.change_testrun", klass=TestRun
             ).filter(plan__product=product, stop_date__isnull=True)
+        self.fields["cases"].widget.attrs["data-ordered-cases"] = "true"
+        self.initial["ordered_case_ids"] = list(self.initial.get("cases") or [])
         self.style_fields()
 
     def clean(self):
-        data = super().clean()
+        data = clean_case_order(self, super().clean())
         if len(data.get("cases", [])) > 20:
             raise forms.ValidationError("一次最多执行 20 条用例。")
         if data.get("test_run") and not (data.get("passed_status") and data.get("failed_status")):
@@ -188,6 +191,7 @@ class APISubmitForm(StyledForm, forms.Form):
 
 
 class SuiteForm(StyledForm, forms.ModelForm):
+    ordered_case_ids = forms.JSONField(required=False, widget=forms.HiddenInput)
     datasets = DatasetField()
     cases = forms.ModelMultipleChoiceField(queryset=APICase.objects.none(),
         label="包含脚本（最多 20 条）", widget=forms.CheckboxSelectMultiple)
@@ -207,15 +211,17 @@ class SuiteForm(StyledForm, forms.ModelForm):
     def __init__(self, *args, owner, product, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["environment"].queryset = APIEnvironment.objects.filter(owner=owner, product=product)
-        self.fields["cases"].queryset = APICase.objects.filter(owner=owner, product=product).order_by("sequence", "pk")
-        self.fields['cases'].label_from_instance = lambda case: f'API-{case.pk} · {case.name}（顺序 {case.sequence}）' + (' · 待复核' if case.import_review_required else '')
+        self.fields["cases"].queryset = APICase.objects.filter(owner=owner, product=product).order_by("pk")
+        self.fields['cases'].label_from_instance = lambda case: f'API-{case.pk} · {case.name}' + (' · 待复核' if case.import_review_required else '')
         if self.instance.pk:
             self.initial["cases"] = self.instance.case_ids
             self.initial["datasets"] = json.loads(decrypt_api_key(self.instance.datasets_encrypted) or "[]")
+        self.fields["cases"].widget.attrs["data-ordered-cases"] = "true"
+        self.initial["ordered_case_ids"] = list(self.initial.get("cases") or [])
         self.style_fields()
 
     def clean(self):
-        data = super().clean()
+        data = clean_case_order(self, super().clean())
         if len(data.get("cases", [])) > 20:
             self.add_error("cases", "最多选择 20 条用例。")
         if not 5 <= (data.get("interval_minutes") or 0) <= 10080:
@@ -227,6 +233,7 @@ class SuiteForm(StyledForm, forms.ModelForm):
 
 
     def save(self, commit=True):
+        self.instance.case_ids = list(self.cleaned_data["ordered_case_ids"])
         self.instance.datasets_encrypted = encrypt_api_key(json.dumps(self.cleaned_data.get("datasets") or []))
         return super().save(commit)
 

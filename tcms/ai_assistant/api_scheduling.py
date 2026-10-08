@@ -14,6 +14,7 @@ from django.utils import timezone
 from .api_runner import submit_run
 from .roles import is_read_only
 from .models import APICase, APIRun, APISuite
+from .api_ordering import ordered_cases
 
 
 def suite_data(suite, submission_token):
@@ -21,7 +22,8 @@ def suite_data(suite, submission_token):
         pk__in=suite.case_ids, owner=suite.owner, product=suite.product))
     if not cases or len(cases) != len(suite.case_ids):
         raise ValueError("套件中的用例已删除或所属项目发生变化，请重新保存套件。")
-    return dict(environment=suite.environment, cases=cases, submission_token=submission_token,
+    cases = ordered_cases(cases, suite.case_ids)
+    return dict(environment=suite.environment, cases=cases, ordered_case_ids=list(suite.case_ids), submission_token=submission_token,
                 stop_on_failure=suite.stop_on_failure, share_cookies=suite.share_cookies,
                 test_run=None, passed_status=None, failed_status=None,
                 datasets=json.loads(decrypt_api_key(suite.datasets_encrypted) or "[]"))

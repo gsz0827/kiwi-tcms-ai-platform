@@ -203,7 +203,7 @@ class WorkflowRegressionTests(TestCase):
         )
         advanced = now + timedelta(minutes=60)
 
-        def dispatch_during_validation(*_):
+        def dispatch_during_validation(*_, **_kwargs):
             APISuite.objects.filter(pk=suite.pk).update(next_run_at=advanced)
 
         with patch(

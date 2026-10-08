@@ -2,7 +2,7 @@ import copy
 from .automation_data import datasets
 
 
-def validate_dataset_cases(cases, environment, rows):
+def validate_dataset_cases(cases, environment, rows, *, preserve_order=False):
     from .api_runner import CASE_FIELDS, prepare_case, required_variables
     rows = datasets(rows) or [{}]
     if len(rows)*len(cases)>20:
@@ -10,7 +10,8 @@ def validate_dataset_cases(cases, environment, rows):
     for row in rows:
         env = copy.deepcopy(environment)
         env['variables'].update(row)
-        for case in sorted(cases, key=lambda item:(item.sequence,item.pk)):
+        ordered = cases if preserve_order else sorted(cases, key=lambda item:(item.sequence,item.pk))
+        for case in ordered:
             config = {key:getattr(case,key) for key in CASE_FIELDS}
             missing = required_variables(config,env)-env['variables'].keys()
             if missing: raise ValueError('缺少变量：'+', '.join(sorted(missing))+'。请脚本数据或选择前置提取用例。')

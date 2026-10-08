@@ -24,7 +24,7 @@ from .api_scheduling import queue_suite, rotate_token
 from .api_validation import validate_destination
 from .automation_ui import home_url, return_url, write_guard
 from .crypto import decrypt_api_key
-from .models import APIRun, APISuite
+from .models import APICase, APIRun, APISuite
 
 
 @login_required
@@ -38,12 +38,11 @@ def suite_edit(request, product_id, pk=None):
     if request.method == "POST" and form.is_valid():
         try:
             suite = form.save(commit=False)
-            suite.case_ids = [case.pk for case in form.cleaned_data["cases"]]
             validate_destination(suite.environment.base_url)
             env = dict(headers=suite.environment.headers, variables=dict(suite.environment.variables),
                        secret_headers=json.loads(decrypt_api_key(suite.environment.secret_headers_encrypted) or "{}"))
             from .api_dataset_support import validate_dataset_cases
-            validate_dataset_cases(list(form.cleaned_data["cases"]), env, form.cleaned_data.get("datasets"))
+            validate_dataset_cases(list(form.cleaned_data["cases"]), env, form.cleaned_data.get("datasets"), preserve_order=True)
             with transaction.atomic():
                 get_user_model().objects.select_for_update().get(pk=request.user.pk)
                 # Only form-owned fields: never overwrite a concurrent token rotation.
@@ -74,7 +73,11 @@ def suite_edit(request, product_id, pk=None):
 
 
 def suite_context(suite):
-    return dict(suite=suite, product=suite.product, back_url=home_url(suite.product, 'suites'),
+    by_id = {case.pk: case for case in APICase.objects.filter(
+        pk__in=suite.case_ids, owner=suite.owner, product=suite.product)}
+    steps = [{"position": index + 1, "case": by_id.get(pk), "case_id": pk}
+             for index, pk in enumerate(suite.case_ids)]
+    return dict(suite_steps=steps, suite=suite, product=suite.product, back_url=home_url(suite.product, 'suites'),
                 runs=suite.runs.all()[:20], timezone_name=timezone.get_current_timezone_name(),
                 submission_token=uuid.uuid4())
 
