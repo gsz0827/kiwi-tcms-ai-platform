@@ -1,10 +1,13 @@
 from django.urls import path
 from . import views, ai_views, run_actions, regression, ci_views
 
+from tcms.ai_assistant import ci_release_gate
+
 app_name = "web_testing"
 urlpatterns = [
     path('suites/<int:pk>/ci/', ci_views.settings, name='ci_settings'),
     path('suites/<int:pk>/ci/<str:action>/', ci_views.token_action, name='ci_token_action'),
+    path("ci/suites/<int:pk>/runs/<uuid:run_id>/release-gate/", ci_release_gate.check, {"kind": "web"}, name="ci_release_gate"),
     path('ci/suites/<int:pk>/runs/', ci_views.runs, name='ci_submit'),
     path('ci/suites/<int:pk>/runs/<uuid:run_id>/', ci_views.runs, name='ci_run'),
     path("defects/<int:pk>/regression/", regression.new, name="regression_new"),

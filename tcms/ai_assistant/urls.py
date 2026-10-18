@@ -5,7 +5,7 @@ from . import views, scenario_workflow, scenario_adoption, case_design_views, ta
 from . import task_assignee_views, document_options, source_review_views
 from . import api_views
 from . import api_ai_views, case_hub, case_hub_actions, saved_case_views, case_tree_actions
-from . import api_suite_views, case_library, automation_archive, case_directories, api_workflow
+from . import api_suite_views, case_library, automation_archive, case_directories, api_workflow, ci_release_gate
 
 
 from . import postman_views
@@ -45,6 +45,7 @@ urlpatterns = [
     path("api-testing/suites/<int:pk>/", api_suite_views.suite_detail, name="api_suite"),
     path("api-testing/suites/<int:pk>/execute/", api_workflow.submit, name="api_suite_submit"),
     path("api-testing/suites/<int:pk>/actions/<str:action>/", api_suite_views.suite_action, name="api_suite_action"),
+    path("api-testing/ci/suites/<int:pk>/runs/<uuid:run_id>/release-gate/", ci_release_gate.check, {"kind": "api"}, name="api_ci_release_gate"),
     path("api-testing/ci/suites/<int:pk>/runs/", api_suite_views.ci_runs, name="api_ci_submit"),
     path("api-testing/ci/suites/<int:pk>/runs/<uuid:run_id>/", api_suite_views.ci_runs, name="api_ci_run"),
     path(

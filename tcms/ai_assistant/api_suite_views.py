@@ -134,7 +134,8 @@ def run_payload(run):
         "checks", "request_summary", "response_summary", "error", "writeback"))
     return dict(run_id=str(run.pk), status=run.status, terminal=run.is_terminal,
         passed=run.status == "completed" and bool(results) and all(r["status"] == "passed" for r in results),
-        report_url=reverse("ai_assistant:api_report", args=[run.pk]), error=run.error, results=results)
+        report_url=reverse("ai_assistant:api_report", args=[run.pk]), error=run.error, results=results,
+        execution_mode=run.execution_mode, test_run_id=run.test_run_id)
 
 
 @csrf_exempt
@@ -153,6 +154,16 @@ def ci_runs(request, pk, run_id=None):
             return response
         if run_id:
             run = get_object_or_404(APIRun, pk=run_id, suite=suite, owner=suite.owner, trigger="ci")
+        elif request.content_type == "application/json" and request.body and request.body.strip() != b"{}":
+            from .api_ci_submission import submit
+            try:
+                with transaction.atomic():
+                    result = submit(request, suite)
+            except ValueError:
+                return JsonResponse({"error": "套件配置已变化，请重新检查。"}, status=409)
+            if isinstance(result, HttpResponse):
+                return result
+            run = result
         else:
             try:
                 key = str(uuid.UUID(request.headers.get("Idempotency-Key", "")))

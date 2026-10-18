@@ -99,7 +99,7 @@ def main(argv=None):
         route = '/web-testing' if args.type == 'web' else '/ai/api-testing'
         endpoint = f'{base}{route}/ci/suites/{args.suite}/runs/'
         submission = {}
-        if args.type == 'web':
+        if args.type in ('api', 'web'):
             submission['execution_mode'] = args.mode
             for field in ('plan', 'build', 'environment'):
                 value = getattr(args, field)
@@ -116,7 +116,7 @@ def main(argv=None):
             if remaining <= 0:
                 raise TimeoutError
             req = Request(address, method=method,
-                data=json.dumps(submission).encode() if method == 'POST' and args.type == 'web' else None,
+                data=json.dumps(submission).encode() if method == 'POST' else None,
                 headers={"Authorization": f"Bearer {token}", "Idempotency-Key": key,
                          "Accept": "application/json", 'Content-Type': 'application/json'})
             with opener.open(req, timeout=min(30, remaining)) as response:
@@ -132,6 +132,8 @@ def main(argv=None):
                 raise TimeoutError
             time.sleep(min(3, max(0, deadline - time.monotonic())))
             payload = request(endpoint + run_id + "/", "GET")
+        payload["ci_context"] = {"type": args.type, "suite": args.suite, "mode": args.mode,
+                                 "plan": args.plan, "build": args.build, "submission_key": key}
         write_reports(payload, args.output, args.type)
         print(f"执行状态：{payload['status']}；报告已保存至 {args.output}")
         return 0 if payload["passed"] else 1

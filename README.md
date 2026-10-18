@@ -219,7 +219,7 @@ Web/API 执行结束后自动生成独立的 Allure 报告，在任务详情查�
 
 ## Jenkins 集成
 
-提供 Web/API 套件 CI 接口、专用令牌及 Jenkins 流水线，支持等待结果、JUnit 发布和 JSON/XML 构建附件。Web 正式执行继续校验计划、构建和业务用例；CI 不自动审批报告或关闭缺陷。本机 Jenkins 仅监听 `localhost:9081`。部署与使用步骤见 [Jenkins 集成指南](docs/jenkins-integration.md)。
+提供 Web/API 套件 CI 接口、专用令牌及 Jenkins 流水线，支持等待结果、JUnit 发布和 JSON/XML 构建附件。Web/API 正式执行复用计划、构建和业务用例校验。可开启发布准入检查：等待人工归档与审批，核对本次构建的执行和报告证据，门禁通过后再次复核并生成模拟发布记录；缺少结果、未审批、门禁不通过或检查异常均不放行。模拟阶段不执行真实部署，CI 不自动审批报告或关闭缺陷。本机 Jenkins 仅监听 `localhost:9081`。部署与使用步骤见 [Jenkins 集成指南](docs/jenkins-integration.md)。
 
 ## 上游与许可
 
