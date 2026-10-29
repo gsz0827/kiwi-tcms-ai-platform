@@ -1,0 +1,75 @@
+# 真实浏览器端到端冒烟：单独成一个 workflow，避免改动上游 ai-platform.yml。
+#
+# 为什么单独：ai-platform.yml 里跑的是 mock 单测（SQLite + MariaDB），覆盖不到
+# runner.execute() 真实驱动 Chromium 的路径。这里起 MariaDB + 装 Chromium，跑
+# tcms.web_testing.test_e2e_browser，验证「浏览器真的能驱动起来」：打开页面、输入、
+# 断言、失败截图。该测试默认跳过，设置 WEB_TEST_E2E=1 后启用。
+name: web-e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+env:
+  PYTHON_VERSION: "3.12"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  web-e2e:
+    name: web e2e / real chromium
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: kiwi
+          MARIADB_USER: kiwi
+          MARIADB_PASSWORD: kiwi
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext
+          pip install -r requirements/devel.txt
+          pip install -r requirements/ai-test.txt
+          pip install -r requirements/web.txt
+          pip install -r requirements/mariadb.txt
+
+      - name: Install Chromium
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Prepare runtime paths
+        run: |
+          sudo mkdir -p /Kiwi
+          sudo chmod a+w /Kiwi
+          ./manage.py compilemessages
+
+      - name: Run browser E2E on MariaDB
+        env:
+          WEB_TEST_E2E: "1"
+          TEST_DB: MariaDB
+        run: |
+          python manage.py test tcms.web_testing.test_e2e_browser \
+            --settings=tcms.settings.test.mariadb --noinput -v2

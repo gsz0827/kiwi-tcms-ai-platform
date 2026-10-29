@@ -1,0 +1,155 @@
+# 本仓库自己那部分代码的质量门禁。
+#
+# 为什么需要这个文件：上游那 10 个 workflow 全部只监听 master 分支，而本仓库的
+# 工作分支是 main，所以推送到 main 不会触发任何检查；即使触发，跑的也是上游的
+# 测试目标，覆盖不到 tcms.ai_assistant / tcms/web_testing。结果就是 6000 多行
+# 平台测试只在本地 `make ai-test-full` 时才会执行，PR 没有任何拦截。
+#
+# 这个 workflow 补的就是这一段：推送到 main 与所有 PR 都要跑平台测试、迁移完整性
+# 和静态检查。
+name: ai-platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+env:
+  PYTHON_VERSION: "3.12"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  platform-tests-sqlite:
+    name: platform tests / sqlite
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext
+          pip install -r requirements/devel.txt
+          pip install -r requirements/ai-test.txt
+          pip install -r requirements/web.txt
+
+      - name: Prepare runtime paths
+        run: |
+          # 上游若干模块假定 /Kiwi 存在（uwsgi 配置、静态文件校验）。
+          sudo mkdir -p /Kiwi
+          sudo chmod a+w /Kiwi
+          ./manage.py compilemessages
+
+      - name: Run platform tests
+        # tcms.settings.test 走 SQLite：最快的一层，用来快速定位平台代码本身的回归。
+        run: |
+          python manage.py test tcms.ai_assistant tcms.web_testing \
+            --settings=tcms.settings.test --noinput -v2
+
+  platform-tests-mariadb:
+    name: platform tests / mariadb
+    runs-on: ubuntu-24.04
+    # 生产用的是 MariaDB，SQLite 通过不等于 MariaDB 通过（排序、大小写、JSON 字段
+    # 返回类型都不同），所以全量套件必须在 MariaDB 上再跑一遍。
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: kiwi
+          MARIADB_USER: kiwi
+          MARIADB_PASSWORD: kiwi
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext
+          pip install -r requirements/devel.txt
+          pip install -r requirements/ai-test.txt
+          pip install -r requirements/web.txt
+          pip install -r requirements/mariadb.txt
+
+      - name: Prepare runtime paths
+        run: |
+          sudo mkdir -p /Kiwi
+          sudo chmod a+w /Kiwi
+          ./manage.py compilemessages
+
+      - name: Run platform tests on MariaDB
+        env:
+          TEST_DB: MariaDB
+        run: |
+          python manage.py test tcms.ai_assistant tcms.web_testing \
+            --settings=tcms.settings.test.mariadb --noinput -v2
+
+  migrations:
+    name: migrations are complete
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements/devel.txt
+          pip install -r requirements/ai-test.txt
+          pip install -r requirements/web.txt
+
+      - name: Reject model changes without a migration
+        # 少了迁移，部署时才炸：「(1146, "Table ... doesn't exist")」。
+        # 放在 PR 上拦，比上了生产再回滚便宜得多。
+        run: |
+          python manage.py makemigrations --check --dry-run \
+            --settings=tcms.settings.test
+
+  lint:
+    name: lint / flake8 + bandit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linters
+        run: pip install "flake8>=7" "bandit>=1.7" "pylint>=3"
+
+      - name: flake8
+        # 只检查平台自己写的目录：上游代码的既有告警不该由这个 workflow 负责。
+        run: |
+          flake8 --max-line-length=102 --extend-ignore=E203 \
+            tcms/ai_assistant tcms/web_testing tcms/core/history.py
+
+      - name: bandit
+        # -ll 只看 medium 及以上，避免刷屏式的 low 告警把真问题埋掉；
+        # 测试文件里大量故意的「假凭据」不参与扫描。
+        run: |
+          bandit -r -ll --exclude "*test_*.py,tests.py" \
+            tcms/ai_assistant tcms/web_testing
