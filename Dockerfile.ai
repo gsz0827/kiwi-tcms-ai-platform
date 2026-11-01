@@ -6,7 +6,7 @@ RUN npm ci --no-audit --no-fund
 COPY tcms/ ./
 RUN ./node_modules/.bin/webpack && npm prune --omit=dev --no-audit --no-fund
 
-FROM python:3.12-bookworm AS python-deps
+FROM python:3.15-bookworm AS python-deps
 RUN python -m venv /venv
 ENV PATH=/venv/bin:$PATH
 COPY requirements /requirements
@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --timeout ${PIP_DEFAULT_TIMEOUT} --retries ${PIP_RETRIES} \
     --index-url ${PIP_INDEX_URL} -r /requirements/mariadb.txt
 
-FROM python:3.12-slim-bookworm AS application
+FROM python:3.15-slim-bookworm AS application
 ARG DEBIAN_MIRROR=https://deb.debian.org
 RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 update \
